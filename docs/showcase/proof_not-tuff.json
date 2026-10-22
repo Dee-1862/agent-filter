@@ -3,15 +3,9 @@
   "approved_lines": [
     "Okay, let's start the launch review.",
     "The beta goes live on the 14th.",
-    "The meeting page and the call are stable on staging.",
     "Support docs are done and the help center goes out on Monday.",
     "Let's talk about the customer list.",
-    "Fine.",
-    "50 customers from the waiting list.",
-    "Let's take that offline with the hiring manager.",
-    "Agreed. Next steps, LAN sends the release checklist and I update the help center.",
-    "Sounds good.",
-    "Thanks everyone."
+    "Fine."
   ],
   "kept_out": [
     {
@@ -20,7 +14,7 @@
       "seq": 7,
       "trail": {
         "family": "scope",
-        "before": "ON",
+        "before": "OFF",
         "after": "OFF",
         "held_s": 0.0
       }
@@ -35,15 +29,26 @@
         "after": "PENDING_CONFIRM",
         "held_s": 0.0
       }
+    },
+    {
+      "id": "s0017",
+      "category": "off_record",
+      "seq": 17,
+      "trail": {
+        "family": "scope",
+        "before": "PENDING_CONFIRM",
+        "after": "ON",
+        "held_s": 0.0
+      }
     }
   ],
   "insights": {
-    "approved": 2,
+    "approved": 1,
     "kept_out": {
-      "off_record": 1,
+      "off_record": 2,
       "pay_hr": 1
     },
-    "total": 2,
+    "total": 3,
     "removed": 0,
     "timeline": [
       {
@@ -51,27 +56,19 @@
         "state": "off"
       },
       {
-        "t": 2.6,
+        "t": 3.5,
         "state": "recording"
       },
       {
-        "t": 83.6,
+        "t": 80.9,
         "state": "off_record"
       },
       {
-        "t": 98.0,
-        "state": "recording"
-      },
-      {
-        "t": 128.5,
-        "state": "paused"
-      },
-      {
-        "t": 129.1,
+        "t": 96.0,
         "state": "recording"
       }
     ],
-    "now": 171.4,
+    "now": 197.4,
     "hold_seconds": 5.0
   }
 }

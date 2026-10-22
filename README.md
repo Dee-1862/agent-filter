@@ -58,13 +58,13 @@ Numbers: on the realistic sealed set, our pipeline let private lines into the no
 ![Strike that retraction, Lance](docs/images/showcase/04-strike-that-retraction-lance.png)
 
 ### Nobody says anything
-A salary mention is caught by the local model, notes pause, and the person decides when to resume.
+Salary, a performance plan, layoffs and a health matter are caught by the local model and kept out while notes keep running. You can also remove your own line with one click.
 
-![Paused for a sensitive line, Not Tuff](docs/images/showcase/06-paused-for-a-sensitive-line-not-tuff.png)
+![Sensitive lines kept out, Not Tuff](docs/images/showcase/05-sensitive-lines-kept-out-not-tuff.png)
 
-![Not Tuff chooses to resume notes](docs/images/showcase/07-not-tuff-chooses-to-resume-notes.png)
+![Lance removes his own line](docs/images/showcase/07-removed-by-you-lance.png)
 
-Afterwards, [what was kept out](docs/images/showcase/09-insights-lance.png) and [why](docs/images/showcase/11-why-kept-out-not-tuff.png).
+Afterwards, [what was kept out](docs/images/showcase/09-insights-reddy.png) and [why](docs/images/showcase/11-why-kept-out-not-tuff.png).
 
 The run had three participants (Reddy, Lance, Not Tuff) through the real call, speech to text and local model on the host laptop. Proof files: `docs/showcase/proof_*.json`.
 

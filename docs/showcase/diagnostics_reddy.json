@@ -3,8 +3,8 @@
     "whisper": {
       "name": "base.en",
       "loaded": true,
-      "load_seconds": 0.36,
-      "rtf": 0.322
+      "load_seconds": 0.57,
+      "rtf": 0.371
     },
     "llm": {
       "name": "granite4.2:3b",
@@ -22,10 +22,10 @@
     "audio_rms": 0.1,
     "audio_level": 0.0,
     "last_frame_age_s": 0.0,
-    "stt_last_activity_age_s": 45.06,
+    "stt_last_activity_age_s": 45.98,
     "state": "silent",
     "error": null,
-    "waiting_lines": 0
+    "waiting_lines": 1
   },
   "hold_seconds": 5.0
 }
