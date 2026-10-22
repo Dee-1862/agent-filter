@@ -140,10 +140,12 @@ class StateMachine:
                 if isinstance(obj, dict) and "topic_changed" in obj:
                     v = obj["topic_changed"]
                     changed = v if isinstance(v, bool) else str(v).lower() in ("true", "yes")
-                    if changed:
-                        return END, "llm"
-                    self.note_suppressed(text, t)
-                    return CONTINUE, ""
+                    # Fail closed: the model may only keep a scope open. A "topic changed" verdict
+                    # never ends an off-the-record stretch by itself (a 3B model ended scopes too
+                    # early and leaked); the rule checks below decide whether the scope ends.
+                    if not changed:
+                        self.note_suppressed(text, t)
+                        return CONTINUE, ""
             except Exception:
                 pass
 
