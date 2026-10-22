@@ -25,6 +25,49 @@ flowchart LR
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## How we compare
+
+Based on [docs/COMPETITORS.md](docs/COMPETITORS.md). Where we differ from the tools we looked at:
+
+| Point | Off The Record | Others |
+|---|---|---|
+| Consent | Per person, at the audio | Per account, per meeting or host only |
+| Privacy gate | Before the notes or summary | Summarise everything, then restrict access |
+| Spoken "off the record" | Handled by content | Manual pause at most |
+| "Strike that" | Retroactive, removes the line just said | Manual or none |
+| Explaining a removal | Says what kind of thing was withheld, without showing it | Not found in their docs (Fireflies partial) |
+| Processing | Local by default | Cloud products process in the cloud; Meetily is also local |
+| Voiceprints | None | Fireflies uses voice data; most others do not say |
+
+![Capability grid](docs/images/charts/capability_grid.png)
+
+Numbers: on the realistic sealed set, our pipeline let private lines into the notes less often than rule based baselines (leak 67% versus 87%, see [docs/RESULTS.md](docs/RESULTS.md)). For context, ConfAIde reports that general LLMs leak 39 to 57% of secrets in meeting summaries even when told not to. Those are other papers' numbers and are not directly comparable.
+
+## The three ways a line is removed (live run)
+
+### You say it
+"This next part is off the record" keeps everything out until "back on the record", including other people's reactions.
+
+![Explicit off the record, Lance](docs/images/showcase/02-explicit-off-the-record-lance.png)
+
+![Reaction kept out too, Reddy](docs/images/showcase/03-reaction-kept-out-too-reddy.png)
+
+### You take it back
+"Strike that" removes the line you just said.
+
+![Strike that retraction, Lance](docs/images/showcase/04-strike-that-retraction-lance.png)
+
+### Nobody says anything
+A salary mention is caught by the local model, notes pause, and the person decides when to resume.
+
+![Paused for a sensitive line, Not Tuff](docs/images/showcase/06-paused-for-a-sensitive-line-not-tuff.png)
+
+![Not Tuff chooses to resume notes](docs/images/showcase/07-not-tuff-chooses-to-resume-notes.png)
+
+Afterwards, [what was kept out](docs/images/showcase/09-insights-lance.png) and [why](docs/images/showcase/11-why-kept-out-not-tuff.png).
+
+The run had three participants (Reddy, Lance, Not Tuff) through the real call, speech to text and local model on the host laptop. Proof files: `docs/showcase/proof_*.json`.
+
 ## Run it
 
 Requirements: Python 3.12, Docker (for the call server), and optionally Ollama.
