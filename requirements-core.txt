@@ -1,5 +1,4 @@
 # Core (system C) has no hard runtime dependencies: stdlib only.
 pytest>=7
 # Optional, improves PII detection (also needs: python -m spacy download en_core_web_lg):
-# presidio-analyzer
-# spacy
+# see requirements-pii.txt (presidio-analyzer, presidio-anonymizer, spacy)

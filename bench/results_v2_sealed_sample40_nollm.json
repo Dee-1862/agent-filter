@@ -1,0 +1,2135 @@
+{
+  "meta": {
+    "set": "sealed2",
+    "n_items": 40,
+    "llm": "none",
+    "hold_seconds": [
+      30.0
+    ],
+    "md5": "35f17d279a9f59e5756a1b97a20a6eab",
+    "bench_file": "C:\\Users\\Reddy\\Desktop\\something\\agent-filter\\bench\\data_v2\\sealed\\otr2_sealed.jsonl",
+    "limit": null,
+    "sample": 40,
+    "seed": 1,
+    "systems_requested": "C",
+    "note": "-stub = heuristic stand-in used when llm is none; sealed split: aggregates only"
+  },
+  "systems": {
+    "C": {
+      "breakdown": {
+        "implicit": {
+          "n_items": 11,
+          "leak_rate": 0.4166666666666667,
+          "committed_leak_rate": 0.4166666666666667,
+          "item_leak_rate": 0.45454545454545453,
+          "over_redaction": 0.04310344827586207,
+          "summary_usefulness": 0.896551724137931,
+          "Leak": {
+            "k": 5,
+            "n": 11,
+            "rate": 0.45454545454545453,
+            "lo": 0.21270957543988045,
+            "hi": 0.7199122443100118
+          },
+          "Omit-Public": {
+            "k": 4,
+            "n": 11,
+            "rate": 0.36363636363636365,
+            "lo": 0.15166223614131383,
+            "hi": 0.6462032231083628
+          },
+          "Leak-or-Omit": {
+            "k": 8,
+            "n": 11,
+            "rate": 0.7272727272727273,
+            "lo": 0.4343497069897537,
+            "hi": 0.9025411942607853
+          },
+          "Conveyance": {
+            "k": 26,
+            "n": 29,
+            "rate": 0.896551724137931,
+            "lo": 0.7361455275293085,
+            "hi": 0.9641857596186989
+          },
+          "seg_leak": {
+            "k": 10,
+            "n": 24,
+            "rate": 0.4166666666666667,
+            "lo": 0.24467347246538232,
+            "hi": 0.6116566235061137
+          },
+          "seg_omit": {
+            "k": 10,
+            "n": 232,
+            "rate": 0.04310344827586207,
+            "lo": 0.02357853393525097,
+            "hi": 0.07751304617614584
+          },
+          "n_clusters": 11,
+          "descriptive_only": false
+        },
+        "false_alarm": {
+          "n_items": 5,
+          "leak_rate": null,
+          "committed_leak_rate": null,
+          "item_leak_rate": null,
+          "over_redaction": 0.0,
+          "summary_usefulness": 1.0,
+          "Leak": {
+            "k": 0,
+            "n": 0,
+            "rate": null,
+            "lo": null,
+            "hi": null
+          },
+          "Omit-Public": {
+            "k": 0,
+            "n": 5,
+            "rate": 0.0,
+            "lo": 0.0,
+            "hi": 0.43449149475208104
+          },
+          "Leak-or-Omit": {
+            "k": 0,
+            "n": 5,
+            "rate": 0.0,
+            "lo": 0.0,
+            "hi": 0.43449149475208104
+          },
+          "Conveyance": {
+            "k": 15,
+            "n": 15,
+            "rate": 1.0,
+            "lo": 0.7961107336956521,
+            "hi": 1.0
+          },
+          "seg_leak": {
+            "k": 0,
+            "n": 0,
+            "rate": null,
+            "lo": null,
+            "hi": null
+          },
+          "seg_omit": {
+            "k": 0,
+            "n": 115,
+            "rate": 0.0,
+            "lo": 0.0,
+            "hi": 0.03232538101136302
+          },
+          "n_clusters": 5,
+          "descriptive_only": true
+        },
+        "explicit_start_implicit_end": {
+          "n_items": 4,
+          "leak_rate": 0.3333333333333333,
+          "committed_leak_rate": 0.3333333333333333,
+          "item_leak_rate": 0.25,
+          "over_redaction": 0.07692307692307693,
+          "summary_usefulness": 0.8333333333333334,
+          "Leak": {
+            "k": 1,
+            "n": 4,
+            "rate": 0.25,
+            "lo": 0.045586062644636216,
+            "hi": 0.6993639475573634
+          },
+          "Omit-Public": {
+            "k": 1,
+            "n": 4,
+            "rate": 0.25,
+            "lo": 0.045586062644636216,
+            "hi": 0.6993639475573634
+          },
+          "Leak-or-Omit": {
+            "k": 2,
+            "n": 4,
+            "rate": 0.5,
+            "lo": 0.15003570882017148,
+            "hi": 0.8499642911798285
+          },
+          "Conveyance": {
+            "k": 10,
+            "n": 12,
+            "rate": 0.8333333333333334,
+            "lo": 0.5519636426153274,
+            "hi": 0.9530358523851776
+          },
+          "seg_leak": {
+            "k": 4,
+            "n": 12,
+            "rate": 0.3333333333333333,
+            "lo": 0.13811783989736134,
+            "hi": 0.609382412602386
+          },
+          "seg_omit": {
+            "k": 7,
+            "n": 91,
+            "rate": 0.07692307692307693,
+            "lo": 0.03775902099480837,
+            "hi": 0.15036096011052938
+          },
+          "n_clusters": 4,
+          "descriptive_only": true
+        },
+        "explicit_start_end": {
+          "n_items": 6,
+          "leak_rate": 0.375,
+          "committed_leak_rate": 0.375,
+          "item_leak_rate": 0.3333333333333333,
+          "over_redaction": 0.029411764705882353,
+          "summary_usefulness": 1.0,
+          "Leak": {
+            "k": 2,
+            "n": 6,
+            "rate": 0.3333333333333333,
+            "lo": 0.09676933255921683,
+            "hi": 0.7000116786584712
+          },
+          "Omit-Public": {
+            "k": 2,
+            "n": 6,
+            "rate": 0.3333333333333333,
+            "lo": 0.09676933255921683,
+            "hi": 0.7000116786584712
+          },
+          "Leak-or-Omit": {
+            "k": 4,
+            "n": 6,
+            "rate": 0.6666666666666666,
+            "lo": 0.29998832134152864,
+            "hi": 0.9032306674407831
+          },
+          "Conveyance": {
+            "k": 17,
+            "n": 17,
+            "rate": 1.0,
+            "lo": 0.8156763396284354,
+            "hi": 1.0
+          },
+          "seg_leak": {
+            "k": 6,
+            "n": 16,
+            "rate": 0.375,
+            "lo": 0.18480982554752806,
+            "hi": 0.613593529020652
+          },
+          "seg_omit": {
+            "k": 4,
+            "n": 136,
+            "rate": 0.029411764705882353,
+            "lo": 0.011495676995744348,
+            "hi": 0.07318298800808856
+          },
+          "n_clusters": 6,
+          "descriptive_only": true
+        },
+        "retroactive": {
+          "n_items": 10,
+          "leak_rate": 0.8888888888888888,
+          "committed_leak_rate": 0.8888888888888888,
+          "item_leak_rate": 1.0,
+          "over_redaction": 0.0625,
+          "summary_usefulness": 0.9666666666666667,
+          "Leak": {
+            "k": 7,
+            "n": 7,
+            "rate": 1.0,
+            "lo": 0.6456611570247934,
+            "hi": 1.0
+          },
+          "Omit-Public": {
+            "k": 3,
+            "n": 10,
+            "rate": 0.3,
+            "lo": 0.10778928748621183,
+            "hi": 0.6032267800204347
+          },
+          "Leak-or-Omit": {
+            "k": 9,
+            "n": 10,
+            "rate": 0.9,
+            "lo": 0.5958436145024278,
+            "hi": 0.9821242504842788
+          },
+          "Conveyance": {
+            "k": 29,
+            "n": 30,
+            "rate": 0.9666666666666667,
+            "lo": 0.8332924860304112,
+            "hi": 0.9940915620051425
+          },
+          "seg_leak": {
+            "k": 8,
+            "n": 9,
+            "rate": 0.8888888888888888,
+            "lo": 0.5649937852319399,
+            "hi": 0.9801096286728695
+          },
+          "seg_omit": {
+            "k": 12,
+            "n": 192,
+            "rate": 0.0625,
+            "lo": 0.03611029002738631,
+            "hi": 0.10605358118281621
+          },
+          "n_clusters": 10,
+          "descriptive_only": false
+        },
+        "public": {
+          "n_items": 4,
+          "leak_rate": null,
+          "committed_leak_rate": null,
+          "item_leak_rate": null,
+          "over_redaction": 0.0,
+          "summary_usefulness": 1.0,
+          "Leak": {
+            "k": 0,
+            "n": 0,
+            "rate": null,
+            "lo": null,
+            "hi": null
+          },
+          "Omit-Public": {
+            "k": 0,
+            "n": 4,
+            "rate": 0.0,
+            "lo": 0.0,
+            "hi": 0.48990002040399916
+          },
+          "Leak-or-Omit": {
+            "k": 0,
+            "n": 4,
+            "rate": 0.0,
+            "lo": 0.0,
+            "hi": 0.48990002040399916
+          },
+          "Conveyance": {
+            "k": 12,
+            "n": 12,
+            "rate": 1.0,
+            "lo": 0.7574992425007574,
+            "hi": 1.0
+          },
+          "seg_leak": {
+            "k": 0,
+            "n": 0,
+            "rate": null,
+            "lo": null,
+            "hi": null
+          },
+          "seg_omit": {
+            "k": 0,
+            "n": 77,
+            "rate": 0.0,
+            "lo": 3.469446951953614e-18,
+            "hi": 0.047520088667220836
+          },
+          "n_clusters": 4,
+          "descriptive_only": true
+        },
+        "ALL": {
+          "n_items": 40,
+          "leak_rate": 0.45901639344262296,
+          "committed_leak_rate": 0.45901639344262296,
+          "item_leak_rate": 0.5357142857142857,
+          "over_redaction": 0.03914590747330961,
+          "summary_usefulness": 0.9478260869565217,
+          "Leak": {
+            "k": 15,
+            "n": 28,
+            "rate": 0.5357142857142857,
+            "lo": 0.3581239514210167,
+            "hi": 0.7046869626034041
+          },
+          "Omit-Public": {
+            "k": 10,
+            "n": 40,
+            "rate": 0.25,
+            "lo": 0.14186967895549518,
+            "hi": 0.40194259066970106
+          },
+          "Leak-or-Omit": {
+            "k": 23,
+            "n": 40,
+            "rate": 0.575,
+            "lo": 0.42194800436059987,
+            "hi": 0.7149083147518411
+          },
+          "Conveyance": {
+            "k": 109,
+            "n": 115,
+            "rate": 0.9478260869565217,
+            "lo": 0.8908280962827254,
+            "hi": 0.9758717798549231
+          },
+          "seg_leak": {
+            "k": 28,
+            "n": 61,
+            "rate": 0.45901639344262296,
+            "lo": 0.3401273088828912,
+            "hi": 0.5827617006418584
+          },
+          "seg_omit": {
+            "k": 33,
+            "n": 843,
+            "rate": 0.03914590747330961,
+            "lo": 0.02800776199433306,
+            "hi": 0.054465276647131876
+          },
+          "n_clusters": 33,
+          "descriptive_only": false
+        }
+      },
+      "latency_per_segment_s": {
+        "mean": 0.015523118154433736,
+        "p50": 0.007646891999756917,
+        "p95": 0.018101231818119148
+      },
+      "by": {
+        "subtype": {
+          "contextual_confidential": {
+            "n_items": 2,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.07272727272727272,
+            "summary_usefulness": 0.0,
+            "Leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Omit-Public": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 4,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.48990002040399916
+            },
+            "seg_omit": {
+              "k": 4,
+              "n": 55,
+              "rate": 0.07272727272727272,
+              "lo": 0.028643596503688543,
+              "hi": 0.17260178091636796
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "cross_segment_pii": {
+            "n_items": 2,
+            "leak_rate": 1.0,
+            "committed_leak_rate": 1.0,
+            "item_leak_rate": 1.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 6,
+              "n": 6,
+              "rate": 1.0,
+              "lo": 0.6096569663469354,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 4,
+              "n": 4,
+              "rate": 1.0,
+              "lo": 0.5100999795960008,
+              "hi": 1.0
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 37,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.09406095745514377
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "ese_long_reactions": {
+            "n_items": 3,
+            "leak_rate": 0.46153846153846156,
+            "committed_leak_rate": 0.46153846153846156,
+            "item_leak_rate": 0.6666666666666666,
+            "over_redaction": 0.028985507246376812,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 2,
+              "n": 3,
+              "rate": 0.6666666666666666,
+              "lo": 0.2076549551264879,
+              "hi": 0.9385096847238394
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 3,
+              "rate": 0.3333333333333333,
+              "lo": 0.0614903152761605,
+              "hi": 0.7923450448735121
+            },
+            "Leak-or-Omit": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 8,
+              "n": 8,
+              "rate": 1.0,
+              "lo": 0.6755843804891231,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 6,
+              "n": 13,
+              "rate": 0.46153846153846156,
+              "lo": 0.2320575430148814,
+              "hi": 0.7085656756816796
+            },
+            "seg_omit": {
+              "k": 2,
+              "n": 69,
+              "rate": 0.028985507246376812,
+              "lo": 0.007985035233144928,
+              "hi": 0.09966773461265746
+            },
+            "n_clusters": 3,
+            "descriptive_only": true
+          },
+          "ese_short": {
+            "n_items": 3,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.029850746268656716,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 3,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.5615060804490177
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 3,
+              "rate": 0.3333333333333333,
+              "lo": 0.0614903152761605,
+              "hi": 0.7923450448735121
+            },
+            "Leak-or-Omit": {
+              "k": 1,
+              "n": 3,
+              "rate": 0.3333333333333333,
+              "lo": 0.0614903152761605,
+              "hi": 0.7923450448735121
+            },
+            "Conveyance": {
+              "k": 9,
+              "n": 9,
+              "rate": 1.0,
+              "lo": 0.7008472464490407,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 3,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.5615060804490177
+            },
+            "seg_omit": {
+              "k": 2,
+              "n": 67,
+              "rate": 0.029850746268656716,
+              "lo": 0.008224522347453904,
+              "hi": 0.10246750041883029
+            },
+            "n_clusters": 3,
+            "descriptive_only": true
+          },
+          "esie_long": {
+            "n_items": 2,
+            "leak_rate": 0.5,
+            "committed_leak_rate": 0.5,
+            "item_leak_rate": 0.5,
+            "over_redaction": 0.175,
+            "summary_usefulness": 0.6666666666666666,
+            "Leak": {
+              "k": 1,
+              "n": 2,
+              "rate": 0.5,
+              "lo": 0.09452865480086614,
+              "hi": 0.9054713451991339
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 2,
+              "rate": 0.5,
+              "lo": 0.09452865480086614,
+              "hi": 0.9054713451991339
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 4,
+              "n": 6,
+              "rate": 0.6666666666666666,
+              "lo": 0.29998832134152864,
+              "hi": 0.9032306674407831
+            },
+            "seg_leak": {
+              "k": 4,
+              "n": 8,
+              "rate": 0.5,
+              "lo": 0.21521252682444186,
+              "hi": 0.7847874731755582
+            },
+            "seg_omit": {
+              "k": 7,
+              "n": 40,
+              "rate": 0.175,
+              "lo": 0.08745302996883066,
+              "hi": 0.3195029205439244
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "esie_short": {
+            "n_items": 2,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Conveyance": {
+              "k": 6,
+              "n": 6,
+              "rate": 1.0,
+              "lo": 0.6096569663469354,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 4,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.48990002040399916
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 51,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.07004901388726806
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "fa_named_work": {
+            "n_items": 1,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 15,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.20388926630434784
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "fa_negated_cue": {
+            "n_items": 1,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 27,
+              "rate": 0.0,
+              "lo": 6.938893903907228e-18,
+              "hi": 0.12455903714463581
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "fa_public_lookalike": {
+            "n_items": 1,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 28,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.12064720365810762
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "fa_quoted_cue": {
+            "n_items": 1,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 22,
+              "rate": 0.0,
+              "lo": 1.3877787807814457e-17,
+              "hi": 0.14865952572596125
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "fa_record_sense": {
+            "n_items": 1,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 23,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.14312112541726274
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "implicit_health": {
+            "n_items": 1,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 19,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.16818436536845052
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "implicit_hr_performance": {
+            "n_items": 1,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 23,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.14312112541726274
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "implicit_layoffs": {
+            "n_items": 2,
+            "leak_rate": 0.6666666666666666,
+            "committed_leak_rate": 0.6666666666666666,
+            "item_leak_rate": 1.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 6,
+              "n": 6,
+              "rate": 1.0,
+              "lo": 0.6096569663469354,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 4,
+              "n": 6,
+              "rate": 0.6666666666666666,
+              "lo": 0.29998832134152864,
+              "hi": 0.9032306674407831
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 35,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.09890426758938868
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "implicit_legal": {
+            "n_items": 1,
+            "leak_rate": 1.0,
+            "committed_leak_rate": 1.0,
+            "item_leak_rate": 1.0,
+            "over_redaction": 0.13333333333333333,
+            "summary_usefulness": 0.6666666666666666,
+            "Leak": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Leak-or-Omit": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 2,
+              "n": 3,
+              "rate": 0.6666666666666666,
+              "lo": 0.2076549551264879,
+              "hi": 0.9385096847238394
+            },
+            "seg_leak": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "seg_omit": {
+              "k": 2,
+              "n": 15,
+              "rate": 0.13333333333333333,
+              "lo": 0.0373604698913593,
+              "hi": 0.3788249920651624
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "implicit_personal": {
+            "n_items": 1,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 28,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.12064720365810762
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "implicit_salary": {
+            "n_items": 1,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.2,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 1,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.7934567085261071
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Leak-or-Omit": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_omit": {
+              "k": 4,
+              "n": 20,
+              "rate": 0.2,
+              "lo": 0.0806563532712,
+              "hi": 0.41602172202575993
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "public_plain": {
+            "n_items": 4,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 4,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.48990002040399916
+            },
+            "Leak-or-Omit": {
+              "k": 0,
+              "n": 4,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.48990002040399916
+            },
+            "Conveyance": {
+              "k": 12,
+              "n": 12,
+              "rate": 1.0,
+              "lo": 0.7574992425007574,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 77,
+              "rate": 0.0,
+              "lo": 3.469446951953614e-18,
+              "hi": 0.047520088667220836
+            },
+            "n_clusters": 4,
+            "descriptive_only": true
+          },
+          "repair": {
+            "n_items": 2,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.021739130434782608,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 2,
+              "rate": 0.5,
+              "lo": 0.09452865480086614,
+              "hi": 0.9054713451991339
+            },
+            "Leak-or-Omit": {
+              "k": 1,
+              "n": 2,
+              "rate": 0.5,
+              "lo": 0.09452865480086614,
+              "hi": 0.9054713451991339
+            },
+            "Conveyance": {
+              "k": 6,
+              "n": 6,
+              "rate": 1.0,
+              "lo": 0.6096569663469354,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 1,
+              "n": 46,
+              "rate": 0.021739130434782608,
+              "lo": 0.0038477551112426345,
+              "hi": 0.11335554494333024
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "retro_count": {
+            "n_items": 2,
+            "leak_rate": 0.75,
+            "committed_leak_rate": 0.75,
+            "item_leak_rate": 1.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 6,
+              "n": 6,
+              "rate": 1.0,
+              "lo": 0.6096569663469354,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 3,
+              "n": 4,
+              "rate": 0.75,
+              "lo": 0.3006360524426366,
+              "hi": 0.9544139373553637
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 36,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.09642183044857634
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "retro_other_confirmed": {
+            "n_items": 2,
+            "leak_rate": 1.0,
+            "committed_leak_rate": 1.0,
+            "item_leak_rate": 1.0,
+            "over_redaction": 0.0,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Omit-Public": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 6,
+              "n": 6,
+              "rate": 1.0,
+              "lo": 0.6096569663469354,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "seg_omit": {
+              "k": 0,
+              "n": 41,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.08567044886890744
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "retro_other_refused": {
+            "n_items": 1,
+            "leak_rate": null,
+            "committed_leak_rate": null,
+            "item_leak_rate": null,
+            "over_redaction": 0.17647058823529413,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Leak-or-Omit": {
+              "k": 1,
+              "n": 1,
+              "rate": 1.0,
+              "lo": 0.20654329147389294,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 0,
+              "rate": null,
+              "lo": null,
+              "hi": null
+            },
+            "seg_omit": {
+              "k": 3,
+              "n": 17,
+              "rate": 0.17647058823529413,
+              "lo": 0.0619101371254899,
+              "hi": 0.41029929017375777
+            },
+            "n_clusters": 1,
+            "descriptive_only": true
+          },
+          "retro_topic": {
+            "n_items": 3,
+            "leak_rate": 1.0,
+            "committed_leak_rate": 1.0,
+            "item_leak_rate": 1.0,
+            "over_redaction": 0.15384615384615385,
+            "summary_usefulness": 0.8888888888888888,
+            "Leak": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 3,
+              "rate": 0.3333333333333333,
+              "lo": 0.0614903152761605,
+              "hi": 0.7923450448735121
+            },
+            "Leak-or-Omit": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 8,
+              "n": 9,
+              "rate": 0.8888888888888888,
+              "lo": 0.5649937852319399,
+              "hi": 0.9801096286728695
+            },
+            "seg_leak": {
+              "k": 3,
+              "n": 3,
+              "rate": 1.0,
+              "lo": 0.43849391955098227,
+              "hi": 1.0
+            },
+            "seg_omit": {
+              "k": 8,
+              "n": 52,
+              "rate": 0.15384615384615385,
+              "lo": 0.08007589590882647,
+              "hi": 0.2752434359154765
+            },
+            "n_clusters": 3,
+            "descriptive_only": true
+          }
+        },
+        "group": {
+          "confaide": {
+            "n_items": 2,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.07272727272727272,
+            "summary_usefulness": 0.0,
+            "Leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Omit-Public": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 4,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.48990002040399916
+            },
+            "seg_omit": {
+              "k": 4,
+              "n": 55,
+              "rate": 0.07272727272727272,
+              "lo": 0.028643596503688543,
+              "hi": 0.17260178091636796
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "seen-author": {
+            "n_items": 15,
+            "leak_rate": 0.46153846153846156,
+            "committed_leak_rate": 0.46153846153846156,
+            "item_leak_rate": 0.46153846153846156,
+            "over_redaction": 0.016129032258064516,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 6,
+              "n": 13,
+              "rate": 0.46153846153846156,
+              "lo": 0.2320575430148814,
+              "hi": 0.7085656756816796
+            },
+            "Omit-Public": {
+              "k": 2,
+              "n": 15,
+              "rate": 0.13333333333333333,
+              "lo": 0.0373604698913593,
+              "hi": 0.3788249920651624
+            },
+            "Leak-or-Omit": {
+              "k": 8,
+              "n": 15,
+              "rate": 0.5333333333333333,
+              "lo": 0.3011663015105079,
+              "hi": 0.7519077474025355
+            },
+            "Conveyance": {
+              "k": 44,
+              "n": 44,
+              "rate": 1.0,
+              "lo": 0.9197016822179859,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 12,
+              "n": 26,
+              "rate": 0.46153846153846156,
+              "lo": 0.28755582695234905,
+              "hi": 0.6454236379556988
+            },
+            "seg_omit": {
+              "k": 5,
+              "n": 310,
+              "rate": 0.016129032258064516,
+              "lo": 0.006908426626105869,
+              "hi": 0.03719535056595535
+            },
+            "n_clusters": 13,
+            "descriptive_only": false
+          },
+          "unseen-author": {
+            "n_items": 23,
+            "leak_rate": 0.5161290322580645,
+            "committed_leak_rate": 0.5161290322580645,
+            "item_leak_rate": 0.6923076923076923,
+            "over_redaction": 0.0502092050209205,
+            "summary_usefulness": 0.9420289855072463,
+            "Leak": {
+              "k": 9,
+              "n": 13,
+              "rate": 0.6923076923076923,
+              "lo": 0.4236888781333764,
+              "hi": 0.8731950283838191
+            },
+            "Omit-Public": {
+              "k": 6,
+              "n": 23,
+              "rate": 0.2608695652173913,
+              "lo": 0.1254844588924897,
+              "hi": 0.4647039054375056
+            },
+            "Leak-or-Omit": {
+              "k": 13,
+              "n": 23,
+              "rate": 0.5652173913043478,
+              "lo": 0.3681104930501695,
+              "hi": 0.7436563166780135
+            },
+            "Conveyance": {
+              "k": 65,
+              "n": 69,
+              "rate": 0.9420289855072463,
+              "lo": 0.8602055747557683,
+              "hi": 0.9772279796966324
+            },
+            "seg_leak": {
+              "k": 16,
+              "n": 31,
+              "rate": 0.5161290322580645,
+              "lo": 0.34840118286973176,
+              "hi": 0.6803001396872117
+            },
+            "seg_omit": {
+              "k": 24,
+              "n": 478,
+              "rate": 0.0502092050209205,
+              "lo": 0.033969378971803604,
+              "hi": 0.07362116530664807
+            },
+            "n_clusters": 21,
+            "descriptive_only": false
+          }
+        },
+        "domain": {
+          "ami": {
+            "n_items": 16,
+            "leak_rate": 0.4166666666666667,
+            "committed_leak_rate": 0.4166666666666667,
+            "item_leak_rate": 0.5454545454545454,
+            "over_redaction": 0.0056657223796034,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 6,
+              "n": 11,
+              "rate": 0.5454545454545454,
+              "lo": 0.28008775568998817,
+              "hi": 0.7872904245601196
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 16,
+              "rate": 0.0625,
+              "lo": 0.01111905730833121,
+              "hi": 0.2832926836802987
+            },
+            "Leak-or-Omit": {
+              "k": 7,
+              "n": 16,
+              "rate": 0.4375,
+              "lo": 0.2309836333518552,
+              "hi": 0.6682180439322347
+            },
+            "Conveyance": {
+              "k": 47,
+              "n": 47,
+              "rate": 1.0,
+              "lo": 0.9244398288016114,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 10,
+              "n": 24,
+              "rate": 0.4166666666666667,
+              "lo": 0.24467347246538232,
+              "hi": 0.6116566235061137
+            },
+            "seg_omit": {
+              "k": 2,
+              "n": 353,
+              "rate": 0.0056657223796034,
+              "lo": 0.0015550904171125826,
+              "hi": 0.020419925948692304
+            },
+            "n_clusters": 14,
+            "descriptive_only": false
+          },
+          "committee": {
+            "n_items": 9,
+            "leak_rate": 0.375,
+            "committed_leak_rate": 0.375,
+            "item_leak_rate": 0.5714285714285714,
+            "over_redaction": 0.1497005988023952,
+            "summary_usefulness": 0.8518518518518519,
+            "Leak": {
+              "k": 4,
+              "n": 7,
+              "rate": 0.5714285714285714,
+              "lo": 0.2504542304090258,
+              "hi": 0.8417830777373732
+            },
+            "Omit-Public": {
+              "k": 6,
+              "n": 9,
+              "rate": 0.6666666666666666,
+              "lo": 0.35419734749908977,
+              "hi": 0.879418401317257
+            },
+            "Leak-or-Omit": {
+              "k": 8,
+              "n": 9,
+              "rate": 0.8888888888888888,
+              "lo": 0.5649937852319399,
+              "hi": 0.9801096286728695
+            },
+            "Conveyance": {
+              "k": 23,
+              "n": 27,
+              "rate": 0.8518518518518519,
+              "lo": 0.6752093665317052,
+              "hi": 0.9408416814035512
+            },
+            "seg_leak": {
+              "k": 6,
+              "n": 16,
+              "rate": 0.375,
+              "lo": 0.18480982554752806,
+              "hi": 0.613593529020652
+            },
+            "seg_omit": {
+              "k": 25,
+              "n": 167,
+              "rate": 0.1497005988023952,
+              "lo": 0.10350039506050464,
+              "hi": 0.21165469597118786
+            },
+            "n_clusters": 8,
+            "descriptive_only": true
+          },
+          "confaide": {
+            "n_items": 2,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.07272727272727272,
+            "summary_usefulness": 0.0,
+            "Leak": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "Omit-Public": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Leak-or-Omit": {
+              "k": 2,
+              "n": 2,
+              "rate": 1.0,
+              "lo": 0.34237195288961925,
+              "hi": 1.0
+            },
+            "Conveyance": {
+              "k": 0,
+              "n": 2,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.6576280471103807
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 4,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.48990002040399916
+            },
+            "seg_omit": {
+              "k": 4,
+              "n": 55,
+              "rate": 0.07272727272727272,
+              "lo": 0.028643596503688543,
+              "hi": 0.17260178091636796
+            },
+            "n_clusters": 2,
+            "descriptive_only": true
+          },
+          "icsi": {
+            "n_items": 13,
+            "leak_rate": 0.7058823529411765,
+            "committed_leak_rate": 0.7058823529411765,
+            "item_leak_rate": 0.625,
+            "over_redaction": 0.007462686567164179,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 5,
+              "n": 8,
+              "rate": 0.625,
+              "lo": 0.30573785458380187,
+              "hi": 0.863158240538479
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 13,
+              "rate": 0.07692307692307693,
+              "lo": 0.013710066379696323,
+              "hi": 0.3331453392824736
+            },
+            "Leak-or-Omit": {
+              "k": 6,
+              "n": 13,
+              "rate": 0.46153846153846156,
+              "lo": 0.2320575430148814,
+              "hi": 0.7085656756816796
+            },
+            "Conveyance": {
+              "k": 39,
+              "n": 39,
+              "rate": 1.0,
+              "lo": 0.9103301463997611,
+              "hi": 1.0
+            },
+            "seg_leak": {
+              "k": 12,
+              "n": 17,
+              "rate": 0.7058823529411765,
+              "lo": 0.468664666737861,
+              "hi": 0.8672020613444361
+            },
+            "seg_omit": {
+              "k": 2,
+              "n": 268,
+              "rate": 0.007462686567164179,
+              "lo": 0.002048886256963065,
+              "hi": 0.026797324183234463
+            },
+            "n_clusters": 9,
+            "descriptive_only": false
+          }
+        },
+        "difficulty": {
+          "easy": {
+            "n_items": 7,
+            "leak_rate": 0.0,
+            "committed_leak_rate": 0.0,
+            "item_leak_rate": 0.0,
+            "over_redaction": 0.013888888888888888,
+            "summary_usefulness": 1.0,
+            "Leak": {
+              "k": 0,
+              "n": 3,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.5615060804490177
+            },
+            "Omit-Public": {
+              "k": 1,
+              "n": 7,
+              "rate": 0.14285714285714285,
+              "lo": 0.02567895594897479,
+              "hi": 0.51313450331903
+            },
+            "Leak-or-Omit": {
+              "k": 1,
+              "n": 7,
+              "rate": 0.14285714285714285,
+              "lo": 0.02567895594897479,
+              "hi": 0.51313450331903
+            },
+            "Conveyance": {
+              "k": 21,
+              "n": 21,
+              "rate": 1.0,
+              "lo": 0.8453561767357979,
+              "hi": 0.9999999999999999
+            },
+            "seg_leak": {
+              "k": 0,
+              "n": 3,
+              "rate": 0.0,
+              "lo": 0.0,
+              "hi": 0.5615060804490177
+            },
+            "seg_omit": {
+              "k": 2,
+              "n": 144,
+              "rate": 0.013888888888888888,
+              "lo": 0.003817054691554883,
+              "hi": 0.04922349681762791
+            },
+            "n_clusters": 7,
+            "descriptive_only": true
+          },
+          "hard": {
+            "n_items": 14,
+            "leak_rate": 0.5333333333333333,
+            "committed_leak_rate": 0.5333333333333333,
+            "item_leak_rate": 0.6153846153846154,
+            "over_redaction": 0.05818181818181818,
+            "summary_usefulness": 0.9285714285714286,
+            "Leak": {
+              "k": 8,
+              "n": 13,
+              "rate": 0.6153846153846154,
+              "lo": 0.35522480972268555,
+              "hi": 0.8229055341876319
+            },
+            "Omit-Public": {
+              "k": 4,
+              "n": 14,
+              "rate": 0.2857142857142857,
+              "lo": 0.11721187910109099,
+              "hi": 0.5464954117248438
+            },
+            "Leak-or-Omit": {
+              "k": 11,
+              "n": 14,
+              "rate": 0.7857142857142857,
+              "lo": 0.5241027622679172,
+              "hi": 0.9242875166308363
+            },
+            "Conveyance": {
+              "k": 39,
+              "n": 42,
+              "rate": 0.9285714285714286,
+              "lo": 0.8099028671147483,
+              "hi": 0.9754100364488272
+            },
+            "seg_leak": {
+              "k": 16,
+              "n": 30,
+              "rate": 0.5333333333333333,
+              "lo": 0.3614201328152505,
+              "hi": 0.6976787277587178
+            },
+            "seg_omit": {
+              "k": 16,
+              "n": 275,
+              "rate": 0.05818181818181818,
+              "lo": 0.03612652507223014,
+              "hi": 0.09241096718143646
+            },
+            "n_clusters": 13,
+            "descriptive_only": false
+          },
+          "medium": {
+            "n_items": 19,
+            "leak_rate": 0.42857142857142855,
+            "committed_leak_rate": 0.42857142857142855,
+            "item_leak_rate": 0.5833333333333334,
+            "over_redaction": 0.03537735849056604,
+            "summary_usefulness": 0.9423076923076923,
+            "Leak": {
+              "k": 7,
+              "n": 12,
+              "rate": 0.5833333333333334,
+              "lo": 0.3195073356553728,
+              "hi": 0.8067425380947535
+            },
+            "Omit-Public": {
+              "k": 5,
+              "n": 19,
+              "rate": 0.2631578947368421,
+              "lo": 0.11806238339540162,
+              "hi": 0.48791968441070643
+            },
+            "Leak-or-Omit": {
+              "k": 11,
+              "n": 19,
+              "rate": 0.5789473684210527,
+              "lo": 0.36275551465160105,
+              "hi": 0.7685837960796962
+            },
+            "Conveyance": {
+              "k": 49,
+              "n": 52,
+              "rate": 0.9423076923076923,
+              "lo": 0.8435724442484082,
+              "hi": 0.9801861873094267
+            },
+            "seg_leak": {
+              "k": 12,
+              "n": 28,
+              "rate": 0.42857142857142855,
+              "lo": 0.2650829618073122,
+              "hi": 0.609295210143846
+            },
+            "seg_omit": {
+              "k": 15,
+              "n": 424,
+              "rate": 0.03537735849056604,
+              "lo": 0.02155419524069463,
+              "hi": 0.05754423745028259
+            },
+            "n_clusters": 17,
+            "descriptive_only": false
+          }
+        }
+      },
+      "stages": {
+        "private_leaked": {
+          "hold_elapsed": 28
+        },
+        "private_blocked": {
+          "cue": 5,
+          "scope": 21,
+          "confirm": 7
+        },
+        "public_lost": {
+          "scope": 22,
+          "confirm": 8,
+          "cue": 2,
+          "flush": 1
+        }
+      }
+    }
+  },
+  "pairwise": []
+}

@@ -3,157 +3,128 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Off The Record - meeting</title>
+<title>Off The Record - operator console</title>
+<link rel="stylesheet" href="/static/views.css">
 <style>
 :root {
-  --bg: #0d1117; --panel: #151b23; --panel2: #1c2430; --line: #2a3441; --text: #eaf0f6; --dim: #9aa7b6;
-  --green: #3fb950; --red: #f85149; --amber: #f0b429; --blue: #58a6ff; --grey: #8b97a7;
+  --font: "Google Sans", Roboto, "Segoe UI", Arial, sans-serif;
+  --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px;
+  --r-tile: 8px; --r-btn: 4px;
+  --bg: #202124; --panel: #292a2d; --panel2: #3c4043; --line: #5f6368; --text: #e8eaed; --dim: #9aa0a6;
+  --green: #81c995; --red: #f28b82; --amber: #fdd663; --blue: #8ab4f8; --grey: #9aa0a6;
+  /* tokens for the shared Insights / Explainability views (views.css), dark here */
+  --v-panel: #292a2d; --v-panel2: #3c4043; --v-line: #5f6368; --v-text: #e8eaed; --v-dim: #9aa0a6;
+  --v-ok: #81c995; --v-out: #f28b82; --v-wait: #fdd663; --v-idle: #9aa0a6; --v-accent: #8ab4f8;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
-body { background: var(--bg); color: var(--text); font: 18px/1.45 system-ui, "Segoe UI", sans-serif; display: flex; flex-direction: column; overflow: hidden; }
-button { font: inherit; font-size: 15px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 7px 16px; cursor: pointer; }
-button:hover { border-color: var(--blue); }
-:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+body { background: var(--bg); color: var(--text); font: 400 14px/1.5 var(--font); display: flex; flex-direction: column; overflow: hidden; }
+button { font: inherit; background: var(--panel2); color: var(--text); border: 1px solid transparent; border-radius: var(--r-btn); padding: 8px 16px; cursor: pointer; font-weight: 500; }
+button:hover { background: #4a4e51; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
 /* ---- top bar */
-#topbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; flex-wrap: wrap; }
-#topbar h1 { font-size: 18px; margin: 0; font-weight: 600; color: var(--dim); letter-spacing: .02em; }
+#topbar { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); flex-wrap: wrap; min-height: 56px; }
+#topbar h1 { font-size: 18px; margin: 0; font-weight: 400; color: var(--dim); }
 .spacer { flex: 1; }
-#status-pill { font-weight: 800; letter-spacing: .08em; font-size: 15px; padding: 6px 16px; border-radius: 999px; border: 2px solid; display: inline-flex; align-items: center; gap: 8px; }
-#status-pill::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
-#status-pill.ON { color: var(--green); background: #3fb95022; }
-#status-pill.OFF { color: var(--red); background: #f8514922; }
-#status-pill.PENDING_CONFIRM { color: var(--amber); background: #f0b42922; }
-#status-pill.PENDING_CONFIRM::before { animation: pulse 1.1s ease-in-out infinite; }
-#live-btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
-#live-btn .ldot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
-#live-btn.behind { border-color: var(--amber); color: var(--amber); }
-#live-btn.behind .ldot { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
-#live-btn.flash { box-shadow: 0 0 0 4px #3fb95066; }
-#live-count { background: var(--amber); color: #1a1300; border-radius: 999px; padding: 0 8px; font-size: 13px; font-weight: 800; }
-#settings-btn { padding: 7px 12px; }
-@keyframes pulse { 50% { transform: scale(1.5); opacity: .5; } }
+#view-tabs { display: inline-flex; gap: var(--s1); }
+.view-tab { background: transparent; }
+.view-tab[aria-selected="true"] { background: #4a4e51; color: var(--text); }
+#status-pill { display: inline-flex; align-items: center; gap: var(--s2); color: var(--text); }
+#status-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+#status-pill.OFF::before { background: var(--red); }
+#status-pill.PENDING_CONFIRM::before { background: var(--amber); }
+#live-btn { display: inline-flex; align-items: center; gap: var(--s2); }
+#live-btn .ldot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+#live-btn.behind .ldot { background: var(--amber); }
+#live-count { color: var(--dim); font-weight: 400; }
 
 /* ---- banner */
-#banner { display: none; background: var(--red); color: #fff; font-weight: 700; padding: 8px 20px; text-align: center; }
-#banner.warn { background: var(--amber); color: #1a1300; }
+#banner { display: none; background: #5c2b29; color: var(--text); padding: var(--s2) var(--s3); text-align: center; }
+#banner.warn { background: #4a4e51; }
 
-/* ---- meeting view */
-#meeting { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 4px 20px 20px; }
-#tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
-#tiles .empty { grid-column: 1 / -1; color: var(--dim); padding: 30px 0; text-align: center; }
-.tile { position: relative; background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 16px 10px 12px; text-align: center; transition: box-shadow .2s, border-color .2s; }
-.tile .av { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 750; color: #0d1117; background: var(--c, var(--blue)); }
-.tile .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tile .mic { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; border-radius: 50%; background: var(--green); }
-.tile .mic.paused { background: var(--grey); }
-.tile .mic.wait { background: var(--amber); }
-.tile .mic.paused::after { content: ""; position: absolute; left: -2px; right: -2px; top: 6px; height: 2px; background: var(--bg); transform: rotate(-40deg); }
-.tile.speaking { border-color: var(--c, var(--blue)); box-shadow: 0 0 0 4px var(--c, var(--blue)); animation: ring 1s ease-in-out infinite; }
-@keyframes ring { 50% { box-shadow: 0 0 0 9px #ffffff22; } }
+/* ---- Realtime view */
+#meeting { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s1) var(--s2) var(--s2); }
+#tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); grid-auto-rows: 132px; gap: var(--s2); }
+#tiles .empty { grid-column: 1 / -1; color: var(--dim); padding: var(--s4) 0; text-align: center; }
+.tile { position: relative; background: var(--panel2); border-radius: var(--r-tile); overflow: hidden; }
+.tile .av { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #202124; background: var(--c, var(--blue)); }
+.tile .nm { position: absolute; left: var(--s2); bottom: var(--s2); max-width: calc(100% - 16px); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .mic { position: absolute; top: var(--s2); right: var(--s2); width: 28px; height: 28px; border-radius: 50%; background: rgba(32, 33, 36, .7); display: grid; place-items: center; color: var(--text); }
+.tile .mic svg { width: 16px; height: 16px; display: block; }
+.tile .mic .off { display: none; }
+.tile .mic.paused .on, .tile .mic.wait .on { display: none; }
+.tile .mic.paused .off, .tile .mic.wait .off { display: block; }
+.tile .mic.wait { color: var(--amber); }
+.tile.speaking { outline: 2px solid var(--c, var(--blue)); outline-offset: -2px; }
 
-#caption-wrap { flex: 1; min-height: 120px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; min-height: 0; }
-#captions { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px; display: flex; flex-direction: column; justify-content: flex-start; }
-.cap { padding: 6px 0; font-size: 1.15em; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-.cap .who { font-weight: 700; }
-.cap .why { margin-left: auto; font-size: 13px; padding: 2px 10px; opacity: .65; }
-.cap:hover .why, .cap .why:focus { opacity: 1; }
-.qchip { display: inline-block; font-size: 14px; color: var(--dim); border: 1px dashed var(--grey); border-radius: 999px; padding: 1px 12px; }
-.cap.out { opacity: .85; }
-.cap-empty { color: var(--dim); font-style: italic; margin: auto; }
+#caption-wrap { flex: 1; min-height: 120px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tile); }
+#captions { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s2) var(--s3); display: flex; flex-direction: column; justify-content: flex-start; }
+.cap { padding: var(--s1) 0; font-size: 16px; display: flex; gap: var(--s2); align-items: baseline; flex-wrap: wrap; }
+.cap .who { font-weight: 500; }
+.cap-empty { color: var(--dim); margin: auto; }
 
-#pendcard { display: none; border: 2px solid var(--amber); background: #f0b42914; border-radius: 14px; padding: 12px 16px; }
-#pendcard .q { color: var(--amber); font-weight: 750; font-size: 1.05em; }
-#pendcard .t { margin: 6px 0; padding: 6px 10px; background: var(--panel2); border-radius: 8px; }
-#pendcard .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-#pendcard button.yes { border-color: var(--amber); color: var(--amber); font-weight: 750; background: #f0b42933; }
-#pendcard button.no { border-color: var(--amber); color: var(--amber); font-weight: 750; }
-kbd { font: 12px ui-monospace, Consolas, monospace; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
-
-/* ---- slide-over + modal */
-.scrim { position: fixed; inset: 0; background: #000a; z-index: 20; }
-#insights-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 100vw); background: var(--panel); border-left: 1px solid var(--line); z-index: 30; display: flex; flex-direction: column; transform: translateX(0); transition: transform .2s; }
-#insights-panel[hidden] { display: none; }
-.phead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
-.phead h2 { margin: 0; font-size: 20px; flex: 1; }
-.pbody { flex: 1; overflow-y: auto; padding: 14px 18px 24px; }
-.pbody h3 { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin: 20px 0 8px; }
-.pbody h3:first-child { margin-top: 0; }
-.counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.count { background: var(--panel2); border-radius: 10px; padding: 8px; text-align: center; border-top: 4px solid var(--grey); }
-.count b { display: block; font-size: 26px; }
-.count span { font-size: 12px; color: var(--dim); }
-.count.c-ok { border-color: var(--green); } .count.c-out { border-color: var(--red); } .count.c-wait { border-color: var(--amber); }
-#timeline { width: 100%; height: 44px; display: block; background: var(--panel2); border-radius: 8px; }
-.tl-legend { display: flex; gap: 14px; font-size: 13px; color: var(--dim); margin-top: 6px; flex-wrap: wrap; }
-.tl-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
-.item { background: var(--panel2); border-left: 4px solid var(--green); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-.item.out { border-color: var(--red); }
-.item.wait { border-color: var(--amber); }
-.item .who { font-weight: 700; }
-.item .meta { color: var(--dim); font-size: 13px; width: 100%; }
-.item .lbl { font-weight: 650; }
-.item .why, .cap .why { margin-left: auto; font-size: 13px; padding: 2px 10px; }
-.empty { color: var(--dim); font-style: italic; }
+#pendcard { display: none; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-tile); padding: var(--s2) var(--s3) var(--s3); }
+#pendcard .q { font-weight: 500; font-size: 16px; }
+#pendcard .t { margin: var(--s2) 0; padding: var(--s2) var(--s3); background: var(--panel2); border-radius: var(--r-btn); }
+#pendcard .row { display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; margin-top: var(--s2); }
+#pendcard button.yes { background: var(--blue); color: #062e6f; }
+kbd { font: 12px ui-monospace, Consolas, monospace; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 .dim { color: var(--dim); }
 
-#explain-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(620px, calc(100vw - 24px)); max-height: calc(100vh - 32px); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; z-index: 50; display: flex; flex-direction: column; }
-#explain-scrim { z-index: 45; }
-.trail { list-style: none; padding: 0; margin: 0; }
-.trail li { background: var(--panel2); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
-.trail li b { display: block; }
-.trail li span { color: var(--dim); font-size: 15px; }
-.tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); margin-left: 6px; }
-.hold-tl { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 15px; }
-.hold-tl .step { background: var(--panel2); border-radius: 8px; padding: 4px 10px; }
-.hold-tl .arrow { color: var(--dim); }
-#explain-text { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--amber); border-radius: 8px; background: #f0b42912; white-space: pre-wrap; }
+/* ---- Insights and Explainability views (content styled by views.css) */
+.views-pane { flex: 1; min-height: 0; overflow-y: auto; margin: var(--s1) var(--s2) var(--s2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tile); padding: var(--s3) var(--s4) var(--s4); }
+.views-pane > h2 { margin: 0 0 var(--s2); font-size: 18px; font-weight: 400; }
 
 /* ---- settings menu */
-#settings-menu { position: fixed; top: 58px; right: 16px; width: min(400px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; z-index: 40; padding: 14px 16px; }
-#settings-menu h3 { margin: 14px 0 6px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+#settings-menu { position: fixed; top: 56px; right: var(--s3); width: min(400px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-tile); z-index: 40; padding: var(--s3); }
+#settings-menu h3 { margin: var(--s3) 0 var(--s1); font-size: 14px; font-weight: 500; }
 #settings-menu h3:first-child { margin-top: 0; }
-#settings-menu .line { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
-#settings-menu input[type=text] { font: inherit; font-size: 15px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-width: 0; }
+#settings-menu .line { display: flex; gap: var(--s2); align-items: center; margin-bottom: var(--s1); }
+#settings-menu input[type=text] { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-btn); padding: 6px 8px; min-width: 0; }
 #spk { width: 110px; } #line { flex: 1; }
 #hold { flex: 1; }
-.health { font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--dim); }
-.health b { color: var(--text); }
+.health { font: 12px/1.5 ui-monospace, Consolas, monospace; color: var(--dim); }
+.health b { color: var(--text); font-weight: 500; }
 #audit { max-height: 180px; overflow-y: auto; font: 12px/1.4 ui-monospace, Consolas, monospace; color: var(--dim); }
-#audit div { border-bottom: 1px solid #ffffff0d; padding: 2px 0; }
+#audit div { border-top: 1px solid var(--panel2); padding: 2px 0; }
 
-body.presenter { font-size: 26px; }
-body.presenter .cap { font-size: 1.25em; }
-body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
+body.presenter { font-size: 22px; }
+body.presenter .cap { font-size: 28px; }
+body.presenter .tile .av { width: 80px; height: 80px; font-size: 32px; }
 
-@media (max-width: 700px) { .counts { grid-template-columns: repeat(2, 1fr); } }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .tile.speaking { box-shadow: 0 0 0 6px var(--c, var(--blue)); }
-}
+@media (max-width: 700px) { .iv-tiles { grid-template-columns: repeat(2, 1fr); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
 <header id="topbar">
   <h1>Off The Record</h1>
-  <span id="status-pill" class="ON" role="status" aria-live="polite" aria-label="Recording status">RECORDING</span>
+  <div id="view-tabs" role="tablist" aria-label="Views">
+    <button id="tab-realtime" class="view-tab" role="tab" aria-selected="true" aria-controls="meeting" data-view="realtime">Realtime</button>
+    <button id="tab-insights" class="view-tab" role="tab" aria-selected="false" aria-controls="view-insights" data-view="insights" tabindex="-1">Insights</button>
+    <button id="tab-explain" class="view-tab" role="tab" aria-selected="false" aria-controls="view-explain" data-view="explain" tabindex="-1">Explainability</button>
+  </div>
+  <span id="status-pill" class="ON" role="status" aria-live="polite" aria-label="Recording status">Recording</span>
   <span class="spacer"></span>
   <button id="live-btn" aria-label="Live: jump back to the real-time meeting"><i class="ldot"></i>Live<span id="live-count" hidden>0</span></button>
-  <button id="insights-btn" aria-haspopup="dialog" aria-controls="insights-panel">Insights</button>
-  <button id="settings-btn" aria-haspopup="true" aria-expanded="false" aria-controls="settings-menu" aria-label="Settings">&#9881;</button>
+  <button id="settings-btn" aria-haspopup="true" aria-expanded="false" aria-controls="settings-menu" aria-label="Settings">Settings</button>
 </header>
 <div id="banner" role="alert"></div>
+<div id="announce" class="sr" role="status" aria-live="polite"></div>
 
-<main id="meeting" aria-label="Meeting">
+<main id="meeting" role="tabpanel" aria-labelledby="tab-realtime" aria-label="Meeting">
   <div id="tiles" aria-label="Participants"><div class="empty">Waiting for the meeting to start...</div></div>
   <div id="pendcard" role="group" aria-label="Confirmation needed"></div>
   <div id="caption-wrap">
     <div id="captions" aria-label="Live captions" aria-live="off" tabindex="0"><div class="cap-empty">Captions appear here once lines are approved for the notes.</div></div>
   </div>
 </main>
+
+<section id="view-insights" class="views-pane" role="tabpanel" aria-labelledby="tab-insights" hidden></section>
+<section id="view-explain" class="views-pane" role="tabpanel" aria-labelledby="tab-explain" hidden></section>
 
 <div id="settings-menu" hidden role="region" aria-label="Settings">
   <h3>Hold</h3>
@@ -168,40 +139,19 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     <div>state <b id="hstate">-</b> | queue <b id="hq">0</b> | last push <b id="hlat">-</b> | pushes <b id="hpush">0</b> | errors <b id="herr">0</b> | dropped <b id="hdrop">0</b></div>
     <div id="hlast"></div>
   </div>
-  <h3>Audit log (no private text)</h3>
+  <h3>Audit log, no private text</h3>
   <div id="audit"></div>
 </div>
 
-<div class="scrim" id="insights-scrim" hidden></div>
-<aside id="insights-panel" role="dialog" aria-modal="true" aria-labelledby="insights-title" hidden>
-  <div class="phead"><h2 id="insights-title" tabindex="-1">Insights</h2><button id="insights-close" aria-label="Close insights">Close</button></div>
-  <div class="pbody">
-    <h3>Counts</h3>
-    <div class="counts">
-      <div class="count c-ok"><b id="n-committed">0</b><span>committed</span></div>
-      <div class="count c-out"><b id="n-out">0</b><span>kept out</span></div>
-      <div class="count c-wait"><b id="n-await">0</b><span>awaiting</span></div>
-      <div class="count"><b id="n-held">0</b><span>held</span></div>
-    </div>
-    <h3>Recording state over time</h3>
-    <svg id="timeline" viewBox="0 0 600 44" preserveAspectRatio="none" role="img" aria-label="Recording state over time"></svg>
-    <div class="tl-legend"><span><i style="background:var(--green)"></i>recording</span><span><i style="background:var(--red)"></i>off the record</span><span><i style="background:var(--amber)"></i>needs your OK</span><span id="tl-range"></span></div>
-    <h3>Final notes</h3>
-    <div id="notes-list"></div>
-    <h3>Kept out (no text shown)</h3>
-    <div id="out-list"></div>
-  </div>
-</aside>
-
-<div class="scrim" id="explain-scrim" hidden></div>
-<section id="explain-panel" role="dialog" aria-modal="true" aria-labelledby="explain-title" hidden>
-  <div class="phead"><h2 id="explain-title" tabindex="-1">Why was this decided?</h2><button id="explain-close" aria-label="Close explanation">Close</button></div>
-  <div class="pbody" id="explain-body"></div>
-</section>
-
+<script src="/static/categories.js"></script>
+<script src="/static/views.js"></script>
 <script>
 (function () {
   "use strict";
+  // Operator console for the replay and shared-stream modes (python -m demo.server --source replay | livekit-stream).
+  // The operator is the owner of this data, so "Reveal text" exists here and ONLY here. Consent mode is a
+  // different page (live.html) that is never sent text which was kept out.
+  var V = window.OTRViews;
   var $ = function (id) { return document.getElementById(id); };
   var COLORS = ["#58a6ff", "#d2a8ff", "#ffa657", "#7ee787", "#ff7b72", "#79c0ff", "#e3b341", "#f778ba"];
   var speakerColor = {};
@@ -215,80 +165,20 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     if (text != null) e.textContent = text;
     return e;
   }
-  function svgEl(tag, attrs) {
-    var e = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
-    return e;
-  }
   function post(url, body) {
     return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   }
+  var MIC_ICONS = '<svg class="on" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3m5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>' +
+    '<svg class="off" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
   function perf() { return performance.now() / 1000; }
-  function fmt(t) {
-    t = Math.max(0, Math.round(t || 0));
-    return Math.floor(t / 60) + ":" + (t % 60 < 10 ? "0" : "") + (t % 60);
-  }
-  function secs(x) { return (Math.round(x * 10) / 10).toFixed(1) + " s"; }
   function initials(name) {
     var p = String(name || "?").trim().split(/\s+/);
     return ((p[0] || "?")[0] + (p.length > 1 ? p[1][0] : "")).toUpperCase();
   }
-
-  // ------------------------------------------------------------------ reason codes
-  var CUE_NAMES = {
-    off_the_record: 'You said "off the record"',
-    between_us: 'You said "between us"',
-    scope_end: "The off-the-record stretch ended",
-    scope_end_meta: "The line that closed the private stretch had no real content, so it was dropped",
-    retro_meta: 'The "strike that" request itself is never kept'
-  };
-  // Returns {title, detail, engine}; engine is "rule", "llm" or "" (unknown).
-  function describe(code) {
-    if (!code) return null;
-    var i = code.indexOf(":"), head = i < 0 ? code : code.slice(0, i), rest = i < 0 ? "" : code.slice(i + 1);
-    var human = rest.replace(/_/g, " ");
-    if (head === "cue") {
-      var known = CUE_NAMES[rest];
-      return { title: known || ('Cue phrase "' + human + '"'),
-        detail: known ? "A spoken cue changed what is recorded (cue:" + rest + ")."
-          : "A spoken cue phrase opened a private stretch (cue:" + rest + ").", engine: "rule" };
-    }
-    if (head === "scope") return { title: "Said during an off-the-record stretch", detail: "An earlier cue switched recording off and nothing had ended it yet (scope:off).", engine: "rule" };
-    if (head === "retro") return { title: 'A later "strike that" removed it', detail: "A retraction request matched this line (" + rest + ").", engine: "rule" };
-    if (head === "kw") return { title: "Sensitive keyword: " + human, detail: "A keyword rule flagged this topic and asked for your OK (" + code + ").", engine: "rule" };
-    if (head === "llm") return { title: "Judged sensitive: " + human, detail: "The language model classified this line as sensitive (" + code + ").", engine: "llm" };
-    if (head === "presidio") return { title: "Personal details masked (" + rest.replace(/,/g, ", ") + ")", detail: "A PII detector replaced these details before the line entered the notes.", engine: "rule" };
-    if (head === "implicit_end") return { title: "The private stretch ended on its own (" + human + ")", detail: "No explicit cue; the conversation moved on (" + code + "). This check can consult the LLM when one is configured.", engine: "rule" };
-    if (head === "hold_elapsed") return { title: "Hold window passed, nothing flagged it", detail: "The line waited in the hold buffer and was released to the notes.", engine: "rule" };
-    if (head === "flush") {
-      if (rest === "unconfirmed") return { title: "Never confirmed, so kept out at the end", detail: "The meeting ended while a confirmation was still open (flush:unconfirmed).", engine: "rule" };
-      if (rest === "unresolved_scope") return { title: "Private stretch never ended", detail: "The meeting ended while recording was still off (flush:unresolved_scope).", engine: "rule" };
-      return { title: "Released when the meeting ended", detail: "Remaining held lines were released on flush.", engine: "rule" };
-    }
-    if (head === "confirm") {
-      var m = { keep_out: "You answered yes: keep it out", keep_in: "You answered no: keep it in", related: "Related to a line you kept out" };
-      return { title: m[rest] || ("Confirmation: " + human), detail: "Decided by an answer to the confirmation question (" + code + ").", engine: "rule" };
-    }
-    return { title: code, detail: "Unrecognized reason code, shown raw.", engine: "" };
+  function announce(msg) {
+    var a = $("announce"); a.textContent = "";
+    setTimeout(function () { a.textContent = msg; }, 30);
   }
-  function keptLabel(reason, kind) {
-    var r = reason || "", i = r.indexOf(":"), head = i < 0 ? r : r.slice(0, i), rest = i < 0 ? "" : r.slice(i + 1);
-    if (kind === "retro_removed" || head === "retro") return 'Retracted ("strike that")';
-    if (r === "cue:retro_meta") return 'Retraction request ("strike that")';
-    if (r === "cue:scope_end_meta") return "Closing remark of a private stretch";
-    if (head === "cue") return "Off the record (you said so)";
-    if (head === "scope") return "Off the record (private stretch)";
-    if (head === "kw" || head === "llm") return "Sensitive: " + rest.replace(/_/g, " ");
-    if (head === "presidio") return "Contact details masked";
-    if (r === "confirm:keep_out") return "Sensitive, kept out (you said yes)";
-    if (r === "confirm:related") return "Related to a protected item";
-    if (r === "flush:unconfirmed") return "Never confirmed, kept out at the end";
-    if (r === "flush:unresolved_scope") return "Private stretch never ended";
-    return "Kept out" + (r ? " (" + r + ")" : "");
-  }
-  var KIND_WORD = { held: "held", committed: "added to the notes", redacted: "kept out of the notes",
-    pending_confirm: "waiting for your OK", retro_removed: "removed from the notes", state_change: "recording state changed" };
-  var STATE_WORD = { ON: "recording", OFF: "off the record", PENDING_CONFIRM: "needs your OK" };
 
   // ------------------------------------------------------------------ state
   var segs = {};          // sid -> {id, speaker, raw, shown, arr, evs[], final, idx}
@@ -296,27 +186,28 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
   var pending = {};       // sid -> true
   var pendOpen = false;   // expanded text on the pending card
   var tiles = {};         // speaker -> {el, mic, timer}
-  var caps = {};          // sid -> {el, body, why}
-  var notesNow = [], auditNow = [];
+  var caps = {};          // sid -> {el, body}
+  var notesNow = [];
   var stateChanges = [];  // {t, state}
   var curState = "ON", lastT = 0;
-  var holdSeconds = 10, clockOffset = null;
+  var holdSeconds = 10;
   var streamUp = false, srcState = "none", srcName = "-", srcErr = "";
   var replaying = true, newCount = 0, lastSeq = null, lastUptime = 0;
-  var openPanels = [];    // stack of {id, opener}
+  var activeView = "realtime", explainSel = null, explainItem = null;
+  var followWanted = true;
 
   function reset() {
-    segs = {}; order = []; pending = {}; pendOpen = false; tiles = {}; caps = {}; notesNow = []; auditNow = [];
-    stateChanges = []; curState = "ON"; lastT = 0; newCount = 0;
+    segs = {}; order = []; pending = {}; pendOpen = false; tiles = {}; caps = {}; notesNow = [];
+    stateChanges = []; curState = "ON"; lastT = 0; newCount = 0; explainSel = null; explainItem = null;
     $("tiles").textContent = ""; $("tiles").appendChild(el("div", "empty", "Waiting for the meeting to start..."));
     $("captions").textContent = ""; $("captions").appendChild(el("div", "cap-empty", "Captions appear here once lines are approved for the notes."));
     $("audit").textContent = "";
-    setPill("ON"); renderPending(); updateLive(); if (panelOpen("insights-panel")) renderInsights();
+    setPill("ON"); renderPending(); updateLive(); renderViews();
   }
   function setPill(s) {
     var p = $("status-pill");
     p.className = s;
-    p.textContent = s === "OFF" ? "OFF THE RECORD" : s === "PENDING_CONFIRM" ? "NEEDS YOUR OK" : "RECORDING";
+    p.textContent = s === "OFF" ? "Off the record" : s === "PENDING_CONFIRM" ? "Needs your OK" : "Recording";
   }
   function ensureSeg(sid, speaker) {
     var s = segs[sid];
@@ -337,6 +228,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     d.style.setProperty("--c", c);
     d.setAttribute("role", "group");
     var mic = el("span", "mic"); mic.setAttribute("role", "img");
+    mic.innerHTML = MIC_ICONS;
     d.appendChild(mic); d.appendChild(el("div", "av", initials(name))); d.appendChild(el("div", "nm", name || "?"));
     $("tiles").appendChild(d);
     t = tiles[name] = { el: d, mic: mic, timer: null, name: name };
@@ -362,16 +254,9 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     t.timer = setTimeout(function () { t.el.classList.remove("speaking"); }, 2500);
   }
 
-  // ------------------------------------------------------------------ captions (committed lines only)
+  // ------------------------------------------------------------------ captions
   function atBottom() { var c = $("captions"); return c.scrollHeight - c.scrollTop - c.clientHeight < 12; }
-  function capScroll() { if (!panelOpen("insights-panel") && !panelOpen("explain-panel") && followWanted) { var c = $("captions"); c.scrollTop = c.scrollHeight; } }
-  var followWanted = true;
-  function whyBtn(sid) {
-    var b = el("button", "why", "Why?");
-    b.setAttribute("aria-label", "Why was this line decided this way?");
-    b.onclick = function () { openExplain(sid, b); };
-    return b;
-  }
+  function capScroll() { if (activeView === "realtime" && followWanted) { var c = $("captions"); c.scrollTop = c.scrollHeight; } }
   function capBox() {
     var box = $("captions"), e = box.querySelector(".cap-empty"); if (e) e.remove();
     while (box.children.length > 120) box.removeChild(box.firstChild);
@@ -382,20 +267,20 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     var d = el("div", "cap"), w = el("span", "who", seg.speaker); w.style.color = colorOf(seg.speaker);
     var body = el("span", "body", text);
     d.appendChild(w); d.appendChild(body);
-    var wb = whyBtn(seg.id); d.appendChild(wb);
     box.appendChild(d);
     caps[seg.id] = { el: d, body: body };
     capScroll();
   }
-  function setCaptionChip(seg) {
+  // A kept-out line is a placeholder chip showing only its KIND; it opens the Explainability view.
+  function setCaptionChip(seg, ev) {
     var c = caps[seg.id];
     if (!c) { addCaption(seg, ""); c = caps[seg.id]; }
     c.body.textContent = "";
-    c.body.appendChild(el("span", "qchip", "kept out of notes"));
+    c.body.appendChild(V.chip(V.categorize(ev && ev.reason, ev && ev.kind), function () { openExplainSeg(seg.id); }));
     c.el.classList.add("out");
   }
 
-  // ------------------------------------------------------------------ pending card
+  // ------------------------------------------------------------------ pending card (operator answers)
   function answer(sid, keepOut) {
     if (!pending[sid]) return;
     pendOpen = false;
@@ -418,7 +303,8 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     var sh = el("button", "show", pendOpen ? "Hide text" : "Show text");
     sh.setAttribute("aria-expanded", pendOpen ? "true" : "false");
     sh.onclick = function () { pendOpen = !pendOpen; renderPending(); };
-    var wy = whyBtn(sid);
+    var wy = el("button", "why", "How was this decided?");
+    wy.onclick = function () { openExplainSeg(sid); };
     row.appendChild(y); row.appendChild(n); row.appendChild(sh); row.appendChild(wy);
     box.appendChild(row);
   }
@@ -428,9 +314,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     var before = curState;
     if (e.state) { curState = e.state; setPill(curState); }
     if (typeof e.t === "number") lastT = Math.max(lastT, e.t);
-    if (e.kind === "state_change") {
-      stateChanges.push({ t: e.t, state: e.state });
-    }
+    if (e.kind === "state_change") stateChanges.push({ t: e.t, state: e.state });
     if (!e.segment_id) { updateAllTiles(); return; }
     var s = ensureSeg(e.segment_id, e.speaker);
     s.evs.push({ kind: e.kind, reason: e.reason || "", t: e.t, before: before, after: e.state || before });
@@ -444,7 +328,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
       noteNew();
     } else if (e.kind === "redacted" || e.kind === "retro_removed") {
       delete pending[s.id];
-      setCaptionChip(s);
+      setCaptionChip(s, e);
       noteNew();
     } else if (e.kind === "pending_confirm") {
       pending[s.id] = true;
@@ -456,8 +340,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
   function noteNew() { if (!replaying && !isFollowing()) { newCount++; updateLive(); } }
 
   // ------------------------------------------------------------------ Live follow
-  function panelOpen(id) { return openPanels.some(function (p) { return p.id === id; }); }
-  function isFollowing() { return openPanels.length === 0 && atBottom(); }
+  function isFollowing() { return activeView === "realtime" && atBottom(); }
   function updateLive() {
     var f = isFollowing(), b = $("live-btn");
     b.classList.toggle("behind", !f);
@@ -477,59 +360,97 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
       b.classList.add("flash"); setTimeout(function () { b.classList.remove("flash"); }, 600);
       return;
     }
-    closeAllPanels();
+    setView("realtime");
     followWanted = true; newCount = 0;
     var c = $("captions"); c.scrollTop = c.scrollHeight;
     updateLive();
   };
 
-  // ------------------------------------------------------------------ panels (focus mgmt)
-  var FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-  function showPanel(id, scrimId, opener, focusId) {
-    $(id).hidden = false; if (scrimId) $(scrimId).hidden = false;
-    openPanels.push({ id: id, scrim: scrimId, opener: opener || document.activeElement });
-    var f = $(focusId); if (f) f.focus();
+  // ------------------------------------------------------------------ the three views
+  var tabButtons = Array.prototype.slice.call(document.querySelectorAll("#view-tabs .view-tab"));
+  function setView(name) {
+    activeView = name;
+    tabButtons.forEach(function (b) {
+      var on = b.dataset.view === name;
+      b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+    });
+    $("meeting").hidden = name !== "realtime";
+    $("view-insights").hidden = name !== "insights";
+    $("view-explain").hidden = name !== "explain";
+    renderViews();
+    if (name === "realtime") capScroll();
     updateLive();
   }
-  function hidePanel(id) {
-    var idx = -1;
-    openPanels.forEach(function (p, i) { if (p.id === id) idx = i; });
-    if (idx < 0) return;
-    var p = openPanels.splice(idx, 1)[0];
-    $(p.id).hidden = true; if (p.scrim) $(p.scrim).hidden = true;
-    if (p.opener && p.opener.focus && document.contains(p.opener)) p.opener.focus();
-    updateLive();
+  tabButtons.forEach(function (b, i) {
+    b.onclick = function () { setView(b.dataset.view); };
+    b.onkeydown = function (ev) {
+      var n = ev.key === "ArrowRight" ? (i + 1) % tabButtons.length : ev.key === "ArrowLeft" ? (i + tabButtons.length - 1) % tabButtons.length
+        : ev.key === "Home" ? 0 : ev.key === "End" ? tabButtons.length - 1 : -1;
+      if (n < 0) return;
+      ev.preventDefault(); setView(tabButtons[n].dataset.view); tabButtons[n].focus();
+    };
+  });
+
+  // Aggregate only: category keys and counts, plus the recording-state timeline. No rows, no speakers, no text.
+  function insightsData() {
+    var counts = {};
+    order.forEach(function (sid) {
+      var s = segs[sid];
+      if (s.final !== "redacted" && s.final !== "retro_removed") return;
+      var ev = lastWith(s, ["redacted", "retro_removed"]);
+      var k = V.categorize(ev && ev.reason, ev && ev.kind);
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    var tl = [{ t: 0, state: "ON" }].concat(stateChanges.map(function (c) { return { t: c.t, state: c.state }; }));
+    return { approved: notesNow.length, kept_out: counts, timeline: tl, now: lastT, labels: { approved: "In the notes" } };
   }
-  function closeAllPanels() {
-    while (openPanels.length) hidePanel(openPanels[openPanels.length - 1].id);
-    closeSettings();
+  function lastWith(s, kinds) {
+    for (var i = s.evs.length - 1; i >= 0; i--) if (kinds.indexOf(s.evs[i].kind) >= 0) return s.evs[i];
+    return null;
   }
+  function explainCounts() { return insightsData().kept_out; }
+  // Generic trail for one decision: rule family, state before/after, hold timing.
+  function openExplainSeg(sid) {
+    var s = segs[sid];
+    var ev = s && lastWith(s, ["redacted", "retro_removed", "pending_confirm"]);
+    if (!ev) return;
+    var arr = s.arr != null ? s.arr : null;
+    explainItem = { id: sid, category: V.categorize(ev.reason, ev.kind),
+      trail: { family: V.family(ev.reason), before: ev.before, after: ev.after, held_s: arr != null ? Math.max(0, ev.t - arr) : undefined } };
+    explainSel = explainItem.category;
+    setView("explain");
+  }
+  var viewQueued = false;
+  function renderViews() {
+    if (activeView === "insights") V.renderInsights($("view-insights"), insightsData());
+    else if (activeView === "explain") {
+      V.renderExplain($("view-explain"), { selected: explainSel, item: explainItem, counts: explainCounts(), holdSeconds: holdSeconds }, {
+        onSelect: function (key) { explainSel = key; explainItem = null; renderViews(); },
+        // Operator-only: this console is the owner of the data. The consent page has no such callback.
+        reveal: function (item) { var s = segs[item.id]; return s && (s.raw || s.shown); }
+      });
+    }
+  }
+  function queueViews() {
+    if (viewQueued || activeView === "realtime") return;
+    viewQueued = true;
+    requestAnimationFrame(function () { viewQueued = false; renderViews(); });
+  }
+  function renderAudit(auditNow) {
+    var box = $("audit"); box.textContent = "";
+    (auditNow || []).slice().reverse().forEach(function (e) {   // text only for lines already in the notes
+      var txt = e.kind === "committed" ? " " + (e.speaker ? e.speaker + ": " : "") + (e.text || "").slice(0, 60) : (e.speaker ? " " + e.speaker : "");
+      box.appendChild(el("div", null, e.kind + (e.segment_id ? " " + e.segment_id : "") + (e.reason ? " [" + e.reason + "]" : "") + txt));
+    });
+  }
+
+  // ------------------------------------------------------------------ settings
   function closeSettings() {
     if ($("settings-menu").hidden) return false;
     $("settings-menu").hidden = true; $("settings-btn").setAttribute("aria-expanded", "false"); $("settings-btn").focus();
     return true;
   }
-  document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape") {
-      if (openPanels.length) { hidePanel(openPanels[openPanels.length - 1].id); ev.preventDefault(); }
-      else if (closeSettings()) ev.preventDefault();
-      return;
-    }
-    if (ev.key === "Tab" && openPanels.length) {   // keep focus inside the topmost panel
-      var panel = $(openPanels[openPanels.length - 1].id);
-      var f = Array.prototype.filter.call(panel.querySelectorAll(FOCUSABLE), function (n) { return !n.hidden; });
-      if (!f.length) return;
-      var first = f[0], last = f[f.length - 1];
-      if (!panel.contains(document.activeElement)) { first.focus(); ev.preventDefault(); }
-      else if (ev.shiftKey && document.activeElement === first) { last.focus(); ev.preventDefault(); }
-      else if (!ev.shiftKey && document.activeElement === last) { first.focus(); ev.preventDefault(); }
-    }
-  });
-  $("insights-btn").onclick = function () { renderInsights(); showPanel("insights-panel", "insights-scrim", $("insights-btn"), "insights-title"); };
-  $("insights-close").onclick = function () { hidePanel("insights-panel"); };
-  $("insights-scrim").onclick = function () { hidePanel("insights-panel"); };
-  $("explain-close").onclick = function () { hidePanel("explain-panel"); };
-  $("explain-scrim").onclick = function () { hidePanel("explain-panel"); };
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && closeSettings()) ev.preventDefault(); });
   $("settings-btn").onclick = function () {
     var m = $("settings-menu"), open = m.hidden;
     m.hidden = !open; $("settings-btn").setAttribute("aria-expanded", open ? "true" : "false");
@@ -540,158 +461,9 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     if (!m.hidden && !m.contains(ev.target) && ev.target !== $("settings-btn")) { m.hidden = true; $("settings-btn").setAttribute("aria-expanded", "false"); }
   });
 
-  // ------------------------------------------------------------------ Level 1: insights
-  var insightsQueued = false;
-  function queueInsights() {
-    if (insightsQueued || !panelOpen("insights-panel")) return;
-    insightsQueued = true;
-    requestAnimationFrame(function () { insightsQueued = false; renderInsights(); });
-  }
-  function lastWith(s, kinds) {
-    for (var i = s.evs.length - 1; i >= 0; i--) if (kinds.indexOf(s.evs[i].kind) >= 0) return s.evs[i];
-    return null;
-  }
-  function renderInsights() {
-    var out = [], held = 0;
-    order.forEach(function (sid) {
-      var s = segs[sid];
-      if (s.final === "redacted" || s.final === "retro_removed" || s.final === "pending_confirm") out.push(s);
-      else if (s.final === "held") held++;
-    });
-    var nOut = out.filter(function (s) { return s.final !== "pending_confirm"; }).length;
-    $("n-committed").textContent = notesNow.length;
-    $("n-out").textContent = nOut;
-    $("n-await").textContent = Object.keys(pending).length;
-    $("n-held").textContent = held;
-    renderTimeline();
-    var nl = $("notes-list"); nl.textContent = "";
-    if (!notesNow.length) nl.appendChild(el("div", "empty", "Nothing committed yet."));
-    notesNow.forEach(function (n) {
-      var d = el("div", "item"), w = el("span", "who", n.speaker); w.style.color = colorOf(n.speaker);
-      d.appendChild(w); d.appendChild(el("span", null, n.text));
-      var b = whyBtn(n.id); b.setAttribute("aria-label", "Why was this line kept in the notes?");
-      d.appendChild(b); nl.appendChild(d);
-    });
-    var ol = $("out-list"); ol.textContent = "";
-    if (!out.length) ol.appendChild(el("div", "empty", "Nothing has been kept out."));
-    out.slice().reverse().forEach(function (s) {
-      var ev = lastWith(s, ["redacted", "retro_removed", "pending_confirm"]);
-      var wait = s.final === "pending_confirm";
-      var d = el("div", "item " + (wait ? "wait" : "out"));
-      var w = el("span", "who", s.speaker); w.style.color = colorOf(s.speaker);
-      d.appendChild(w);
-      d.appendChild(el("span", "lbl", (wait ? "Awaiting your answer: " : "") + keptLabel(ev && ev.reason, ev && ev.kind)));
-      d.appendChild(whyBtn(s.id));
-      d.appendChild(el("div", "meta", "at " + fmt(ev ? ev.t : 0) + " into the meeting (" + (KIND_WORD[ev ? ev.kind : ""] || "") + ")"));
-      ol.appendChild(d);
-    });
-  }
-  function renderTimeline() {
-    var svg = $("timeline"); svg.textContent = "";
-    var W = 600, H = 44, end = Math.max(lastT, 1);
-    var bands = [], st = "ON", t0 = 0;
-    stateChanges.forEach(function (c) { bands.push({ s: st, a: t0, b: c.t }); st = c.state; t0 = c.t; });
-    bands.push({ s: st, a: t0, b: end });
-    var col = { ON: "#3fb950", OFF: "#f85149", PENDING_CONFIRM: "#f0b429" };
-    bands.forEach(function (b) {
-      var x = b.a / end * W, w = Math.max(1.5, (b.b - b.a) / end * W);
-      var r = svgEl("rect", { x: x.toFixed(1), y: 8, width: w.toFixed(1), height: 28, fill: col[b.s] || "#8b97a7" });
-      var t = svgEl("title"); t.textContent = (STATE_WORD[b.s] || b.s) + " " + fmt(b.a) + " to " + fmt(b.b);
-      r.appendChild(t); svg.appendChild(r);
-    });
-    $("tl-range").textContent = "0:00 to " + fmt(end);
-  }
-  function renderAudit() {
-    var box = $("audit"); box.textContent = "";
-    auditNow.slice().reverse().forEach(function (e) {   // text only for lines already in the notes
-      var txt = e.kind === "committed" ? " " + (e.speaker ? e.speaker + ": " : "") + (e.text || "").slice(0, 60) : (e.speaker ? " " + e.speaker : "");
-      box.appendChild(el("div", null, e.kind + (e.segment_id ? " " + e.segment_id : "") + (e.reason ? " [" + e.reason + "]" : "") + txt));
-    });
-  }
-
-  // ------------------------------------------------------------------ Level 2: explain
-  function openExplain(sid, opener) {
-    var s = segs[sid] || ensureSeg(sid, "?");
-    var body = $("explain-body"); body.textContent = "";
-    var final = s.final || "held";
-    $("explain-title").textContent = "Why was this " + (final === "committed" ? "kept in the notes?" : final === "pending_confirm" ? "flagged?" : final === "held" ? "held?" : "kept out?");
-    var head = el("p", null, s.speaker + "'s line was " + (KIND_WORD[final] || final) + ".");
-    head.style.fontWeight = "650"; body.appendChild(head);
-
-    // engine line
-    var reasons = [], seen = {}, llm = false;
-    s.evs.forEach(function (e) { if (e.reason && !seen[e.reason]) { seen[e.reason] = 1; reasons.push(e.reason); if (e.reason.indexOf("llm:") === 0) llm = true; } });
-    body.appendChild(el("p", "dim", llm ? "Decision engine: LLM judgement was involved (an llm: reason fired)."
-      : "Decision engine: rule-based (cues, keywords, PII detector, timers); no LLM reason fired."));
-
-    body.appendChild(el("h3", null, "What fired"));
-    var ul = el("ul", "trail");
-    s.evs.forEach(function (e) {
-      if (!e.reason && e.kind !== "pending_confirm") return;
-      var d = describe(e.reason), li = el("li");
-      var b = el("b", null, d ? d.title : "No special rule");
-      if (d && d.engine) b.appendChild(el("span", "tag", d.engine === "llm" ? "LLM" : "rule"));
-      li.appendChild(b);
-      li.appendChild(el("span", null, (KIND_WORD[e.kind] || e.kind) + " at " + fmt(e.t) + (d ? ". " + d.detail : "")));
-      ul.appendChild(li);
-    });
-    if (!ul.children.length) ul.appendChild(el("li", null, "Nothing flagged this line; it took the normal path (hold, then release)."));
-    body.appendChild(ul);
-
-    body.appendChild(el("h3", null, "State before and after"));
-    var sc = s.evs.filter(function (e) { return e.before !== e.after || e.kind === "state_change"; });
-    if (!sc.length) sc = s.evs.slice(-1);
-    var ul2 = el("ul", "trail");
-    sc.forEach(function (e) {
-      var li = el("li"); li.appendChild(el("b", null, (STATE_WORD[e.before] || e.before) + "  ->  " + (STATE_WORD[e.after] || e.after)));
-      li.appendChild(el("span", null, "at " + fmt(e.t) + " (" + (KIND_WORD[e.kind] || e.kind) + ")")); ul2.appendChild(li);
-    });
-    body.appendChild(ul2);
-
-    body.appendChild(el("h3", null, "Hold timeline"));
-    var tl = el("div", "hold-tl"), heldEv = lastWith(s, ["held"]), decEv = null;
-    for (var i = s.evs.length - 1; i >= 0; i--) { var k = s.evs[i].kind; if (k !== "held" && k !== "state_change") { decEv = s.evs[i]; break; } }
-    var arr = s.arr != null ? s.arr : (heldEv ? heldEv.t : null);
-    function step(txt) { tl.appendChild(el("span", "step", txt)); }
-    function arrow(dt) { tl.appendChild(el("span", "arrow", dt != null ? "-- " + secs(dt) + " -->" : "-->")); }
-    step("arrived " + (arr != null ? fmt(arr) : "?"));
-    if (heldEv) { arrow(arr != null ? heldEv.t - arr : null); step("held " + fmt(heldEv.t)); }
-    if (decEv) { arrow(heldEv ? decEv.t - heldEv.t : (arr != null ? decEv.t - arr : null)); step((KIND_WORD[decEv.kind] || decEv.kind) + " " + fmt(decEv.t)); }
-    else { arrow(); step("no decision yet"); }
-    body.appendChild(tl);
-
-    body.appendChild(el("h3", null, "Neighbouring context (no text)"));
-    var nb = el("ul", "trail");
-    [s.idx - 1, s.idx + 1].forEach(function (j, n) {
-      var o = segs[order[j]]; if (!o) return;
-      var li = el("li"); li.appendChild(el("b", null, (n === 0 ? "Before: " : "After: ") + o.id + " by " + o.speaker));
-      li.appendChild(el("span", null, KIND_WORD[o.final] || "arrived")); nb.appendChild(li);
-    });
-    if (!nb.children.length) nb.appendChild(el("li", null, "No neighbouring lines yet."));
-    body.appendChild(nb);
-
-    var secret = s.raw || s.shown || "";
-    var showNow = final === "committed" && !seen["presidio"] && !reasons.some(function (r) { return r.indexOf("presidio:") === 0; });
-    var rb = el("button", "reveal", "Reveal text");
-    var tx = el("div"); tx.id = "explain-text"; tx.hidden = true;
-    rb.setAttribute("aria-expanded", "false");
-    rb.onclick = function () {
-      tx.hidden = !tx.hidden; tx.textContent = tx.hidden ? "" : (secret || "(no text recorded)");
-      rb.textContent = tx.hidden ? "Reveal text" : "Hide text"; rb.setAttribute("aria-expanded", tx.hidden ? "false" : "true");
-    };
-    if (showNow) { tx.hidden = false; tx.textContent = secret; tx.style.borderColor = "var(--line)"; tx.style.background = "none"; }
-    else { body.appendChild(el("h3", null, "Text")); body.appendChild(rb); }
-    body.appendChild(tx);
-    showPanel("explain-panel", "explain-scrim", opener, "explain-title");
-  }
-  // re-hide private text whenever the explain panel closes
-  var _hide = hidePanel;
-  hidePanel = function (id) { if (id === "explain-panel") $("explain-body").textContent = ""; _hide(id); };
-
   // ------------------------------------------------------------------ health + banner
   function renderHealth(h) {
     if (h) {
-      clockOffset = perf() - h.uptime;
       srcName = h.source; srcState = h.source_state; srcErr = h.source_error || "";
       $("hpl").textContent = h.pipeline || "-"; $("hstate").textContent = h.state;
       $("hq").textContent = h.queue_depth;
@@ -721,9 +493,9 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
       if (!replaying) ring(s.speaker);
     }
     else if (m.type === "events") {
-      m.events.forEach(applyEvent); notesNow = m.notes || []; auditNow = m.audit || [];
-      if (!$("settings-menu").hidden) renderAudit();
-      queueInsights();
+      m.events.forEach(applyEvent); notesNow = m.notes || [];
+      if (!$("settings-menu").hidden) renderAudit(m.audit);
+      queueViews();
     }
     else if (m.type === "health") {
       if (lastSeq !== null && m.uptime < lastUptime - 1) { lastUptime = m.uptime; reconnectFresh(); return; }
@@ -781,15 +553,16 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
     var k = ev.key.toLowerCase();
     if (k === "p") { togglePresenter(); return; }
-    if (k === "i" && !panelOpen("insights-panel")) { $("insights-btn").click(); return; }
+    if (k === "i") { setView("insights"); return; }
+    if (k === "e") { setView("explain"); return; }
     if (k === "l") { $("live-btn").click(); return; }
     var ids = Object.keys(pending);
     if (!ids.length) return;
     if (k === "y") { answer(ids[0], true); ev.preventDefault(); }
     else if (k === "n") { answer(ids[0], false); ev.preventDefault(); }
   });
-  renderHealth(null); updateLive();
-  connect();
+
+  renderHealth(null); updateLive(); connect();
 })();
 </script>
 </body>

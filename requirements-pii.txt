@@ -1,0 +1,5 @@
+# Presidio is the primary PII detector; regex is the fallback when these (or the model) are missing.
+# After installing also run: python -m spacy download en_core_web_lg   (~400 MB; en_core_web_sm works as fallback)
+presidio-analyzer>=2.2.360
+presidio-anonymizer>=2.2.360
+spacy>=3.7,<3.9

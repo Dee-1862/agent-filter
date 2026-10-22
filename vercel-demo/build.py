@@ -12,6 +12,9 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from demo.categories import js_source
+
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT.parent / "demo" / "static"
@@ -40,24 +43,25 @@ def build(origin: str) -> None:
 
     html = (SOURCE / "live.html").read_text()
     for old, new in (
-        ("Private meetings on your own network", "Consent-first meetings"),
-        ("Calls and note processing stay on the local meeting host. Share the link only with people who can reach it.",
-         "This demo uses a cloud relay for the call and meeting controls. Transcription and filtering run on the meeting host."),
-        ("Notes are transcribed on the local meeting host — no cloud service.",
+        ("Calls and notes are processed on the local meeting host.",
+         "Transcription and filtering run on the meeting host. This demo relays the call through cloud services."),
+        ("Notes are transcribed on the local meeting host. No cloud service is used.",
          "Transcription runs on the meeting host. This demo relays meeting traffic through cloud services."),
-        ("The local filter keeps sensitive lines out", "The meeting host's filter keeps sensitive lines out"),
         ("the local meeting host transcribes your speech", "the meeting host transcribes your speech"),
         ("the local filter checks it", "the meeting host's filter checks it"),
-        ("Speech recognition, filtering, and the LiveKit room run on the local host serving this page. No cloud service is involved.",
+        ("Speech recognition, filtering and the LiveKit room run on the local host serving this page. No cloud service is involved.",
          "Speech recognition and filtering run on the meeting host. This demo relays meeting traffic through cloud services."),
     ):
         html = replace_required(html, old, new)
+    # The hosted proxy intentionally receives only text-free status while the
+    # meeting is live. Keep caption elements in the DOM for the shared script,
+    # but do not offer live captions that cannot receive approved line text.
+    html = replace_required(html, '<div class="captions-wrap">', '<div class="captions-wrap hidden">')
+    html = replace_required(html, 'id="captions-button" class="control"', 'id="captions-button" class="control hidden"')
     (OUTPUT / "index.html").write_text(html)
 
     js = (SOURCE / "live.js").read_text()
     for old, new in (
-        ("Your audio is being transcribed locally for notes.", "The meeting host is transcribing your audio for notes."),
-        ("The local filter paused your notes", "The meeting host's filter paused your notes"),
         ("Live · local room", "Live · demo room"),
     ):
         js = replace_required(js, old, new)
@@ -67,15 +71,18 @@ def build(origin: str) -> None:
     end = js.index("  function renderMicButton()", start)
     js = js[:start] + js[end:]
     js = replace_required(js, 'api("/api/me")', 'api("/api/me?summary=1")')
+    js = replace_required(js, '  function setCaptions(on) {\n    captionsOn = on;',
+                          '  function setCaptions(on) {\n    on = false;\n    captionsOn = on;')
     js = replace_required(js, "  let room = null, me = null, eventSource = null;",
                           "  let room = null, me = null, eventSource = null, cloudPollTimer = null;")
     js = replace_required(js, "      connectStream();",
                           "      cloudPollTimer = setInterval(() => refreshMe(true), 5000);")
-    js = replace_required(js, "      clearInterval(roomTimer);\n      if (eventSource) eventSource.close();",
-                          "      clearInterval(roomTimer);\n      clearInterval(cloudPollTimer);\n      if (eventSource) eventSource.close();")
+    js = replace_required(js, "      clearInterval(roomTimer);\n      stopDiagnostics();",
+                          "      clearInterval(roomTimer);\n      clearInterval(cloudPollTimer);\n      stopDiagnostics();")
     (assets / "live.js").write_text(js)
-    for filename in ("live.css", "livekit-client.umd.js", "livekit-client.LICENSE", "livekit-client.NOTICE"):
+    for filename in ("live.css", "views.css", "views.js", "livekit-client.umd.js", "livekit-client.LICENSE", "livekit-client.NOTICE"):
         shutil.copy2(SOURCE / filename, assets / filename)
+    (assets / "categories.js").write_text(js_source())
 
     # Browser API calls remain same-origin. This retains first-party session
     # cookies and needs no CORS exception in the browser.

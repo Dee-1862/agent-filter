@@ -12,6 +12,7 @@ import asyncio
 import copy
 import importlib
 import json
+import math
 import os
 import re
 import secrets
@@ -22,8 +23,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
+from demo.categories import categorize, family as rule_family, js_source, taxonomy
 from otr.types import Segment
 
 STATIC = Path(__file__).parent / "static"
@@ -56,6 +58,8 @@ def valid_delivery_email(value: object) -> str:
             or any(not EMAIL_DOMAIN_LABEL_RE.fullmatch(label) for label in labels)):
         raise HTTPException(400, "Valid email required")
     return value
+
+LINE_RE = re.compile(r"^([^:]{1,40}):\s*(.+)$")
 
 
 # ---------------------------------------------------------------- helpers
@@ -210,9 +214,10 @@ class LiveSession:
     whose lines remain has finalized.
     """
 
-    def __init__(self, pipeline_cls, kind, source, hold_seconds=10.0):
+    def __init__(self, pipeline_cls, kind, source, hold_seconds=10.0, llm=None):
         self.pipeline_cls, self.kind, self.source = pipeline_cls, kind, source
         self.hold_seconds = hold_seconds
+        self.llm = llm
         self.messages = [{"type": "reset", "mode": "livekit", "pipeline": kind}]
         self.sessions: dict[str, str] = {}  # opaque browser session -> identity
         self.names: dict[str, str] = {}
@@ -222,6 +227,13 @@ class LiveSession:
         self.line_owner: dict[str, str] = {}  # approved line id -> owner identity
         self.finalized: set[str] = set()
         self.redactions: dict[str, dict[str, set[str]]] = {}
+        # Server-side only, per owner: segment id -> {"category", "family", "before", "after", "held_s", "seq"}.
+        # Messages carry category KEYS and counts (and these text-free trails to the owner), never text.
+        self.kept_out: dict[str, dict[str, dict]] = {}
+        self.timeline: dict[str, list[dict]] = {}   # owner -> [{"t", "state"}], state in STATE_LABELS
+        self.last_state: dict[str, str] = {}        # owner -> last pipeline state (ON/OFF/PENDING_CONFIRM)
+        self.arrival: dict[tuple[str, str], float] = {}  # (owner, segment id) -> pipeline time it arrived
+        self.seq = 0
         # Unverified address labels and explicit final-report delivery choice.
         # Kept only in local room memory, never broadcast through SSE.
         self.delivery: dict[str, dict[str, object]] = {}
@@ -281,6 +293,95 @@ class LiveSession:
             self.messages.append({"type": "redaction_counts", "owner": identity,
                                   "redaction_counts": self.redaction_counts(identity)})
 
+    # ---- text-free insights: category KEYS and counts only
+    def next_seq(self) -> int:
+        self.seq += 1
+        return self.seq
+
+    def mark_state(self, identity: str, state: str) -> bool:
+        """Append a recording-state change to this person's own timeline. Returns True if it changed."""
+        tl = self.timeline.setdefault(identity, [])
+        if tl and tl[-1]["state"] == state:
+            return False
+        tl.append({"t": round(self.now(), 1), "state": state})
+        return True
+
+    def insights_for(self, identity: str) -> dict:
+        """What the owner's Insights view shows. Category keys and numbers only: no text, no ids."""
+        counts: dict[str, int] = {}
+        steps = self.timeline.get(identity, [])
+        base = steps[0]["t"] if steps else self.now()   # the timeline starts when this person joined
+        for rec in self.kept_out.get(identity, {}).values():
+            counts[rec["category"]] = counts.get(rec["category"], 0) + 1
+        return {"approved": sum(1 for owner in self.line_owner.values() if owner == identity),
+                "kept_out": counts, "total": sum(counts.values()),
+                "removed": self.redaction_counts(identity)["removed"],
+                "timeline": [{"t": round(step["t"] - base, 1), "state": step["state"]} for step in steps],
+                "now": round(max(0.0, self.now() - base), 1), "hold_seconds": self.hold_seconds}
+
+    def own_kept_out(self, identity: str) -> list[dict]:
+        """Placeholder chips for the owner's captions: id + category + generic trail, never text."""
+        out = [{"id": sid, "category": rec["category"], "seq": rec["seq"],
+                "trail": {k: rec[k] for k in ("family", "before", "after", "held_s")}}
+               for sid, rec in self.kept_out.get(identity, {}).items()]
+        return sorted(out, key=lambda c: c["seq"])
+
+    # ---- text-free detail for the transcript and the pop-out page (owner only; never text)
+    def _stamp(self, identity: str, key: str) -> float:
+        """Seconds since this person's timeline began, noted the first time a detail payload sees `key`."""
+        stamps = self.__dict__.setdefault("detail_stamps", {})
+        steps = self.timeline.get(identity, [])
+        base = steps[0]["t"] if steps else self.now()
+        return stamps.setdefault((identity, key), round(max(0.0, self.now() - base), 1))
+
+    def waiting_count(self, identity: str) -> int:
+        """How many lines are in this person's hold buffer. A number only."""
+        pipe = self.pipes.get(identity)
+        try:
+            if getattr(pipe, "buf", None) is not None:
+                return len(pipe.buf.items())
+            return len(getattr(pipe, "_held", ()) or ()) + len(getattr(pipe, "_pending", ()) or ())
+        except Exception:  # noqa: BLE001 - a status number must never break /api/me
+            return 0
+
+    def kept_out_events(self, identity: str) -> list[dict]:
+        """One row per kept-out line for the owner: kinds, rule family, states, timing, action. No text.
+        `code` is family:kind built here, never the raw reason (whose tail can carry a topic word or a span)."""
+        out = []
+        for sid, rec in self.kept_out.get(identity, {}).items():
+            fam = rec["family"]
+            action = ("removed_after_approval" if fam == "retro"
+                      else "masked" if fam in ("presidio", "regex") else "kept_out")
+            out.append({"id": sid, "seq": rec["seq"], "t": self._stamp(identity, "k:" + sid),
+                        "category": rec["category"], "family": fam, "before": rec["before"],
+                        "after": rec["after"], "held_s": rec["held_s"], "action": action,
+                        "code": f"{fam}:{rec['category']}"})
+        return sorted(out, key=lambda e: e["seq"])
+
+    def detail_for(self, identity: str) -> dict:
+        return {"kept_out_events": self.kept_out_events(identity),
+                "line_times": {lid: self._stamp(identity, "l:" + lid)
+                               for lid, owner in self.line_owner.items() if owner == identity},
+                "waiting": self.waiting_count(identity)}
+
+    def publish_status(self, identity: str):
+        # The log holds only an owner marker; the payload is built per viewer in visible_message.
+        self.messages.append({"type": "status", "owner": identity})
+
+    def note_kept_out(self, identity: str, event, before: str, after: str) -> dict | None:
+        """Record that a segment was kept out. Returns the (text-free) transcript change for the owner."""
+        if not event.segment_id:
+            return None
+        arrived = self.arrival.pop((identity, event.segment_id), None)
+        held = round(max(0.0, event.t - arrived), 1) if arrived is not None else 0.0
+        old = self.kept_out.setdefault(identity, {}).get(event.segment_id)
+        rec = {"category": categorize(event.reason, event.kind), "family": rule_family(event.reason),
+               "before": before, "after": after, "held_s": held,
+               "seq": old["seq"] if old else self.next_seq()}
+        self.kept_out[identity][event.segment_id] = rec
+        return {"kind": "kept_out", "id": event.segment_id, "owner": identity, "category": rec["category"],
+                "seq": rec["seq"], "trail": {k: rec[k] for k in ("family", "before", "after", "held_s")}}
+
     def contributors(self) -> set[str]:
         return set(self.line_owner.values())
 
@@ -309,14 +410,51 @@ class LiveSession:
             if message.get("owner") != viewer:
                 return None
             return {"type": "redaction_counts", "redaction_counts": message["redaction_counts"]}
+        if message.get("type") == "status":
+            if message.get("owner") != viewer:
+                return None
+            return {"type": "status", **self.insights_for(viewer)}
         return message
+
+    def diagnostics_for(self, identity: str) -> dict:
+        """The caller's own capture health: numbers and short status words only, never text."""
+        src = self.source
+        notes_on = bool(src.consent_snapshot().get(identity, False))
+        d = src.diagnostics() if hasattr(src, "diagnostics") else {"bot": {"state": "n/a", "error": ""}, "participants": {}}
+        bot, mine = d["bot"], d["participants"].get(identity, {})
+        rms = float(mine.get("rms") or 0.0)
+        age = mine.get("last_frame_age_s")
+        floor = float(mine.get("noise_floor") or 0.0)
+        subscribed = bool(mine.get("subscribed", False))
+        error = bot.get("error") or None
+        if bot.get("state") == "failed":
+            state = "error"
+        elif not notes_on or not subscribed:
+            state = "not_subscribed"
+        elif not mine.get("frames") or age is None or age > 2.0:
+            state = "waiting_for_audio"
+        elif rms >= max(200.0, 2.5 * floor):
+            state = "hearing_you"
+        else:
+            state = "silent"
+        if state != "error":
+            error = None
+        # dBFS mapped -60..0 to 0..1 (speech at rms 2000 is about 0.6)
+        level = 0.0 if rms < 1 else max(0.0, min(1.0, (20 * math.log10(rms / 32768.0) + 60.0) / 60.0))
+        return {"subscribed": subscribed, "notes_on": notes_on, "audio_rms": round(rms, 1),
+                "audio_level": round(level, 3), "last_frame_age_s": age,
+                "stt_last_activity_age_s": mine.get("stt_last_age_s"), "state": state, "error": error}
 
     def publish_participants(self):
         self.messages.append({"type": "participants", "participants": self.snapshot()})
 
-    def set_consent(self, identity: str, enabled: bool, *, sensitive_pause: bool = False):
+    def set_consent(self, identity: str, enabled: bool, *, sensitive_pause: bool = False,
+                    state_label: str | None = None):
         if enabled and identity in self.finalized:
             raise HTTPException(409, "Notes already finalized")
+        label = "recording" if enabled else "paused" if sensitive_pause else (state_label or "off")
+        if self.mark_state(identity, label):
+            self.publish_status(identity)
         if sensitive_pause:
             self.sensitive_paused.add(identity)
         else:
@@ -360,6 +498,11 @@ class LiveSession:
             self._drop_lines_of(identity)
             self.delivery.pop(identity, None)
         self.names.pop(identity, None)
+        self.kept_out.pop(identity, None)
+        self.timeline.pop(identity, None)
+        self.last_state.pop(identity, None)
+        for key in [k for k in self.arrival if k[0] == identity]:
+            del self.arrival[key]
         for sid, owner in list(self.sessions.items()):
             if owner == identity:
                 del self.sessions[sid]
@@ -367,7 +510,8 @@ class LiveSession:
 
     def _pipe(self, identity: str):
         if identity not in self.pipes:
-            self.pipes[identity] = self.pipeline_cls(hold_seconds=self.hold_seconds)
+            kwargs = {"llm": self.llm} if self.llm is not None else {}
+            self.pipes[identity] = self.pipeline_cls(hold_seconds=self.hold_seconds, **kwargs)
         return self.pipes[identity]
 
     def _publish_events(self, identity: str, events):
@@ -375,22 +519,29 @@ class LiveSession:
             return
         # A sensitive hold must never turn into a user-approved publication in
         # this prototype. Stop the source first, discard its private pipeline,
-        # and publish only a text-free status. Other speakers keep recording.
+        # and publish only text-free status. Other speakers keep recording.
         if identity in self.finalized:
             return
-        if any(event.kind == "pending_confirm" for event in events):
-            for event in events:
-                if event.kind in {"pending_confirm", "redacted"}:
-                    self.count_redaction(identity, event.segment_id, "suppressed")
-            self.set_consent(identity, False, sensitive_pause=True)
-            return
+        before = self.last_state.get(identity, "ON")
+        after_by_seg = {e.segment_id: e.state for e in events if e.segment_id}
+        if events:
+            self.last_state[identity] = events[-1].state
+        pausing = any(event.kind == "pending_confirm" for event in events)
         safe = []
         for event in events:
-            if event.kind == "redacted":
+            suppressed_kinds = {"pending_confirm", "redacted"} if pausing else {"redacted"}
+            if event.kind in suppressed_kinds:
                 self.count_redaction(identity, event.segment_id, "suppressed")
+            if event.kind in suppressed_kinds or (event.kind == "retro_removed" and not pausing):
+                change = self.note_kept_out(identity, event, before, after_by_seg.get(event.segment_id, event.state))
+                if change:
+                    safe.append(change)
+            if pausing:
+                continue
             if event.kind == "committed" and self.source.consent_snapshot().get(identity, False):
+                self.arrival.pop((identity, event.segment_id), None)
                 line = {"id": event.segment_id, "speaker": identity, "name": self.names.get(identity, identity),
-                        "text": event.text}
+                        "text": event.text, "seq": self.next_seq()}
                 self.approved[event.segment_id] = line
                 self.line_owner[event.segment_id] = identity
                 safe.append({"kind": "committed", "line": line, "owner": identity})
@@ -400,9 +551,12 @@ class LiveSession:
                 self.line_owner.pop(event.segment_id, None)
                 safe.append({"kind": "removed", "id": event.segment_id, "owner": identity})
             elif event.kind == "state_change" and event.state == "OFF":
-                self.set_consent(identity, False)
+                self.set_consent(identity, False, state_label="off_record")
+        if pausing:
+            self.set_consent(identity, False, sensitive_pause=True)
         if safe:
             self.messages.append({"type": "transcript", "changes": safe})
+            self.publish_status(identity)
 
     def push(self, segment: Segment):
         if self.closed:
@@ -413,6 +567,7 @@ class LiveSession:
         if SPOKEN_STOP_RE.search(segment.text):
             self.set_consent(identity, False)
             return
+        self.arrival[(identity, segment.id)] = self.now()
         pipe = self._pipe(identity)
         self._publish_events(identity, pipe.push(segment, now=self.now()))
 
@@ -448,17 +603,42 @@ class LiveSession:
 
 
 
-def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=True):
+def warm_llm(llm, state: dict | None = None):
+    """Load the local model in a background thread so the first real decision is not a cold start."""
+    if llm is None or not hasattr(llm, "warmup"):
+        return None
+    import threading
+
+    def work():
+        secs = llm.warmup()
+        if state is not None:
+            state["warm"] = state["reachable"] = secs != float("inf")
+    thread = threading.Thread(target=work, name="llm-warmup", daemon=True)
+    thread.start()
+    return thread
+
+
+def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=True, llm=None):
     from contextlib import asynccontextmanager
     if live_source is None:
         from otr.ingest.livekit_source import LiveKitSource
         live_source = LiveKitSource()
-    session = LiveSession(cls, kind, live_source, hold_seconds=hold_seconds)
+    session = LiveSession(cls, kind, live_source, hold_seconds=hold_seconds, llm=llm)
+    llm_state = {"warm": False, "reachable": False}
 
     @asynccontextmanager
     async def lifespan(app):
         if autostart:
             session.start()
+            warm_llm(llm, llm_state)
+            if hasattr(live_source, "preload"):
+                # Load and warm Whisper now so the first sentence does not pay for it.
+                async def preload():
+                    try:
+                        await live_source.preload()
+                    except Exception as exc:  # noqa: BLE001 - surfaced through /api/diagnostics
+                        print(f"[demo] speech model failed to load: {exc}", file=sys.stderr)
+                app.state.preload = asyncio.create_task(preload())
         yield
         session.stop()
         for room in meetings.values():
@@ -554,8 +734,15 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         except ValueError:
             return default
 
+    # One page for everyone in consent mode: lobby, admission, video, and the side panel views
+    # (Realtime, Insights, Explainability). `/live` is kept as an alias.
     @app.get("/")
     async def index():
+        return FileResponse(STATIC / "live.html", headers={"Cache-Control": "no-store"})
+
+    @app.get("/live")
+    @app.get("/live.html")
+    async def classic_page():
         return FileResponse(STATIC / "live.html")
 
     @app.get("/m/{room_id}")
@@ -573,7 +760,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         room_id = secrets.token_urlsafe(9)
         while room_id in meetings:
             room_id = secrets.token_urlsafe(9)
-        live = LiveSession(cls, kind, source_for(room_id), hold_seconds=hold_seconds)
+        live = LiveSession(cls, kind, source_for(room_id), hold_seconds=hold_seconds, llm=llm)
         identity = "person-" + uuid.uuid4().hex
         sid = secrets.token_urlsafe(32)
         live.sessions[sid] = identity
@@ -743,6 +930,10 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         live.sensitive_paused.clear()
         live.finalized.clear()
         live.redactions.clear()
+        live.kept_out.clear()
+        live.timeline.clear()
+        live.last_state.clear()
+        live.arrival.clear()
         live.delivery.clear()
         live.messages.clear()
         room["requests"].clear()
@@ -754,9 +945,18 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
             response.delete_cookie("otr_session")
         return response
 
+    @app.get("/static/categories.js")
+    async def categories_js():
+        # The one category taxonomy (demo/categories.py), rendered for the page. Contains no meeting data.
+        return Response(js_source(), media_type="text/javascript", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/categories")
+    async def categories_json():
+        return taxonomy()
+
     @app.get("/static/{asset}")
     async def static_asset(asset: str):
-        if asset not in {"live.js", "livekit-client.umd.js", "live.css"}:
+        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css"}:
             raise HTTPException(404)
         return FileResponse(STATIC / asset)
 
@@ -769,7 +969,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         # The LiveKit URL is public room transport configuration; secrets
         # are used only on the server to mint short-lived participant tokens.
         return {"mode": "livekit", "url": os.environ.get("LIVEKIT_PUBLIC_URL", live.source.url),
-                "room": live.source.room_name}
+                "room": live.source.room_name, "categories": taxonomy()["categories"]}
 
     @app.post("/api/join")
     async def join(body: dict):
@@ -794,6 +994,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         delivery = live.delivery.get(identity, {})
         payload = {"identity": identity,
                 "participants": live.public_participants(identity),
+                "kept_out": live.own_kept_out(identity),
+                "insights": live.insights_for(identity),
                 "redaction_counts": live.redaction_counts(identity),
                 "finalized": identity in live.finalized,
                 "delivery_email": delivery.get("email", ""),
@@ -801,9 +1003,39 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
                 "ready_for_final": live.ready_for_final(),
                 "finalized_count": sum(1 for o in owners if o in live.finalized),
                 "contributor_count": len(owners)}
+        payload.update(live.detail_for(identity))   # text-free: kept_out_events, line_times, waiting
         if not summary:
             payload["lines"] = live.own_lines(identity)
         return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+    def model_info() -> dict:
+        stats = getattr(getattr(live_source, "_transcribe", None), "stats", None) or {}
+        try:
+            from otr import pii
+            ok = pii.presidio_available()
+            presidio = {"model": pii.presidio_model() if ok else None, "available": bool(ok)}
+        except Exception:  # noqa: BLE001
+            presidio = {"model": None, "available": False}
+        return {"whisper": {"name": getattr(live_source, "model", None),
+                            "loaded": getattr(live_source, "_transcribe", None) is not None,
+                            "load_seconds": stats.get("load_seconds"), "rtf": stats.get("rtf")},
+                "llm": {"name": getattr(llm, "model", None), "reachable": llm_state["reachable"],
+                        "warm": llm_state["warm"]},
+                "presidio": presidio}
+
+    @app.get("/api/diagnostics")
+    async def diagnostics(request: Request):
+        """Capture health for the signed-in participant only.
+
+        Reverse proxies connect to the app over loopback, so the client socket
+        address cannot authorize an operator-wide view of meeting metadata.
+        """
+        headers = {"Cache-Control": "no-store"}
+        _, live, identity = room_for(request)
+        mine = live.diagnostics_for(identity)
+        mine["waiting_lines"] = live.waiting_count(identity)   # a count of lines in the hold buffer, never text
+        return JSONResponse({"models": model_info(), "me": mine,
+                             "hold_seconds": live.hold_seconds}, headers=headers)
 
     @app.post("/api/consent")
     async def consent(request: Request, body: dict):
@@ -908,8 +1140,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
                 return
             i = len(live.messages)
             yield f"data: {json.dumps({'type': 'participants', 'participants': live.public_participants(identity)})}\n\n"
-            yield f"data: {json.dumps({'type': 'snapshot', 'lines': live.own_lines(identity)})}\n\n"
+            yield f"data: {json.dumps({'type': 'snapshot', 'lines': live.own_lines(identity), 'kept_out': live.own_kept_out(identity)})}\n\n"
             yield f"data: {json.dumps({'type': 'redaction_counts', 'redaction_counts': live.redaction_counts(identity)})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', **live.insights_for(identity)})}\n\n"
             while True:
                 if live.closed:
                     return

@@ -44,7 +44,8 @@ _SHIFT = re.compile(
 _WEAK_SHIFT = re.compile(r"^\W*(?:ok(?:ay)?|alright|all right|right|well|so)[,.!]?\s+(?:so\b|let's\b)", re.I)
 
 # words that belong to the cue itself, not to the private topic
-_CUE_WORDS = {"off", "record", "second", "minute", "moment", "quick", "please", "hold"}
+_CUE_WORDS = {"off", "record", "second", "minute", "moment", "quick", "please", "hold", "note", "write",
+              "written", "keep", "kept", "leave", "skip", "transcript", "recording", "part", "section"}
 
 TOPIC_PROMPT = """A private (off-the-record) part of a meeting was about:
 "{scope}"

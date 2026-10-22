@@ -14,3 +14,16 @@ transcripts/
 *.mp4
 *.sqlite*
 *.db
+
+# generated TTS demo audio (large binaries, regenerate with scripts/make_demo_audio.py)
+demo_audio/
+
+# OTR-Bench v2 sealed test split: never commit or copy into worktrees
+bench/data_v2/sealed/
+bench/data_v2/raw/
+bench/data_v2/work/
+
+# OTR-Bench v3 sealed split and raw corpora: never commit or copy into worktrees
+bench/data_v3/sealed/
+bench/data_v3/raw/
+bench/data_v3/work/

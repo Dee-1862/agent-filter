@@ -26,6 +26,9 @@ from .state_machine import CONTINUE, END, ON, OFF, PENDING, TENTATIVE, StateMach
 from .types import LLM, Event, Segment
 
 STRIKE_WINDOW = 8.0   # seconds: "strike that" w/o topic only targets an utterance this recent
+CUE_LLM_TIMEOUT = 4.0     # seconds per cue-intent call; a slow/hung model counts as a failure
+CUE_LLM_BREAKER = 3       # consecutive failures that switch the cue-intent fallback off ...
+CUE_LLM_COOLDOWN = 60.0   # ... for this many pipeline seconds
 
 
 @dataclass
@@ -43,8 +46,15 @@ class _Rec:
 
 class Pipeline:
     def __init__(self, llm: Optional[LLM] = None, hold_seconds: float = 30.0,
-                 use_presidio: bool = True, strike_window: float = STRIKE_WINDOW):
+                 use_presidio: bool = True, strike_window: float = STRIKE_WINDOW,
+                 cue_llm: bool = True, cue_llm_timeout: float = CUE_LLM_TIMEOUT):
         self.llm = llm
+        self.cue_llm = cue_llm                 # allow the LLM cue-intent fallback (only when llm is given)
+        self.cue_llm_timeout = cue_llm_timeout
+        self.stats = {"cue_llm_calls": 0, "cue_llm_failures": 0, "segments": 0}
+        self._cue_cache: dict[str, Optional[dict]] = {}
+        self._cue_fail_run = 0
+        self._cue_off_until = -1.0
         self.use_presidio = use_presidio
         self.strike_window = strike_window
         self.sm = StateMachine()
@@ -80,6 +90,7 @@ class Pipeline:
             if seg.id in self._seen:
                 return []                      # duplicate delivery
             self._seen.add(seg.id)
+            self.stats["segments"] += 1
             ev = self._release(self._now)
             self._seq += 1
             rec = _Rec(seg=seg, seq=self._seq, arrival=self._now)
@@ -281,7 +292,7 @@ class Pipeline:
             ev.append(self._ev("held", item, reason=pii_reason))
         rec.was_in_buf = True
 
-        cue = cd.detect(seg.text)   # on raw text; masked PII never contains cue words
+        cue = self._cue(seg.text)   # on raw text; masked PII never contains cue words
         sm = self.sm
         if cue.kind == "retro":
             ev += self._handle_retro(rec, cue)
@@ -309,6 +320,49 @@ class Pipeline:
         else:
             ev += self._check_implicit(item)
         return ev
+
+    # ------------------------------------------------------------ cue detection
+    def _llm_intent(self, text: str) -> Optional[dict]:
+        """Ask the LLM what note-taking intent an uncertain utterance has. None = unavailable/failed.
+        Cached per text (out-of-order replay re-processes records), strict timeout, circuit breaker."""
+        if self.llm is None or not self.cue_llm:
+            return None
+        if text in self._cue_cache:
+            return self._cue_cache[text]
+        if self._now < self._cue_off_until:
+            return None
+        self.stats["cue_llm_calls"] += 1
+        prompt = cd.CUE_PROMPT.format(text=text.replace('"', "'"),
+                                      state="paused (off the record)" if self.sm.in_scope else "on")
+        ok, reply = cd.call_with_timeout(lambda: self.llm.complete(prompt), self.cue_llm_timeout)
+        res = cd.parse_cue_intent(reply) if ok else None
+        if res is None:
+            self.stats["cue_llm_failures"] += 1
+            self._cue_fail_run += 1
+            if self._cue_fail_run >= CUE_LLM_BREAKER:
+                self._cue_off_until = self._now + CUE_LLM_COOLDOWN
+                self._cue_fail_run = 0
+        else:
+            self._cue_fail_run = 0
+        self._cue_cache[text] = res
+        return res
+
+    def _cue(self, text: str) -> cd.Cue:
+        """Cheap detector first; the LLM is consulted only for uncertain cases: a weak structured
+        match, or no match but a cue-related word in the text. Without an LLM (or when it fails)
+        the structured detector decides alone."""
+        cue = cd.detect(text)
+        if cue.false_alarm:
+            return cue
+        uncertain = (cue.gate or (self.sm.in_scope and cd.gate_in_scope(text))) if cue.kind is None else cue.weak
+        if not uncertain:
+            return cue
+        res = self._llm_intent(text)
+        if res is not None:
+            return cd.merge_llm_intent(cue, res, text)
+        if cue.kind is not None and cue.weak and not cue.accept_alone:
+            return cd.Cue(gate=cue.gate)
+        return cue
 
     def _off_step(self, item: Item, text: str, t: float) -> list[Event]:
         """One utterance arriving inside a kept-out scope (no explicit cue in it)."""
@@ -378,8 +432,16 @@ class Pipeline:
     def _handle_retro(self, rec: _Rec, cue: cd.Cue) -> list[Event]:
         item, seg = rec.item, rec.seg
         ev: list[Event] = []
-        self.buf.remove(item.seg.id)
-        ev.append(self._ev("redacted", item, reason="cue:retro_meta"))
+        # Retraction policy: the retracted topic is removed from the notes / hold buffer (below).
+        # The retract line itself is dropped, except when it also carries a correction
+        # ("scratch the bit about QA, I misspoke, they sign off Monday"): then the line minus its
+        # retract clause is kept as an ordinary public line (the correction is information).
+        keep = bool(cue.keep_text) and len(cd.content_stems(cue.keep_text)) >= 2
+        if keep:
+            item.seg = replace(item.seg, text=redact_pii(cue.keep_text, self.use_presidio)[0])
+        else:
+            self.buf.remove(item.seg.id)
+            ev.append(self._ev("redacted", item, reason="cue:retro_meta"))
         pool = sorted((i for i in self._notes + self.buf.items()
                        if i.seg.id != seg.id and i.seg.t_start <= seg.t_start),
                       key=lambda i: (i.seg.t_start, i.seq))
@@ -407,4 +469,6 @@ class Pipeline:
                 ev.append(self._ev("redacted", t, reason=f"retro:match({method})"))
                 if was_pending and self.sm.state == PENDING and not self.buf.pending_items():
                     ev += self._to_state(ON, t, "retro_resolved_pending")
+        if keep:
+            ev += self._check_implicit(item)
         return ev

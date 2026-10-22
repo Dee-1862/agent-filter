@@ -192,7 +192,7 @@ def test_whisper_loads_only_local_weights(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisperModel))
     monkeypatch.setenv("OTR_WHISPER_MODEL_DIR", str(model_dir))
     load_whisper()
-    assert calls == [(str(model_dir), {"device": "cpu", "compute_type": "int8"})]
+    assert calls == [(str(model_dir), {"device": "cpu", "compute_type": "int8", "cpu_threads": 4})]
     monkeypatch.setenv("OTR_WHISPER_MODEL_DIR", str(tmp_path / "missing"))
     with pytest.raises(RuntimeError, match="Local faster-whisper weights not found"):
         load_whisper()
