@@ -542,10 +542,18 @@ class LiveSession:
         after_by_seg = {e.segment_id: e.state for e in events if e.segment_id}
         if events:
             self.last_state[identity] = events[-1].state
-        pausing = any(event.kind == "pending_confirm" for event in events)
+        # A sensitive line the model flags (pay, health, HR...) is kept out automatically: the pipeline is told
+        # "keep it out" at once, the person's notes keep running, and the line shows as a kept-out item.
+        flagged = [e.segment_id for e in events if e.kind == "pending_confirm"]
+        pipe = self.pipes.get(identity)
+        if flagged and pipe is not None and hasattr(pipe, "confirm"):
+            events = list(events)
+            for sid in flagged:
+                events += [e for e in pipe.confirm(sid, True) if not (e.kind == "redacted" and e.segment_id in flagged)]
+        pausing = False
         safe = []
         for event in events:
-            suppressed_kinds = {"pending_confirm", "redacted"} if pausing else {"redacted"}
+            suppressed_kinds = {"pending_confirm", "redacted"}
             if event.kind in suppressed_kinds:
                 self.count_redaction(identity, event.segment_id, "suppressed")
             if event.kind in suppressed_kinds or (event.kind == "retro_removed" and not pausing):

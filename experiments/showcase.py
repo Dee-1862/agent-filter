@@ -33,10 +33,10 @@ OUT = ROOT / "docs" / "showcase"
 PEOPLE = [("Reddy", "reddy@example.com", ["reddy"]),
           ("Lance", "lance@example.com", ["lance"]),
           ("Not Tuff", "nottuff@example.com", ["nottuff"])]
-SPEECH_S = 78        # length of the scripted meeting in demo_audio_three
+SPEECH_S = 106       # length of the scripted meeting in demo_audio_three
 # (seconds after the first word, screenshot label): one per privacy signal
-MOMENTS = {26: "02-explicit-off-the-record", 35: "03-reaction-kept-out-too", 53: "04-strike-that-retraction",
-           64: "05-unspoken-salary-human-decides"}
+MOMENTS = {26: "02-explicit-off-the-record", 36: "03-reaction-kept-out-too", 55: "04-strike-that-retraction",
+           82: "05-sensitive-lines-kept-out", 100: "06-contact-details-and-remove-that"}
 
 
 def read_track(name: str) -> tuple[array.array, int, int, int]:
@@ -182,17 +182,16 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
                         for name in pages:
                             open_agent(pages[name])
                             shot(pages[name], f"{label}-{slug(name)}")
-                # Human in the loop: the unspoken salary line pauses Not Tuff's notes. Not Tuff sees why,
-                # then chooses to turn notes back on for the rest of the meeting. The paused line stays out.
-                nt = pages["Not Tuff"]
-                if not human_done and t > 60 and nt.get_attribute("#notes-button", "aria-checked") == "false":
-                    open_agent(nt)
-                    shot(nt, "06-paused-for-a-sensitive-line-not-tuff")
-                    nt.click("#notes-button")
-                    time.sleep(1.0)
-                    shot(nt, "07-not-tuff-chooses-to-resume-notes")
-                    human_done = True
                 time.sleep(0.5)
+
+            # Remove it yourself: Lance clicks Remove on one of his own lines in the notes panel.
+            lance = pages["Lance"]
+            open_agent(lance)
+            btn = lance.query_selector("#captions button.remove")
+            if btn:
+                btn.click()
+                time.sleep(2.0)
+                shot(lance, "07-removed-by-you-lance")
 
             for name, pg in pages.items():
                 me = contexts[name].request.get(app + "/api/me").json()

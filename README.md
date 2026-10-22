@@ -133,7 +133,7 @@ A tunnel provider can see the traffic that passes through it, so do not call thi
 | `demo/` | Web server and pages (`/` meeting, `/meet` three views, `/insights` pop out) |
 | `bench/` | Benchmark data, systems, metrics, results |
 | `scripts/` | Environment check, redaction check, helpers |
-| `docs/` | Plain explanation, architecture, results, research, demo script, setup, project log; superseded notes in `docs/archive/` |
+| `docs/` | Plain explanation, architecture, results, research, demo script, setup, project log |
 
 ## Contributing
 

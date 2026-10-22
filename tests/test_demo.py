@@ -614,24 +614,21 @@ def test_live_explicit_consent_off_discards_pending_and_blocks_later_segments():
         assert "Private later line" not in json.dumps(session.messages)
 
 
-def test_live_sensitive_hold_pauses_only_that_speaker_and_never_allows_publication():
+def test_live_sensitive_line_is_kept_out_and_notes_keep_running():
     src = StubLiveSource()
     live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
     live.names.update({"alice": "Alice", "bob": "Bob"})
     live.set_consent("alice", True)
     live.set_consent("bob", True)
     live.push(Segment("sensitive", "alice", "Her salary is 150,000", 0, 0))
-    assert src.consent == {"alice": False, "bob": True}
-    assert live.snapshot()["alice"]["sensitive_paused"] is True
-    assert live.snapshot()["bob"]["sensitive_paused"] is False
-    assert "alice" not in live.pipes
+    assert src.consent == {"alice": True, "bob": True}          # no pause: notes keep running
+    assert live.snapshot()["alice"]["sensitive_paused"] is False
     assert "150,000" not in json.dumps(live.messages)
     assert live.approved == {}
+    assert live.insights_for("alice")["kept_out"] == {"pay_hr": 1}  # shown as a kept-out kind
     live.push(Segment("safe", "bob", "Agenda item one", 0, 0))
     live._publish_events("bob", live.pipes["bob"].tick(1))
     assert live.approved["safe"]["text"] == "Agenda item one"
-    live.set_consent("alice", True)
-    assert live.snapshot()["alice"]["sensitive_paused"] is False
     assert "150,000" not in json.dumps(live.messages)
 
 
@@ -707,9 +704,10 @@ def test_live_two_clients_share_approved_lines_but_keep_statuses_private():
         assert me_b["lines"][1]["text"] == "Bob budget notes"
         # others expose only name + notes on/off; own status may expose the pause flag
         assert "sensitive_paused" not in me_b["participants"][alice]
-        assert me_a["participants"][alice]["sensitive_paused"] is True
+        assert me_a["participants"][alice]["sensitive_paused"] is False   # kept out, not paused
         assert me_a["participants"][bob] == {"name": "Bob", "recording": True}
-        assert me_b["participants"][alice] == {"name": "Alice", "recording": False}
+        assert me_b["participants"][alice] == {"name": "Alice", "recording": True}
+        assert "150,000" not in json.dumps(me_a) and "150,000" not in json.dumps(me_b)
 
 
 def test_live_stream_shares_approved_lines_but_not_withheld_text():
@@ -1208,7 +1206,7 @@ def test_live_insights_have_only_category_keys_and_counts():
     live.push(Segment("s1", "alice", f"Her {SECRET}", 0, 0))
     ins = live.insights_for("alice")
     assert ins["kept_out"] == {"pay_hr": 1} and ins["total"] == 1 and ins["approved"] == 0
-    assert [step["state"] for step in ins["timeline"]] == ["recording", "paused"]
+    assert [step["state"] for step in ins["timeline"]] == ["recording"]
     assert live.insights_for("bob")["kept_out"] == {} and live.insights_for("bob")["total"] == 0
     for text in walk_strings(ins):
         assert "150,000" not in text and "salary" not in text.lower() and "Alice" not in text and text != "s1"

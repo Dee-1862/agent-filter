@@ -40,7 +40,7 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ## 2026-10-22 · C-021 · Temporary Vercel and tunnel demo
 - Type: addendum
-- Touches: PRD 1.5–1.6 and 2.7 (A-011); LOCAL_PRIVACY.md
+- Touches: PRD 1.5-1.6 and 2.7 (A-011); LOCAL_PRIVACY.md
 - What changed: Approved `consentmeeting.vercel.app` for the static UI, a Vercel API proxy through a Cloudflare Quick Tunnel to local FastAPI, and tunneled LiveKit WSS. Media still needs the same Wi-Fi until tested otherwise; ASR and policy models stay on the host. The UI drops the large live-transcript detail panel and uses action labels for the notes button.
 - Why: The DNS and certificate route will not be ready in time. Lance approved cloud transit for the demo while keeping fully local operation as the later target.
 - Decided by: Lance in the 2026-10-22 conversation
@@ -137,7 +137,7 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 - Decided by: runtime/demo agent
 ## 2026-10-22 · C-007 · Implement local LiveKit consent demo
 - Type: system
-- Touches: PRD A-001–A-006, INGEST.md, LOCAL_PRIVACY.md
+- Touches: PRD A-001-A-006, INGEST.md, LOCAL_PRIVACY.md
 - What changed: Added a local meeting page, server-issued participant identities, per-person Start/Stop and status, selective LiveKit recorder subscription, local utterance-level ASR, and a shared transcript containing only approved lines. Sensitive flags pause only the affected speaker and discard the pending utterance.
 - Why: Make the per-person capture boundary visible and testable without sending meeting data to hosted services.
 - Decided by: project owner request on 2026-10-22
@@ -158,14 +158,14 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ## 2026-10-22 · C-004 · Add local demo, UI and Ketch decisions
 - Type: addendum
-- Touches: PRD Part 2 (2.1–2.7, A-001–A-005)
-- What changed: Added accepted addenda for per-person UI, transcript visibility, sensitive HR/number policy, Ketch alignment without hosted integration, and a build order that supersedes the initial P1–P6 timebox. Added open questions Q5–Q8.
+- Touches: PRD Part 2 (2.1-2.7, A-001-A-005)
+- What changed: Added accepted addenda for per-person UI, transcript visibility, sensitive HR/number policy, Ketch alignment without hosted integration, and a build order that supersedes the initial P1-P6 timebox. Added open questions Q5-Q8.
 - Why: The hackathon demo should prove consent at the source and show only approved per-speaker text, while keeping all data and inference local.
 - Decided by: project owner in the 2026-10-22 conversation
 
 ## 2026-10-22 · C-003 · Move consent to LiveKit participant tracks
 - Type: foundation
-- Touches: PRD Part 1 (1.1–1.3, 1.5–1.9)
+- Touches: PRD Part 1 (1.1-1.3, 1.5-1.9)
 - What changed: Replaced mixed meeting-audio capture with a self-hosted LiveKit room and per-participant opt-in track subscription. Made visible consent, local per-speaker transcription, HR/number gating and deletion propagation core goals; kept voiceprints, cloud processing, other meeting-platform bots and secondhand disclosure out of first scope.
 - Why: The owner explicitly chose LiveKit and per-person consent. A post-capture filter over mixed audio cannot enforce that a declining participant was not processed.
 - Decided by: project owner in the 2026-10-22 conversation
@@ -180,7 +180,7 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ## 2026-10-22 · C-001 · Initial PRD created
 - Type: foundation
-- Touches: PRD Part 1 (all), Part 2 (2.1–2.7)
+- Touches: PRD Part 1 (all), Part 2 (2.1-2.7)
 - What changed: Created `docs/` with PRD.md, CHANGES.md and LESSONS_LEARNED.md. Part 1 captures the research question, hypothesis, architecture, evaluation design and risks from the source plan. Part 2 seeds the build plan, team split, demo script, future-work backlog and open questions.
 - Why: Fix the foundation so later work adds to it instead of drifting from it.
 - Decided by: project owner
