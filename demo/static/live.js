@@ -1262,8 +1262,11 @@
       const access = accessOverride || await post("/api/join", { name });
       me = access.identity;
       stopDeviceCheck();
-      const roomOptions = { adaptiveStream: true, dynacast: true };
-      if (devPrefs.audioinput) roomOptions.audioCaptureDefaults = { deviceId: devPrefs.audioinput };
+      const roomOptions = { adaptiveStream: true, dynacast: true,
+        // Close-talk capture: no auto gain, so people talking far from the microphone stay quiet
+        // and the notes engine can ignore them; the browser still removes steady noise and echo.
+        audioCaptureDefaults: { autoGainControl: false, noiseSuppression: true, echoCancellation: true } };
+      if (devPrefs.audioinput) roomOptions.audioCaptureDefaults = Object.assign({}, roomOptions.audioCaptureDefaults, { deviceId: devPrefs.audioinput });
       if (devPrefs.videoinput) roomOptions.videoCaptureDefaults = { deviceId: devPrefs.videoinput };
       if (devPrefs.audiooutput && supportsSinkId()) roomOptions.audioOutput = { deviceId: devPrefs.audiooutput };
       room = new LiveKit.Room(roomOptions);
