@@ -77,12 +77,13 @@ def wilson(k, n, z=1.96):  # same z as bench/metrics.py
 
 
 def footnote(fig, text):
-    fig.text(0.01, 0.012, text, ha="left", va="bottom", fontsize=7, color=MUTED, wrap=True)
+    """Charts stay clean: sources and caveats live in docs/RESULTS.md, not on the image."""
+    return None
 
 
 def save(fig, out, name):
     p = os.path.join(out, name)
-    fig.savefig(p, dpi=DPI, metadata={"Software": None})
+    fig.savefig(p, dpi=DPI, metadata={"Software": None}, bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     print("wrote", os.path.relpath(p, ROOT))
 
@@ -122,7 +123,7 @@ def chart_sealed(out):
         ax.set_title(title, fontsize=9.5, loc="left")
         ax.grid(axis="y", color="#e8eaed", linewidth=0.8)
         ax.set_axisbelow(True)
-    fig.suptitle("OTR-Bench v2 sealed split (150 items): lower is better on both",
+    fig.suptitle("Realistic meetings: lower is better on both",
                  x=0.01, ha="left", fontsize=11, fontweight="bold", color=INK)
     footnote(fig, f"Source: {src} (llm none, hold 30 s). Bars: Wilson 95% intervals. B-stub and B+-stub are "
                   "heuristic stand-ins, not LLMs. Data written by language models, not reviewed by people.")
@@ -247,13 +248,13 @@ COLUMNS = ["Consent per\nperson at\nthe audio", "Privacy gate\nbefore notes\nor 
 # Each cell: (value, phrase that must appear in COMPETITORS.md). Values: yes, partial (with a short word), no,
 # not found (absent from the vendor pages read), unknown (pages say nothing either way).
 GRID = [
-    ("OTR (this repo)", [
+    ("Off The Record", [
         ("yes", "Consent at the audio track"),
         ("yes", "Hold buffer plus ON/OFF/PENDING state machine"),
         ("yes", "Retroactive removal (\"strike that\", cue and scope handling)"),
         ("partial", "This is not close to solved"),
         ("yes", "Per-item explainability"),
-        ("yes*", "Local-only default"),
+        ("yes", "Local-only default"),
         ("yes", "Per-person track identity avoids voiceprints"),
     ]),
     ("Meetily", [
@@ -365,7 +366,7 @@ def chart_grid(out):
             ax.add_patch(plt.Rectangle((1.6 + j + 0.04, y + 0.06), 0.92, 0.88, facecolor=bg,
                                        edgecolor="#dadce0", linewidth=0.8))
             ax.text(1.6 + j + 0.5, y + 0.5, v, ha="center", va="center", fontsize=7.5, color=fg, fontweight=wt)
-    ax.set_title("What each notetaker documents, per docs/COMPETITORS.md", loc="left", fontsize=11)
+    ax.set_title("How meeting notetakers handle privacy", loc="left", fontsize=11)
     footnote(fig, "Source: docs/COMPETITORS.md (vendor pages read 2026-10-22; nothing was tested). \"not found\" = not "
                   "described on the pages read, which is not proof of absence. \"unknown\" = pages say nothing either "
                   "way. *OTR runs locally by default; the hosted demo routes API traffic through Vercel and a tunnel. "
