@@ -41,7 +41,7 @@ def direct_client(app):
     (dict(**{"CF-Connecting-IP": "1.2.3.4"}), "tunnelled"),
     (dict(Forwarded="for=1.2.3.4"), "tunnelled"),
     (dict(host="abc.trycloudflare.com"), "tunnelled"),        # loopback connector with no forwarding headers
-    (dict(client=("203.0.113.5", 1)), "tunnelled"),
+    (dict(client=("8.8.8.8", 1)), "tunnelled"),
     (dict(client=("testclient", 1)), "tunnelled"),
     (dict(client=None), "tunnelled"),
     (dict(client=("192.168.1.20", 1), host="192.168.1.2:8765"), "lan"),
@@ -59,7 +59,7 @@ def test_internal_endpoints_reject_tunnel_traffic_and_return_only_counts():
         assert created.status_code == 200
         for path in ("/api/_internal/activity", "/api/_internal/egress"):
             assert remote.get(path).status_code == 404
-            assert TestClient(app, client=("203.0.113.5", 1)).get(path).status_code == 404
+            assert TestClient(app, client=("8.8.8.8", 1)).get(path).status_code == 404
             assert local.get(path, headers=TUNNEL).status_code == 404         # forwarding header on a loopback socket
             assert local.get(path, headers={"Forwarded": "for=1.1.1.1"}).status_code == 404
         assert remote.post("/api/_internal/service", json={"state": "READY"}).status_code == 404
