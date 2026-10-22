@@ -11,11 +11,13 @@
   let finalized = false, readyForFinal = false, finalizedCount = null, contributorCount = null;
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
   let speaking = new Set(), muted = new Map();
+  const connectedPeople = new Set();
   const videoTracks = new Map(), videoMuted = new Set();
   let toastTimer = null, meRefreshTimer = null, drawerLastFocus = null;
   let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
   let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
+  let admissionCheckInProgress = false, admissionFailures = 0, joinInProgress = false;
   const ENTRY_SCREENS = ["home-screen", "host-setup", "guest-setup", "share-screen", "waiting-screen", "join"];
   function showEntry(id) {
     for (const screen of ENTRY_SCREENS) $(screen).classList.toggle("hidden", screen !== id);
@@ -87,20 +89,66 @@
       }
     }, 3000);
   }
+  function setWaitingState(state, error = "") {
+    const connecting = state === "connecting", failed = state === "failed" || state === "status-error";
+    setText($("waiting-title"), connecting ? "Connecting to the meeting" : failed ? "Could not connect" : "Waiting for the host");
+    setText($("waiting-message"), connecting
+      ? "The host admitted you. Connecting your call…"
+      : state === "failed" ? "The host admitted you, but the call did not connect. Try again."
+        : state === "status-error" ? "We lost contact with the meeting. Try connecting again."
+        : "Your request has been sent. Stay on this page and you’ll join when the host lets you in.");
+    setText($("waiting-error"), error);
+    $("waiting-retry-button").classList.toggle("hidden", !failed);
+    $("waiting-retry-button").disabled = connecting;
+    setText($("waiting-cancel-button"), state === "waiting" ? "Cancel request" : "Back to home");
+  }
+  async function connectAdmittedGuest(status) {
+    if (joinInProgress) return;
+    clearInterval(waitingTimer);
+    waitingTimer = null;
+    joinAccess = status;
+    showEntry("waiting-screen");
+    setWaitingState("connecting");
+    try {
+      const connected = await join(status, status);
+      if (!connected) setWaitingState("failed", "If it keeps failing, ask the host to check the meeting connection.");
+    } catch (_) {
+      setWaitingState("failed", "If it keeps failing, ask the host to check the meeting connection.");
+    }
+  }
   async function pollAdmission() {
-    if (!roomId || role !== "guest") return;
+    if (!roomId || role !== "guest" || admissionCheckInProgress || joinInProgress) return;
+    admissionCheckInProgress = true;
     try {
       const status = await api(`/api/meetings/${encodeURIComponent(roomId)}/status`);
+      admissionFailures = 0;
       if (status.status === "denied") {
         clearInterval(waitingTimer);
+        waitingTimer = null;
         showEntry("guest-setup");
         setText($("guest-error"), "The host did not admit this request.");
       } else if (status.status === "admitted") {
-        clearInterval(waitingTimer);
-        joinAccess = status;
-        await join(status, status);
+        await connectAdmittedGuest(status);
+      } else if (status.status === "waiting" && !waitingTimer) {
+        joinAccess = null;
+        setWaitingState("waiting");
+        waitingTimer = setInterval(pollAdmission, 1500);
       }
-    } catch (_) { /* Keep waiting through a transient connection failure. */ }
+    } catch (error) {
+      if (error.status === 401 || error.status === 404) {
+        clearInterval(waitingTimer);
+        waitingTimer = null;
+        joinAccess = null;
+        showEntry("guest-setup");
+        setText($("guest-error"), error.status === 404
+          ? "This meeting is no longer available. Ask the host for a new link."
+          : "Your join request expired. Ask to join again.");
+      } else if (++admissionFailures >= 3 || !waitingTimer) {
+        clearInterval(waitingTimer);
+        waitingTimer = null;
+        setWaitingState("status-error", "Check your connection and try again.");
+      }
+    } finally { admissionCheckInProgress = false; }
   }
   const tileEls = {};
 
@@ -152,12 +200,14 @@
 
   function updateTileFlags() {
     for (const [identity, tile] of Object.entries(tileEls)) {
-      tile.classList.toggle("speaking", speaking.has(identity));
+      const connected = identity === me || connectedPeople.has(identity);
+      tile.classList.toggle("not-connected", !connected);
+      tile.classList.toggle("speaking", connected && speaking.has(identity));
       const isMuted = identity === me
         ? (room ? !room.localParticipant.isMicrophoneEnabled : false)
         : muted.get(identity) === true;
-      tile.querySelector(".muted-badge").classList.toggle("hidden", !isMuted);
-      setText(tile.querySelector(".tile-mic"), isMuted ? "Muted" : "");
+      tile.querySelector(".muted-badge").classList.toggle("hidden", !connected || !isMuted);
+      setText(tile.querySelector(".tile-mic"), !connected ? "Not connected yet" : isMuted ? "Muted" : "");
     }
   }
 
@@ -381,12 +431,15 @@
   }
 
   async function join(accessOverride = null, configOverride = null) {
+    if (joinInProgress) return false;
+    joinInProgress = true;
     const button = $("join-button");
     setText($("join-error"), "");
     const name = $("name").value.trim();
     if (!accessOverride && !name) {
       setText($("join-error"), "Enter a display name");
-      return;
+      joinInProgress = false;
+      return false;
     }
     button.disabled = true;
     setText(button, "Joining…");
@@ -396,6 +449,11 @@
       const access = accessOverride || await post("/api/join", { name });
       me = access.identity;
       room = new LiveKit.Room({ adaptiveStream: true, dynacast: true });
+      connectedPeople.clear();
+      room.on(LiveKit.RoomEvent.ParticipantConnected, participant => {
+        connectedPeople.add(participant.identity);
+        updateTileFlags();
+      });
       room.on(LiveKit.RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === LiveKit.Track.Kind.Audio) {
           const media = track.attach();
@@ -451,6 +509,7 @@
         }
       });
       room.on(LiveKit.RoomEvent.ParticipantDisconnected, participant => {
+        connectedPeople.delete(participant.identity);
         setVideoTrack(participant.identity, null);
         videoMuted.delete(participant.identity);
         muted.delete(participant.identity);
@@ -467,6 +526,7 @@
       });
       room.on(LiveKit.RoomEvent.Disconnected, () => setConnection("Disconnected", "off"));
       await room.connect(config.url, access.token);
+      for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
       setText($("room-chip"), `Room ${config.room}`);
       $("room-chip").classList.remove("hidden");
       for (const screen of ENTRY_SCREENS) $(screen).classList.add("hidden");
@@ -488,14 +548,17 @@
         updateTileFlags();
         showToast(`Microphone is off. ${escapeHtml(error.message || "Allow microphone access to speak.")}`, "warn");
       });
+      return true;
     } catch (error) {
-      setText($("join-error"), error.message);
-      if (accessOverride) showToast(`Could not join the meeting: ${escapeHtml(error.message)}`, "err");
+      setText($("join-error"), accessOverride ? "Could not connect to the call." : (error.message || "Could not connect to the meeting."));
+      if (accessOverride) showToast("Could not join the meeting. Try again or ask the host to check the connection.", "err");
       setConnection("Not connected", "off");
-      if (room) { room.disconnect(); room = null; }
+      if (room) { try { await room.disconnect(); } catch (_) { } room = null; }
       if (me && !accessOverride) { try { await post("/api/leave", {}); } catch (_) { } }
       me = null;
+      return false;
     } finally {
+      joinInProgress = false;
       button.disabled = false;
       setText(button, "Join");
     }
@@ -778,6 +841,7 @@
         {name: $("guest-name").value.trim(), email: $("guest-email").value.trim()});
       setText($("waiting-room-label"), `Meeting ${roomId}`);
       showEntry("waiting-screen");
+      setWaitingState("waiting");
       clearInterval(waitingTimer);
       waitingTimer = setInterval(pollAdmission, 1500);
       pollAdmission();
@@ -786,9 +850,12 @@
   };
   $("waiting-cancel-button").onclick = async () => {
     clearInterval(waitingTimer);
-    try { await post(`/api/meetings/${encodeURIComponent(roomId)}/cancel`, {}); } catch (_) { }
+    if (!joinAccess) {
+      try { await post(`/api/meetings/${encodeURIComponent(roomId)}/cancel`, {}); } catch (_) { }
+    }
     location.href = "/";
   };
+  $("waiting-retry-button").onclick = () => pollAdmission();
   $("share-meeting-link-button").onclick = async () => {
     const link = `${location.origin}/m/${encodeURIComponent(roomId)}`;
     try { await navigator.clipboard.writeText(link); announce("Meeting link copied."); }
@@ -896,10 +963,11 @@
       } else if (status.status === "waiting") {
         setText($("waiting-room-label"), `Meeting ${roomId}`);
         showEntry("waiting-screen");
+        setWaitingState("waiting");
         waitingTimer = setInterval(pollAdmission, 1500);
       } else if (status.status === "admitted") {
-        joinAccess = status;
-        join(status, status);
+        setText($("waiting-room-label"), `Meeting ${roomId}`);
+        connectAdmittedGuest(status);
       } else if (status.status === "denied") {
         setText($("guest-error"), "The host did not admit this request.");
       }

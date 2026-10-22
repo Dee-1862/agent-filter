@@ -65,8 +65,10 @@
     <section id="waiting-screen" class="setup-card waiting-card hidden" aria-labelledby="waiting-title">
       <div class="waiting-art" aria-hidden="true">•••</div>
       <h1 id="waiting-title">Waiting for the host</h1>
-      <p>Your request has been sent. Stay on this page and you’ll join when the host lets you in.</p>
+      <p id="waiting-message">Your request has been sent. Stay on this page and you’ll join when the host lets you in.</p>
       <p id="waiting-room-label" class="waiting-room-label"></p>
+      <p id="waiting-error" class="error" role="alert"></p>
+      <button id="waiting-retry-button" class="primary wide hidden" type="button">Try connecting again</button>
       <button id="waiting-cancel-button" class="secondary wide" type="button">Cancel request</button>
     </section>
 
