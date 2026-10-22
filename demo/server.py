@@ -25,8 +25,13 @@ from otr.types import Segment
 STATIC = Path(__file__).parent / "static"
 LINE_RE = re.compile(r"^\s*([^:#@][^:]{0,40}?)\s*:\s*(.+?)\s*$")
 SPOKEN_STOP_RE = re.compile(
-    r"\b(?:stop\s+recording\s+me|(?:please\s+)?(?:don't|do\s+not)\s+record\s+me"
-    r"|i\s+(?:don't|do\s+not)\s+want\s+(?:this|that|my\s+voice|me)\s+(?:to\s+be\s+)?recorded)\b",
+    # Match a direct opening request. Whisper may mishear the last pronoun in
+    # "please stop recording me"; the unambiguous imperative is sufficient.
+    # Anchoring avoids stopping for "he said stop recording me" or
+    # "don't stop recording me" in ordinary conversation.
+    r"^\s*(?:hey[,.]?\s+)?(?:please[,.]?\s+)?(?:stop\s+recording\b"
+    r"|(?:don't|do\s+not)\s+record\s+me\b"
+    r"|i\s+(?:don't|do\s+not)\s+want\s+(?:this|that|my\s+voice|me)\s+(?:to\s+be\s+)?recorded\b)",
     re.I,
 )
 
