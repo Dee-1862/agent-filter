@@ -48,23 +48,23 @@ Numbers: on the realistic sealed set, our pipeline let private lines into the no
 ### You say it
 "This next part is off the record" keeps everything out until "back on the record", including other people's reactions.
 
-![Explicit off the record, Lance](docs/images/showcase/02-explicit-off-the-record-lance.png)
+![Explicit off the record, Lance](docs/images/showcase/02-explicit-off-the-record-lance-marked.png)
 
-![Reaction kept out too, Reddy](docs/images/showcase/03-reaction-kept-out-too-reddy.png)
+![Reaction kept out too, Reddy](docs/images/showcase/03-reaction-kept-out-too-reddy-marked.png)
 
 ### You take it back
 "Strike that" removes the line you just said.
 
-![Strike that retraction, Lance](docs/images/showcase/04-strike-that-retraction-lance.png)
+![Strike that retraction, Lance](docs/images/showcase/04-strike-that-retraction-lance-marked.png)
 
 ### Nobody says anything
 Salary, a performance plan, layoffs and a health matter are caught by the local model and kept out while notes keep running. You can also remove your own line with one click.
 
-![Sensitive lines kept out, Not Tuff](docs/images/showcase/05-sensitive-lines-kept-out-not-tuff.png)
+![Sensitive lines kept out, Not Tuff](docs/images/showcase/05-sensitive-lines-kept-out-not-tuff-marked.png)
 
-![Lance removes his own line](docs/images/showcase/07-removed-by-you-lance.png)
+![Lance removes his own line](docs/images/showcase/07-removed-by-you-lance-marked.png)
 
-Afterwards, [what was kept out](docs/images/showcase/09-insights-reddy.png) and [why](docs/images/showcase/11-why-kept-out-not-tuff.png).
+Afterwards, [what was kept out](docs/images/showcase/09-insights-reddy-marked.png) and [why](docs/images/showcase/11-why-kept-out-not-tuff-marked.png).
 
 The run had three participants (Reddy, Lance, Not Tuff) through the real call, speech to text and local model on the host laptop. Proof files: `docs/showcase/proof_*.json`.
 
