@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from demo import categories
 from demo.live_session import LiveSession
 from demo.server import build_livekit_source, create_app, load_script_segments
 from demo.fake_pipeline import Pipeline as FakePipeline
@@ -57,7 +58,7 @@ def test_main_script_has_four_speakers():
 def test_index_served():
     with TestClient(create_app("fake", autostart=False)) as c:
         r = c.get("/")
-        assert r.status_code == 200 and "Final notes" in r.text
+        assert r.status_code == 200 and "Insights" in r.text
         assert "Presenter mode" in r.text and "pendcard" in r.text
 
 
@@ -65,12 +66,13 @@ def test_index_has_progressive_disclosure_levels():
     with TestClient(create_app("fake", autostart=False)) as c:
         r = c.get("/")
         assert r.status_code == 200
-        for marker in ('id="tiles"', 'id="captions"', 'id="status-pill"', 'id="insights-btn"',
-                       'id="insights-panel"', 'id="explain-panel"', 'id="live-btn"',
+        for marker in ('id="tiles"', 'id="captions"', 'id="status-pill"', 'id="tab-insights"',
+                       'id="tab-explain"', 'id="view-insights"', 'id="view-explain"', 'id="live-btn"',
                        'id="settings-menu"', 'id="banner"', "Keep that out of the notes?"):
             assert marker in r.text, marker
-        # the overview must not render private text: only a placeholder chip
-        assert "kept out of notes" in r.text and "Reveal text" in r.text
+        # the overview renders no private text: only placeholder chips; the shared views are served
+        assert c.get("/static/views.js").status_code == 200 and c.get("/static/views.css").status_code == 200
+        assert "Reveal text" in c.get("/static/views.js").text
 
 
 def test_index_dom_ids_all_exist():
@@ -200,6 +202,8 @@ def test_live_uses_per_person_consent_and_publishes_approved_only():
     "Please stop recording the...",  # observed local TTS -> Whisper output
     "Stop recording.",
     "Hey, please stop recording me.",
+    "Stop recording this meeting.",
+    "Please stop recording",
 ])
 def test_live_spoken_stop_tolerates_misheard_ending_and_discards_text(spoken):
     src = StubLiveSource()
@@ -233,7 +237,7 @@ def test_live_endpoints_never_offer_replay_controls_or_raw_state():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
         home = client.get("/").text
-        assert "Record my voice for the notes" in home and 'id="join-consent"' in home
+        assert "Create a meeting" in home and 'id="notes-button"' in home
         assert "Your voice, your choice" in client.get("/live").text
         assert "Your voice, your choice" in client.get("/live.html").text
         assert client.get("/api/state").status_code == 404
@@ -258,6 +262,120 @@ def test_live_consent_is_bound_to_server_issued_identity():
         assert src.consent[alice] and not src.consent[bob]
         assert second.get("/api/me").json()["identity"] == bob
         assert first.post("/api/consent", json={"recording": "false"}).status_code == 400
+
+
+def test_meeting_waiting_room_requires_host_admission_and_scopes_access():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as guest, TestClient(app) as outsider:
+        created = host.post("/api/meetings", json={"name": "Host", "email": "host@example.test"})
+        assert created.status_code == 200
+        data = created.json()
+        room = data["room_id"]
+        assert data["join_url"].endswith("/m/" + room)
+        assert host.get("/m/" + room).status_code == 200
+        assert host.get("/api/meetings/other/status").status_code == 401
+        assert outsider.get("/api/meetings/" + room + "/status").status_code == 401
+
+        requested = guest.post("/api/meetings/" + room + "/request",
+                               json={"name": "Guest", "email": "guest@example.test"})
+        assert requested.status_code == 200
+        assert requested.json()["status"] == "waiting"
+        assert "token" not in requested.json()
+        assert guest.get("/api/meetings/" + room + "/status").json()["status"] == "waiting"
+        assert guest.get("/api/me").status_code == 403
+        assert guest.post("/api/consent", json={"recording": True}).status_code == 403
+        pending = host.get("/api/meetings/" + room + "/status").json()["pending"]
+        assert len(pending) == 1 and pending[0]["name"] == "Guest"
+        assert guest.post("/api/meetings/" + room + "/admit",
+                          json={"request_id": pending[0]["request_id"]}).status_code == 403
+
+        admitted = host.post("/api/meetings/" + room + "/admit",
+                             json={"request_id": pending[0]["request_id"]})
+        assert admitted.status_code == 200
+        status = guest.get("/api/meetings/" + room + "/status").json()
+        assert status["status"] == "admitted"
+        assert status["room"] == room
+        assert guest.get("/api/me").json()["identity"] == status["identity"]
+        assert guest.post("/api/consent", json={"recording": True}).status_code == 200
+        assert host.get("/api/me").json()["participants"][status["identity"]]["recording"] is True
+
+
+def test_meeting_denial_never_issues_room_access():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as guest:
+        room = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()["room_id"]
+        req = guest.post("/api/meetings/" + room + "/request",
+                         json={"name": "Guest", "email": "g@example.test"}).json()
+        assert host.post("/api/meetings/" + room + "/deny",
+                         json={"request_id": req["request_id"]}).status_code == 200
+        status = guest.get("/api/meetings/" + room + "/status").json()
+        assert status["status"] == "denied" and "token" not in status
+        assert guest.get("/api/me").status_code == 403
+
+
+def test_meeting_guest_can_cancel_pending_request(monkeypatch):
+    monkeypatch.setenv("MEETING_PUBLIC_ORIGIN", "http://192.0.2.10:8772")
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as guest:
+        created = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()
+        room = created["room_id"]
+        assert created["join_url"] == "http://192.0.2.10:8772/m/" + room
+        guest.post("/api/meetings/" + room + "/request",
+                   json={"name": "Guest", "email": "g@example.test"})
+        assert len(host.get("/api/meetings/" + room + "/status").json()["pending"]) == 1
+        assert guest.post("/api/meetings/" + room + "/cancel").status_code == 200
+        assert host.get("/api/meetings/" + room + "/status").json()["pending"] == []
+        assert guest.get("/api/meetings/" + room + "/status").status_code == 401
+
+
+def test_meeting_cookies_keep_host_sessions_separate_across_tabs():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as browser:
+        first = browser.post("/api/meetings", json={"name": "First", "email": "one@example.test"}).json()
+        second = browser.post("/api/meetings", json={"name": "Second", "email": "two@example.test"}).json()
+        first_id, second_id = first["room_id"], second["room_id"]
+        assert browser.get("/api/meetings/" + first_id + "/status").json()["identity"] == first["identity"]
+        assert browser.get("/api/meetings/" + second_id + "/status").json()["identity"] == second["identity"]
+        first_page = {"referer": "http://testserver/m/" + first_id}
+        second_page = {"referer": "http://testserver/m/" + second_id}
+        assert browser.get("/api/me", headers=first_page).json()["identity"] == first["identity"]
+        assert browser.get("/api/me", headers=second_page).json()["identity"] == second["identity"]
+        assert browser.post("/api/leave", headers=first_page).status_code == 200
+        assert browser.get("/api/meetings/" + first_id + "/status").status_code == 401
+        assert browser.get("/api/meetings/" + second_id + "/status").status_code == 200
+
+
+def test_host_end_purges_room_and_revokes_guest_access():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as guest, TestClient(app) as outsider:
+        room_id = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()["room_id"]
+        requested = guest.post("/api/meetings/" + room_id + "/request",
+                               json={"name": "Guest", "email": "g@example.test"}).json()
+        assert outsider.post("/api/meetings/" + room_id + "/end").status_code == 401
+        assert guest.post("/api/meetings/" + room_id + "/end").status_code == 403
+        assert host.post("/api/meetings/" + room_id + "/admit",
+                         json={"request_id": requested["request_id"]}).status_code == 200
+        live = app.state.meetings[room_id]["session"]
+        guest_id = guest.get("/api/me").json()["identity"]
+        guest.post("/api/consent", json={"recording": True})
+        live.approved["guest-line"] = {"id": "guest-line", "speaker": guest_id,
+                                       "name": "Guest", "text": "Agenda item one"}
+        live.line_owner["guest-line"] = guest_id
+        assert live.approved
+
+        ended = host.post("/api/meetings/" + room_id + "/end")
+        assert ended.status_code == 200
+        assert "no-store" in ended.headers["cache-control"]
+        assert room_id not in app.state.meetings
+        assert live.closed and live.approved == {} and live.messages == []
+        assert live.sessions == {} and live.names == {} and live.pipes == {}
+        assert host.get("/m/" + room_id).status_code == 404
+        assert host.get("/api/me").status_code == 401
+        assert guest.get("/api/me").status_code == 401
+        assert guest.get("/api/meetings/" + room_id + "/status").status_code == 401
+        assert host.post("/api/meetings/" + room_id + "/end").status_code == 401
+        live.push(Segment("late", guest_id, "Too late", 0, 0))
+        assert live.approved == {}
 
 
 def test_live_explicit_consent_off_discards_pending_and_blocks_later_segments():
@@ -311,40 +429,527 @@ def test_live_config_and_replay_mode_detection():
     with TestClient(app) as client:
         cfg = client.get("/api/config").json()
         assert cfg["mode"] == "livekit" and cfg["room"] == "demo"
+        assert [c["key"] for c in cfg["categories"]] == categories.KEYS
         assert client.get("/static/livekit-client.umd.js").status_code == 200
         assert client.get("/static/not-a-file.js").status_code == 404
-    # one index.html serves every mode; non-consent modes have no /api/config, so the page falls back to replay
+        # the server picks the page: consent mode serves the lobby / admission / three-view page at "/"
+        assert 'id="create-button"' in client.get("/").text
+    # replay and shared-stream modes serve the operator console and have no /api/config
     with TestClient(create_app("fake", autostart=False)) as client:
         assert client.get("/api/config").status_code == 404
-        assert 'id="join-btn"' in client.get("/").text
+        assert 'id="view-tabs"' in client.get("/").text
 
 
-def test_index_has_voice_in_controls():
-    html = (Path(__file__).resolve().parent.parent / "demo" / "static" / "index.html").read_text(encoding="utf-8")
-    for marker in ('id="join"', 'id="join-consent"', 'id="consent-switch"', 'role="switch"', 'id="mute-btn"',
-                   'id="meter"', "setMicrophoneEnabled", "ActiveSpeakersChanged", "/api/consent", "/api/join",
-                   "/api/leave", "/api/me", 'id="mic-retry"', "prefers-reduced-motion"):
+# ---------------------------------------------------------------- privacy-first seam
+def live_app(hold_seconds=0.0):
+    src = StubLiveSource()
+    app = create_app("fake", source="livekit", live_source=src, autostart=False,
+                     hold_seconds=hold_seconds)
+    return app, src
+
+
+def join_as(client, name):
+    r = client.post("/api/join", json={"name": name})
+    assert r.status_code == 200
+    return r.json()["identity"]
+
+
+def approve_line(session, identity, line_id, text, now=1.0):
+    session.push(Segment(line_id, identity, text, now, now))
+    session._publish_events(identity, session.pipes[identity].tick(now + 0.01))
+
+
+def live_stream_messages(session, viewer, since=None):
+    """Exercise the same visibility filter used by SSE without opening its endless HTTP stream."""
+    msgs = [{"type": "participants", "participants": session.public_participants(viewer)},
+            {"type": "snapshot", "lines": session.own_lines(viewer)}]
+    for message in session.messages[since if since is not None else len(session.messages):]:
+        visible = session.visible_message(viewer, message)
+        if visible is not None:
+            msgs.append(visible)
+    return msgs
+
+
+def test_live_two_clients_see_only_own_lines_and_statuses():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Alice launch plan")
+        approve_line(session, bob, "b1", "Bob budget notes")
+        session.push(Segment("a2", alice, "Her salary is 150,000", 2, 2))  # sensitive pause
+
+        me_a = alice_c.get("/api/me").json()
+        me_b = bob_c.get("/api/me").json()
+        assert [l["id"] for l in me_a["lines"]] == ["a1"]
+        assert [l["id"] for l in me_b["lines"]] == ["b1"]
+        assert me_a["lines"][0]["text"] == "Alice launch plan"
+        assert me_b["lines"][0]["text"] == "Bob budget notes"
+        # others expose only name + notes on/off; own status may expose the pause flag
+        assert "sensitive_paused" not in me_b["participants"][alice]
+        assert me_a["participants"][alice]["sensitive_paused"] is True
+        assert me_a["participants"][bob] == {"name": "Bob", "recording": True}
+        assert me_b["participants"][alice] == {"name": "Alice", "recording": False}
+
+
+def test_live_stream_filters_other_speaker_text_and_ids():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c:
+        alice = join_as(alice_c, "Alice")
+        alice_c.post("/api/consent", json={"recording": True})
+        session.names["bob"] = "Bob"
+        session.set_consent("bob", True)
+        approve_line(session, alice, "a1", "Alice line one")
+        approve_line(session, "bob", "b1", "Bob secret one")
+
+        msgs = live_stream_messages(session, alice)
+        body = json.dumps(msgs)
+        assert "Alice line one" in body
+        assert "Bob secret one" not in body and '"id": "b1"' not in body
+        snap = next(m for m in msgs if m["type"] == "snapshot")
+        assert [l["id"] for l in snap["lines"]] == ["a1"]
+
+        start = len(session.messages)
+        approve_line(session, "bob", "b2", "Bob secret two")
+        approve_line(session, alice, "a2", "Alice line two")
+        live_msgs = live_stream_messages(session, alice, start)
+        body = json.dumps(live_msgs)
+        assert "Alice line two" in body
+        assert "Bob secret two" not in body and '"id": "b2"' not in body
+
+
+def test_live_stream_late_join_gets_only_own_lines():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c:
+        alice = join_as(alice_c, "Alice")
+        alice_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Alice early line")
+
+    with TestClient(app) as bob_c:
+        bob = join_as(bob_c, "Bob")
+        msgs = live_stream_messages(session, bob)
+        body = json.dumps(msgs)
+        assert "Alice early line" not in body and '"id": "a1"' not in body
+        snap = next(m for m in msgs if m["type"] == "snapshot")
+        assert snap["lines"] == []
+
+
+def test_live_notes_remove_authorization_and_stream_reflection():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Alice line one")
+        approve_line(session, bob, "b1", "Bob line one")
+
+        # another speaker's line id: 404, text never leaks, line stays
+        assert bob_c.post("/api/notes/remove", json={"id": "a1"}).status_code == 404
+        assert alice_c.get("/api/me").json()["lines"][0]["text"] == "Alice line one"
+
+        start = len(session.messages)
+        assert alice_c.post("/api/notes/remove", json={"id": "a1"}).status_code == 200
+        live_msgs = live_stream_messages(session, alice, start)
+        removed = [m for m in live_msgs if m["type"] == "transcript"]
+        assert any(c["kind"] == "removed" and c["id"] == "a1" for m in removed for c in m["changes"])
+        assert alice_c.get("/api/me").json()["lines"] == []
+        assert alice_c.post("/api/notes/remove", json={"id": "a1"}).status_code == 404
+        assert bob_c.get("/api/me").json()["lines"][0]["id"] == "b1"
+        assert bob_c.post("/api/notes/remove", json={}).status_code == 400
+
+
+def test_live_notes_finalize_stops_capture_discards_held_and_blocks_consent():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as client:
+        alice = join_as(client, "Alice")
+        assert client.post("/api/consent", json={"recording": True}).status_code == 200
+        approve_line(session, alice, "a1", "Alice approved line")
+        session.push(Segment("held", alice, "Alice held line", 2, 2))
+
+        r = client.post("/api/notes/finalize", json={})
+        assert r.status_code == 200
+        me = client.get("/api/me").json()
+        assert me["finalized"] is True
+        assert [l["id"] for l in me["lines"]] == ["a1"]
+        assert alice not in session.pipes  # held text discarded
+        assert client.post("/api/notes/finalize", json={}).status_code == 200  # idempotent
+        assert client.post("/api/consent", json={"recording": True}).status_code == 409
+        assert client.post("/api/consent", json={"recording": False}).status_code == 200
+        session.push(Segment("late", alice, "Alice late line", 3, 3))
+        assert client.get("/api/me").json()["lines"] == me["lines"]
+
+
+def test_live_final_waits_for_present_speaker_without_approved_line():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Alice agenda")
+        assert alice_c.post("/api/notes/finalize", json={}).status_code == 200
+        assert bob not in session.contributors()
+        assert alice_c.get("/api/me").json()["ready_for_final"] is False
+        assert alice_c.get("/api/notes/final").status_code == 409
+        assert bob_c.post("/api/notes/finalize", json={}).status_code == 200
+        assert alice_c.get("/api/notes/final").status_code == 200
+
+
+def test_live_redaction_counts_are_aggregate_and_private():
+    app, _ = live_app()
+    live = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        live.push(Segment("unconsented", alice, "Never transcribed", 0, 0))
+        assert live.redaction_counts()["total"] == 0
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        live.push(Segment("salary", alice, "Her salary is 150,000", 0, 0))
+        assert alice_c.get("/api/me").json()["redaction_counts"] == {
+            "suppressed": 1, "removed": 0, "total": 1,
+        }
+        assert bob_c.get("/api/me").json()["redaction_counts"]["total"] == 0
+        approve_line(live, bob, "b1", "Bob budget notes")
+        approve_line(live, bob, "b2", "Bob project timeline")
+        assert bob_c.post("/api/notes/remove", json={"id": "b1"}).status_code == 200
+        assert bob_c.get("/api/me").json()["redaction_counts"] == {
+            "suppressed": 0, "removed": 1, "total": 1,
+        }
+        for message in live.messages:
+            if message.get("type") == "redaction_counts":
+                body = json.dumps(message)
+                assert "150,000" not in body and "Bob budget notes" not in body
+                assert '"id": "b1"' not in body and '"id": "salary"' not in body
+                if message["owner"] == bob:
+                    assert live.visible_message(alice, message) is None
+        alice_c.post("/api/notes/finalize", json={})
+        bob_c.post("/api/notes/finalize", json={})
+        final = alice_c.get("/api/notes/final").json()
+        assert final["redaction_counts"] == {"suppressed": 1, "removed": 1, "total": 2}
+        assert [line["id"] for line in final["lines"]] == ["b2"]
+
+
+def test_live_notes_final_gating_and_combined_transcript():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Alice launch plan")
+        approve_line(session, bob, "b1", "Bob budget notes")
+
+        assert alice_c.get("/api/notes/final").status_code == 409
+        me = alice_c.get("/api/me").json()
+        assert me["contributor_count"] == 2 and me["finalized_count"] == 0
+        assert me["ready_for_final"] is False
+
+        assert alice_c.post("/api/notes/finalize", json={}).status_code == 200
+        assert alice_c.get("/api/notes/final").status_code == 409
+
+        assert bob_c.post("/api/notes/finalize", json={}).status_code == 200
+        r = alice_c.get("/api/notes/final")
+        assert r.status_code == 200
+        assert "no-store" in r.headers["cache-control"]
+        final = r.json()
+        assert final["ready"] is True
+        assert [(l["id"], l["name"], l["text"]) for l in final["lines"]] == [
+            ("a1", "Alice", "Alice launch plan"), ("b1", "Bob", "Bob budget notes")]
+        me = alice_c.get("/api/me").json()
+        assert me["ready_for_final"] is True
+        assert me["finalized_count"] == 2 and me["contributor_count"] == 2
+
+
+def test_live_notes_final_requires_join():
+    app, _ = live_app()
+    with TestClient(app) as client:
+        assert client.get("/api/notes/final").status_code == 401
+
+
+def test_live_leave_drops_unfinalized_contribution():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Alice line one")
+        approve_line(session, bob, "b1", "Bob line one")
+
+        assert bob_c.post("/api/leave", json={}).status_code == 200
+        assert bob_c.get("/api/me").status_code == 401
+        me = alice_c.get("/api/me").json()
+        assert me["contributor_count"] == 1
+        assert [l["id"] for l in me["lines"]] == ["a1"]
+        assert alice_c.get("/api/notes/final").status_code == 409
+
+        assert alice_c.post("/api/notes/finalize", json={}).status_code == 200
+        r = alice_c.get("/api/notes/final")
+        assert r.status_code == 200
+        assert [l["id"] for l in r.json()["lines"]] == ["a1"]
+
+
+def test_live_config_smoke():
+    src = StubLiveSource()
+    app = create_app("fake", source="livekit", live_source=src, autostart=False)
+    with TestClient(app) as client:
+        r = client.get("/api/config")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["mode"] == "livekit"
+        assert body["url"] == src.url
+        assert body["room"] == src.room_name
+
+
+def test_live_load_pipeline_class_real_and_fake():
+    from demo.live_session import load_pipeline_class
+    real_cls, real_kind = load_pipeline_class("real")
+    assert real_kind == "real" and real_cls.__module__ == "otr.pipeline"
+    fake_cls, fake_kind = load_pipeline_class("fake")
+    assert fake_kind == "fake" and fake_cls.__module__ == "demo.fake_pipeline"
+
+
+def static_text(name):
+    return (Path(__file__).resolve().parent.parent / "demo" / "static" / name).read_text(encoding="utf-8")
+
+
+def test_live_page_has_lobby_voice_and_three_views():
+    html, js = static_text("live.html"), static_text("live.js")
+    for marker in ('id="create-button"', 'id="host-lobby"', 'id="camera-button"', 'id="mic-button"', 'id="notes-button"',
+                   'id="view-tabs"', 'id="tab-realtime"', 'id="tab-insights"', 'id="tab-explain"',
+                   'id="view-realtime"', 'id="view-insights"', 'id="view-explain"', 'id="status-pill"',
+                   'id="live-button"', 'id="present-button"', 'id="captions"', "/static/categories.js", "/static/views.js"):
         assert marker in html, marker
-    # consent is never pre-ticked and the page never calls the replay-only confirm endpoint in consent mode
-    assert 'id="join-consent" type="checkbox" checked' not in html
+    for marker in ("setMicrophoneEnabled", "ActiveSpeakersChanged", "/api/consent", "/api/join", "/api/leave",
+                   "/api/me", "kept_out", "renderInsights", "renderExplain"):
+        assert marker in js, marker
+    # the consent page never offers a reveal, and never calls the replay-only confirm endpoint
+    assert "reveal:" not in js and "/api/confirm" not in js and "Reveal text" not in html
 
 
-def test_live_status_is_text_free_and_counts_kept_out():
+def test_index_operator_console_has_three_views():
+    html = static_text("index.html")
+    for marker in ('id="tab-realtime"', 'id="tab-insights"', 'id="tab-explain"', 'id="view-insights"',
+                   'id="view-explain"', 'id="live-btn"', 'id="status-pill"', 'id="pendcard"', "Presenter mode",
+                   "/static/views.js", "/static/categories.js"):
+        assert marker in html, marker
+    # consent-mode machinery lives in live.html; the console has no mic, join or consent controls
+    assert "setMicrophoneEnabled" not in html and "/api/join" not in html and "/api/consent" not in html
+
+
+# ---------------------------------------------------------------- one taxonomy
+@pytest.mark.parametrize("reason,kind,expected", [
+    ("cue:off_the_record", "redacted", "off_record"),
+    ("cue:between_us", "state_change", "off_record"),
+    ("scope:off", "redacted", "off_record"),
+    ("implicit_end:topic_shift", "state_change", "off_record"),
+    ("flush:unresolved_scope", "redacted", "off_record"),
+    ("cue:retro_meta", "redacted", "retracted"),
+    ("cue:strike_that", "redacted", "retracted"),
+    ("retro:match(keyword)", "retro_removed", "retracted"),
+    ("retro:match(llm)", "redacted", "retracted"),
+    ("", "retro_removed", "retracted"),
+    ("kw:health", "pending_confirm", "personal_health"),
+    ("llm:personal", "pending_confirm", "personal_health"),
+    ("kw:salary", "pending_confirm", "pay_hr"),
+    ("llm:hr", "pending_confirm", "pay_hr"),
+    ("kw:layoffs", "pending_confirm", "pay_hr"),
+    ("llm:legal", "pending_confirm", "legal_business"),
+    ("llm:confidential", "pending_confirm", "legal_business"),
+    ("presidio:EMAIL_ADDRESS,PHONE_NUMBER", "redacted", "contact"),
+    ("regex:PII", "redacted", "contact"),
+    ("hold_elapsed", "committed", "other"),
+    ("flush:unconfirmed", "redacted", "other"),
+    ("confirm:keep_out", "redacted", "other"),
+    ("kw:something_new", "pending_confirm", "other"),
+    ("totally:unknown", "redacted", "other"),
+    ("", "redacted", "other"),
+    (None, "redacted", "other"),
+])
+def test_taxonomy_maps_reason_codes(reason, kind, expected):
+    assert categories.categorize(reason, kind) == expected
+
+
+def test_taxonomy_is_one_table_with_seven_kinds_served_to_both_pages():
+    assert categories.KEYS == ["retracted", "off_record", "contact", "personal_health", "pay_hr",
+                               "legal_business", "other"]
+    assert [categories.LABELS[k] for k in categories.KEYS] == [
+        "Retracted by the speaker (strike that)", "Off the record (you asked)", "Contact details masked",
+        "Personal and health", "Pay and HR", "Legal and confidential business", "Other sensitive"]
+    prefix = "window.OTR_TAXONOMY = "
+    with TestClient(create_app("fake", autostart=False)) as c:
+        js = c.get("/static/categories.js")
+        assert js.status_code == 200 and js.text.startswith(prefix)
+        assert json.loads(js.text[len(prefix):].rstrip().rstrip(";")) == categories.taxonomy()
+        assert c.get("/api/categories").json() == categories.taxonomy()
+    live = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(live) as c:
+        assert c.get("/static/categories.js").text == categories.js_source()
+
+
+# ---------------------------------------------------------------- text-free status and insights
+SECRET = "salary 150,000"
+
+
+def walk_strings(obj):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k)
+            yield from walk_strings(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from walk_strings(v)
+    elif obj is not None:
+        yield str(obj)
+
+
+def test_live_status_messages_are_text_free_and_category_only():
     src = StubLiveSource()
     live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
     live.names.update({"alice": "Alice", "bob": "Bob"})
     live.set_consent("alice", True)
     live.set_consent("bob", True)
-    live.push(Segment("s1", "alice", "Her salary is 150,000", 0, 0))   # sensitive hold -> pause
-    snap = live.status_snapshot()
-    assert snap["kept_out"]["alice"]["count"] == 1
-    assert snap["kept_out"]["alice"]["reasons"] == {"sensitive": 1}
-    assert "bob" not in snap["kept_out"]
+    live.push(Segment("s1", "alice", f"Her {SECRET}", 0, 0))   # sensitive hold -> pause
     live.push(Segment("b1", "bob", "Agenda item one", 0, 0))
     live._publish_events("bob", live.pipes["bob"].tick(1))
-    assert live.status_snapshot()["approved"] == 1
-    blob = json.dumps([m for m in live.messages if m["type"] == "status"])
-    assert "150,000" not in blob and "salary" not in blob.lower()
-    assert any(m["type"] == "status" for m in live.messages)
+    live.push(Segment("b2", "bob", "bob@example.com is my email", 1, 1))   # masked contact detail
+    seen_status = 0
+    for who in ("alice", "bob"):
+        for message in live.messages:
+            visible = live.visible_message(who, message)
+            if visible is None or visible["type"] not in {"status", "transcript"}:
+                continue
+            blob = json.dumps(visible)
+            assert "150,000" not in blob and "salary" not in blob.lower() and "Her " not in blob
+            if visible["type"] == "status":
+                seen_status += 1
+                assert who == message["owner"]
+                allowed = {"approved", "kept_out", "total", "removed", "timeline", "now", "hold_seconds", "type"}
+                assert set(visible) <= allowed
+                assert set(visible["kept_out"]) <= set(categories.KEYS)
+                assert all(isinstance(n, int) for n in visible["kept_out"].values())
+                assert all(set(step) == {"t", "state"} for step in visible["timeline"])
+    assert seen_status
+    assert "150,000" not in json.dumps(live.messages)
+    # the raw log holds only owner markers, no payload at all
+    assert all(set(m) == {"type", "owner"} for m in live.messages if m["type"] == "status")
+
+
+def test_live_insights_have_only_category_keys_and_counts():
+    live = LiveSession(FakePipeline, "fake", StubLiveSource(), hold_seconds=0)
+    live.names.update({"alice": "Alice", "bob": "Bob"})
+    live.set_consent("alice", True)
+    live.set_consent("bob", True)
+    live.push(Segment("s1", "alice", f"Her {SECRET}", 0, 0))
+    ins = live.insights_for("alice")
+    assert ins["kept_out"] == {"pay_hr": 1} and ins["total"] == 1 and ins["approved"] == 0
+    assert [step["state"] for step in ins["timeline"]] == ["recording", "paused"]
+    assert live.insights_for("bob")["kept_out"] == {} and live.insights_for("bob")["total"] == 0
+    for text in walk_strings(ins):
+        assert "150,000" not in text and "salary" not in text.lower() and "Alice" not in text and text != "s1"
+    # off the record is its own kind and its own timeline state
+    live.push(Segment("b1", "bob", "off the record", 1, 1))
+    live.push(Segment("b2", "bob", "the launch slipped", 2, 2))
+    ins = live.insights_for("bob")
+    assert ins["kept_out"] == {"off_record": 1} and ins["timeline"][-1]["state"] == "off_record"
     live.leave("alice")
-    assert "alice" not in live.status_snapshot()["kept_out"]
+    assert live.insights_for("alice")["kept_out"] == {} and "alice" not in live.kept_out
+
+
+def test_live_kept_out_marker_has_generic_trail_without_text_and_goes_to_owner_only():
+    live = LiveSession(FakePipeline, "fake", StubLiveSource(), hold_seconds=0)
+    live.names.update({"alice": "Alice", "bob": "Bob"})
+    live.set_consent("alice", True)
+    live.set_consent("bob", True)
+    live.push(Segment("s1", "alice", f"Her {SECRET}", 0, 0))
+    chips = live.own_kept_out("alice")
+    assert [c["id"] for c in chips] == ["s1"] and chips[0]["category"] == "pay_hr"
+    assert set(chips[0]["trail"]) == {"family", "before", "after", "held_s"}
+    assert chips[0]["trail"]["family"] == "llm" and chips[0]["trail"]["after"] == "PENDING_CONFIRM"
+    assert live.own_kept_out("bob") == []
+    changes = [c for m in live.messages if m["type"] == "transcript" for c in m["changes"] if c["kind"] == "kept_out"]
+    assert len(changes) == 1 and changes[0]["owner"] == "alice"
+    assert live.visible_message("bob", {"type": "transcript", "changes": changes}) is None
+    assert "150,000" not in json.dumps(chips) + json.dumps(changes)
+
+
+def test_live_stream_endpoints_expose_insights_without_text():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        session.push(Segment("s1", alice, f"Her {SECRET}", 0, 0))
+        me_a, me_b = alice_c.get("/api/me").json(), bob_c.get("/api/me").json()
+        assert me_a["insights"]["kept_out"] == {"pay_hr": 1}
+        assert [c["category"] for c in me_a["kept_out"]] == ["pay_hr"]
+        assert me_b["insights"]["kept_out"] == {} and me_b["kept_out"] == []
+        for body in (json.dumps(me_a), json.dumps(me_b)):
+            assert "150,000" not in body and "Her salary" not in body
+        msgs = live_stream_messages(session, bob)
+        assert "s1" not in json.dumps(msgs) and "pay_hr" not in json.dumps(msgs)
+
+
+def test_live_consent_mode_has_no_reveal_or_confirm_surface():
+    app, _ = live_app()
+    with TestClient(app) as client:
+        for path in ("/api/confirm", "/api/reveal", "/api/private", "/api/say"):
+            assert client.post(path, json={}).status_code == 404
+        assert "Reveal text" not in client.get("/").text
+        assert "Reveal text" not in client.get("/static/live.js").text
+
+
+def test_live_llm_is_passed_to_each_speaker_pipeline():
+    class Spy(FakePipeline):
+        def __init__(self, llm=None, hold_seconds=30.0):
+            super().__init__(llm=llm, hold_seconds=hold_seconds)
+            self.llm = llm
+    marker = object()
+    live = LiveSession(Spy, "fake", StubLiveSource(), hold_seconds=0, llm=marker)
+    live.names["alice"] = "Alice"
+    live.set_consent("alice", True)
+    live.push(Segment("a1", "alice", "hello there", 0, 0))
+    assert live.pipes["alice"].llm is marker
+
+
+def test_build_llm_uses_parse_llm_spec_and_env_default(monkeypatch):
+    import urllib.request
+    from demo.server import build_llm
+    from otr.llm import DEFAULT_MODEL
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: type("R", (), {"read": lambda self: b"{}"})())
+    monkeypatch.delenv("OTR_LLM_MODEL", raising=False)
+    assert build_llm("none") is None and build_llm("bogus:x") is None
+    assert build_llm("ollama").model == DEFAULT_MODEL == "granite4.2:3b"
+    assert build_llm("ollama:tiny:1b").model == "tiny:1b"
+    monkeypatch.setenv("OTR_LLM_MODEL", "envmodel:7b")
+    assert build_llm("ollama").model == "envmodel:7b"
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
+    assert build_llm("ollama") is None
+
+
+def test_warm_llm_runs_warmup_in_a_thread():
+    import threading
+    from demo.live_session import warm_llm
+    seen = {}
+
+    class Warm:
+        def warmup(self):
+            seen["thread"] = threading.current_thread().name
+    t = warm_llm(Warm())
+    t.join(2)
+    assert seen["thread"] == "llm-warmup"
+    assert warm_llm(None) is None and warm_llm(object()) is None
+
+
+def test_live_js_dom_ids_all_exist_in_live_html():
+    import re
+    declared = set(re.findall(r'\bid="([^"]+)"', static_text("live.html")))
+    used = set(re.findall(r'\$\("([^"]+)"\)', static_text("live.js")))
+    assert used - declared == set(), used - declared

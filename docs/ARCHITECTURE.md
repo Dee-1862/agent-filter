@@ -89,13 +89,19 @@ flowchart LR
 
 Which pieces serve which mode:
 
-| Mode (`python -m demo.server ...`) | Voices come from | Page served | Engine wiring |
+| Mode (`python -m demo.server ...`) | Voices come from | Page served at `/` | Engine wiring |
 |---|---|---|---|
-| `--source livekit` (per-person consent, Lance) | Browsers join through `live.html`; mic published to LiveKit | `live.html` | `LiveSession`: one Pipeline per speaker; a sensitive hold pauses only that speaker |
-| `--source livekit-stream` (shared view) | Any LiveKit client in the room (e.g. the LiveKit Meet app) | `index.html` | `StreamRunner`: one Pipeline over all speakers |
-| `--source replay --script FILE` | Script file, no audio | `index.html` | `StreamRunner` |
+| `--source livekit` (per-person consent) | Browsers join through the lobby page; mic and camera published to LiveKit | `live.html`: lobby, host admission, video, mic, Notes toggle, and the three views | `LiveSession`: one Pipeline per speaker; a sensitive hold pauses only that speaker |
+| `--source livekit-stream` (shared view) | Any LiveKit client in the room (e.g. the LiveKit Meet app) | `index.html` (operator console) | `StreamRunner`: one Pipeline over all speakers |
+| `--source replay --script FILE` | Script file, no audio | `index.html` (operator console) | `StreamRunner` |
 
-**Gap to close:** `index.html` (the new meeting view) has no microphone capture of its own. Live voice enters only through `live.html` or another LiveKit client. Unifying them (mic and consent inside the meeting view) is the main frontend task left.
+Both pages show the same three views of the same pipeline, implemented once in `static/views.js` with one category table (`demo/categories.py`, served as `/static/categories.js`):
+
+- **Realtime**: tiles with speaking rings, captions of approved lines, "kept out" placeholder chips, Live button, status pill, presenter mode.
+- **Insights**: aggregate only. Kinds of things kept out (Off the record, Retracted, Personal and health, Pay and HR, Legal and confidential business, Contact details masked, Other sensitive) with counts, and a recording-state timeline. Never lists items, speakers or quotes.
+- **Explainability**: the rule for each kind; opening a chip shows the generic trail (rule family, state before and after, hold timing). "Reveal text" exists only in the operator console, never in consent mode.
+
+In consent mode the server sends category keys and counts only, to the owner only (`status` messages, `kept_out` placeholders); text that was kept out never leaves the server.
 
 ## 2. Inside the Pipeline: what happens to one Segment
 

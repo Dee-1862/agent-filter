@@ -4,34 +4,219 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:">
-  <title>Off The Record · Live meeting</title>
+  <title>Meeting · Off The Record</title>
+  <link rel="stylesheet" href="/static/views.css">
   <link rel="stylesheet" href="/static/live.css">
 </head>
 <body>
-  <header><div class="brand"><span class="mark">●</span><div><strong>Off The Record</strong><small>Local meeting · participant-controlled notes</small></div></div><span id="connection" class="chip">Not connected</span></header>
+  <header id="site-header">
+    <div class="brand"><span class="brand-symbol" aria-hidden="true">●</span><strong>Off The Record</strong></div>
+    <div class="header-right">
+      <span id="room-chip" class="chip hidden"></span>
+      <span id="connection" class="chip">Not connected</span>
+    </div>
+  </header>
+
   <main>
-    <section id="join" class="join-card">
-      <p class="eyebrow">JOIN THE ROOM</p>
-      <h1>Your voice, your choice.</h1>
-      <p>Join the conversation with your microphone. The notetaker starts <strong>off</strong> for you. You can choose when your words enter its local transcript.</p>
-      <label for="name">Your display name</label>
-      <div class="join-row"><input id="name" maxlength="60" autocomplete="name" placeholder="Name"><button id="join-button" class="primary">Join meeting</button></div>
-      <p id="join-error" class="error" role="alert"></p>
-      <div class="privacy-note"><span>◉</span> Recording consent belongs to each participant. A spoken stop request also turns off the notetaker for that speaker.</div>
-    </section>
-    <section id="meeting" class="meeting hidden">
-      <div class="meeting-top"><div><p class="eyebrow">LIVE MEETING</p><h1>Room <span id="room-name">demo</span></h1></div><div class="top-actions"><button id="mic-button">Mute microphone</button><button id="leave-button">Leave</button></div></div>
-      <div class="grid">
-        <div class="primary-column">
-          <section class="consent-panel" id="consent-panel"><div><p class="eyebrow">YOUR CONSENT</p><h2 id="my-status">Not recorded</h2><p id="my-explanation">Your audio is shared with meeting participants, but the notetaker is not subscribed to your track.</p></div><button id="consent-button" class="start">Start recording me</button></section>
-          <section class="panel transcript-panel"><div class="panel-heading"><div><p class="eyebrow">APPROVED TRANSCRIPT</p><h2>What the notetaker kept</h2></div><span class="subtle">Only released lines appear here</span></div><div id="transcript" class="transcript"><div id="empty-transcript" class="empty">No approved transcript yet. Speech from people who are off is not transcribed.</div></div></section>
+    <section id="home-screen" class="entry-screen">
+      <div class="entry-copy">
+        <div class="eyebrow">Private meetings on your own network</div>
+        <h1>Meet here. Decide what gets noted.</h1>
+        <p>Start a meeting now, or join with a link. Everyone controls whether their own voice goes into the notes.</p>
+        <div class="entry-actions">
+          <button id="create-button" class="primary action-button" type="button">Create a meeting</button>
+          <div class="join-entry">
+            <label for="home-meeting-code" class="sr-only">Meeting link or code</label>
+            <input id="home-meeting-code" type="text" autocomplete="off" placeholder="Enter a link or meeting code">
+            <button id="home-join-button" class="secondary action-button" type="button">Join a meeting</button>
+          </div>
         </div>
-        <aside><section class="panel"><div class="panel-heading"><div><p class="eyebrow">PEOPLE</p><h2>Recording status</h2></div><span id="participant-count" class="count">0</span></div><div id="participants" class="participants"></div><p class="aside-note">“Not recorded” means this notetaker does not subscribe to that person’s audio. Other people in the room can still hear them.</p></section><section class="panel personal"><p class="eyebrow">PRIVACY STATUS</p><h2>Sensitive pause</h2><div id="pending" class="empty">No sensitive pause. Your button controls capture at any time.</div></section></aside>
+        <p id="home-error" class="error" role="alert"></p>
+        <p class="local-note">Calls and note processing stay on the local meeting host. Share the link only with people who can reach it.</p>
+      </div>
+      <div class="entry-preview" aria-hidden="true"><div class="preview-tile large"><span>LS</span><small>Notes off</small></div><div class="preview-tile"><span>DR</span><small>Notes on</small></div><div class="preview-tile"><span>+</span><small>Your meeting</small></div></div>
+    </section>
+
+    <section id="host-setup" class="setup-card hidden" aria-labelledby="host-setup-title">
+      <button class="back-button" type="button" data-back-home>← Back</button>
+      <h1 id="host-setup-title">Create an instant meeting</h1>
+      <p>Enter how you want to appear. You can invite people after the room opens and let them in one at a time.</p>
+      <label for="host-name">Your display name</label>
+      <input id="host-name" maxlength="60" autocomplete="name" placeholder="Your name" required>
+      <label for="host-email">Your email</label>
+      <input id="host-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
+      <p class="field-help">Email is a label for the host to recognize you; this prototype does not verify it.</p>
+      <button id="host-create-button" class="primary wide" type="button">Create meeting</button>
+      <p id="host-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="guest-setup" class="setup-card hidden" aria-labelledby="guest-setup-title">
+      <button class="back-button" type="button" data-back-home>← Back</button>
+      <h1 id="guest-setup-title">Join this meeting</h1>
+      <p>The host will decide when to let you in.</p>
+      <label for="guest-name">Your display name</label>
+      <input id="guest-name" maxlength="60" autocomplete="name" placeholder="Your name" required>
+      <label for="guest-email">Your email</label>
+      <input id="guest-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
+      <p class="field-help">Your email is shown to the host to help them recognize you. It is not verified.</p>
+      <button id="guest-join-button" class="primary wide" type="button">Ask to join</button>
+      <p id="guest-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="waiting-screen" class="setup-card waiting-card hidden" aria-labelledby="waiting-title">
+      <div class="waiting-art" aria-hidden="true">•••</div>
+      <h1 id="waiting-title">Waiting for the host</h1>
+      <p>Your request has been sent. Stay on this page and you’ll join when the host lets you in.</p>
+      <p id="waiting-room-label" class="waiting-room-label"></p>
+      <button id="waiting-cancel-button" class="secondary wide" type="button">Cancel request</button>
+    </section>
+
+    <section id="share-screen" class="setup-card hidden" aria-labelledby="share-title">
+      <h1 id="share-title">Your meeting is ready</h1>
+      <p>Send this link to the people you want to invite. You can review each request before they enter.</p>
+      <label for="share-link">Meeting link</label>
+      <div class="share-link-row"><input id="share-link" readonly><button id="copy-link-button" class="secondary" type="button">Copy link</button></div>
+      <button id="share-join-button" class="primary wide" type="button">Enter meeting</button>
+    </section>
+
+    <section id="join" class="join-card hidden">
+      <h1>Your voice, your choice.</h1>
+      <p class="lede">Join with your name. Notes are off by default; your voice still goes to everyone in the call.</p>
+      <label for="name">Your display name</label>
+      <div class="join-row">
+        <input id="name" maxlength="60" autocomplete="name" placeholder="Name">
+        <button id="join-button" class="primary">Join</button>
+      </div>
+      <p id="join-error" class="error" role="alert"></p>
+      <p id="join-note"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 15h-2v-2h2Zm0-4h-2V7h2Z"/></svg><span>Notes are transcribed on the local meeting host — no cloud service.</span></p>
+    </section>
+
+    <section id="meeting" class="meeting hidden">
+      <div class="stage">
+        <div class="view-bar">
+          <div id="view-tabs" class="view-tabs" role="tablist" aria-label="Views">
+            <button id="tab-realtime" class="view-tab" role="tab" type="button" aria-selected="true" aria-controls="view-realtime" data-view="realtime">Realtime</button>
+            <button id="tab-insights" class="view-tab" role="tab" type="button" aria-selected="false" aria-controls="view-insights" data-view="insights" tabindex="-1">Insights</button>
+            <button id="tab-explain" class="view-tab" role="tab" type="button" aria-selected="false" aria-controls="view-explain" data-view="explain" tabindex="-1">Explainability</button>
+          </div>
+          <span id="status-pill" class="status-pill off" role="status" aria-live="polite">NOT RECORDING ME</span>
+          <span class="spacer"></span>
+          <button id="live-button" class="bar-button" type="button" aria-label="Live: you are following the meeting in real time"><i class="ldot"></i>Live<span id="live-count" class="live-count hidden">0</span></button>
+          <button id="present-button" class="bar-button" type="button" aria-pressed="false" title="Larger text for presenting (p)">Presenter mode</button>
+        </div>
+
+        <div id="view-realtime" class="view" role="tabpanel" aria-labelledby="tab-realtime">
+          <div class="rt-main">
+            <div id="tile-grid" class="tile-grid" aria-label="Participants"></div>
+            <aside id="host-lobby" class="host-lobby hidden" aria-labelledby="lobby-title">
+              <div class="lobby-head"><h2 id="lobby-title">Waiting to join</h2><span id="lobby-count" class="lobby-count">0</span></div>
+              <p id="lobby-empty" class="lobby-empty">When someone asks to join, you can let them in here.</p>
+              <ul id="lobby-list" class="lobby-list"></ul>
+            </aside>
+          </div>
+          <section class="caption-wrap" aria-labelledby="captions-title">
+            <h2 id="captions-title" class="sr-only">Captions of your approved lines</h2>
+            <div id="captions" class="captions" tabindex="0" aria-live="off">
+              <p id="captions-empty" class="cap-empty">Captions of your approved lines appear here after a short safety hold. Turn Notes on to start.</p>
+            </div>
+          </section>
+        </div>
+
+        <div id="view-insights" class="view views-pane hidden" role="tabpanel" aria-labelledby="tab-insights"></div>
+        <div id="view-explain" class="view views-pane hidden" role="tabpanel" aria-labelledby="tab-explain"></div>
       </div>
     </section>
   </main>
-  <footer>Self-hosted LiveKit · local speech recognition · consent before notetaker capture</footer>
+
+  <footer id="control-bar" class="control-bar hidden" aria-label="Meeting controls">
+    <div class="footer-left"><div><span id="meeting-room-name">Meeting</span><span class="footer-separator">|</span><span id="meeting-clock"></span></div><div id="capture-status" class="capture-status" role="status" aria-live="polite">Your notes are off. Others can still hear you.</div></div>
+    <div class="control-cluster">
+      <button id="mic-button" class="control" aria-pressed="false">
+        <svg class="icon-mic" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3m5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+        <svg class="icon-mic-off hidden" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>
+        <span id="mic-label">Mute</span>
+      </button>
+      <button id="camera-button" class="control camera-off" type="button" aria-pressed="false" aria-label="Turn on camera" title="Turn on camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18 10.48 22 7v10l-4-3.48V17a2 2 0 0 1-2 2H4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3.48ZM4 7v10h12V7H4Z"/></svg><span id="camera-label">Turn on camera</span></button>
+      <span class="divider" aria-hidden="true"></span>
+      <button id="notes-button" class="control" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2m-4 13h-6v-2h6m0-4h-6V8h6Z"/></svg>
+        <span id="notes-label">Notes off</span>
+      </button>
+      <span class="divider" aria-hidden="true"></span>
+      <button id="leave-button" class="control leave">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M10.09 15.59 11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59ZM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z"/></svg>
+        <span>Leave</span>
+      </button>
+    </div>
+    <div class="footer-right">
+      <button id="share-meeting-link-button" class="footer-action hidden" type="button" aria-label="Copy meeting link" title="Copy meeting link"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 5h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3h2v3h12V7h-3V5ZM5 3h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v9h9V5H5Z"/></svg><span>Copy link</span></button>
+      <button id="drawer-button" class="footer-action" aria-expanded="false" aria-controls="notes-drawer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 4h16v16H4V4Zm2 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Z"/></svg><span>My notes</span><span id="drawer-badge" class="badge hidden" aria-hidden="true">0</span></button>
+    </div>
+  </footer>
+
+  <div id="drawer-backdrop" class="backdrop hidden"></div>
+
+  <aside id="notes-drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" hidden>
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawer-title">My notes</h2>
+        <p id="drawer-subtitle" class="subtle"></p>
+      </div>
+      <button id="drawer-close" class="icon-button" aria-label="Close notes panel">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <section class="drawer-section note-state-card" aria-labelledby="note-state-title">
+        <h3 id="note-state-title">Your note status</h3>
+        <p id="note-state-explainer">Notes are off for you. The call still sends your audio to other people when your microphone is on.</p>
+      </section>
+      <section class="drawer-section" aria-labelledby="lines-heading">
+        <h3 id="lines-heading">My live transcript</h3>
+        <p class="drawer-hint">Only your own approved lines appear here during the call, after a short safety hold. You can remove a line before finishing.</p>
+        <p id="my-lines-empty" class="empty">No approved lines yet.</p>
+        <ol id="my-lines" class="lines"></ol>
+      </section>
+      <section class="drawer-section" aria-labelledby="protection-heading">
+        <h3 id="protection-heading">What gets kept out?</h3>
+        <p class="drawer-hint">The local filter tries to keep sensitive speech out and acts on stop or remove requests. It may miss things, so check your lines and remove anything you do not want kept. Withheld words are never shown here.</p>
+        <p id="my-redaction-counts" class="redaction-counts hidden"></p>
+      </section>
+      <section class="drawer-section" aria-labelledby="people-heading">
+        <h3 id="people-heading">People</h3>
+        <ul id="drawer-people" class="people"></ul>
+      </section>
+      <details class="where-run">
+        <summary>How does audio become notes?</summary>
+        <ol>
+          <li>Your microphone controls who hears you in the call. Notes are a separate choice.</li>
+          <li>With your notes on, the local meeting host transcribes your speech and holds each line briefly while the local filter checks it.</li>
+          <li>Only approved lines appear in your private live transcript. You can remove them before finishing.</li>
+          <li>After everyone finishes, someone can explicitly copy the combined final transcript. The final report shows counts, never withheld words.</li>
+        </ol>
+        <p>Speech recognition, filtering, and the LiveKit room run on the local host serving this page. No cloud service is involved.</p>
+      </details>
+      <section class="drawer-section finalize" aria-labelledby="finalize-heading">
+        <h3 id="finalize-heading" class="sr-only">Finish and copy</h3>
+        <p id="finalize-status" class="waiting" role="status"></p>
+        <button id="finalize-button" class="primary">Finish my notes</button>
+        <button id="report-button" class="secondary hidden">View final report</button>
+        <button id="copy-button" class="secondary hidden">Copy final transcript</button>
+        <div id="final-report" class="final-report hidden" aria-live="polite"></div>
+        <p id="copy-result" class="waiting" role="status"></p>
+      </section>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" role="status">
+    <p id="toast-text"></p>
+  </div>
+
+  <div id="note-state-live" class="sr-only" role="status" aria-live="polite"></div>
+
   <script src="/static/livekit-client.umd.js"></script>
+  <script src="/static/categories.js"></script>
+  <script src="/static/views.js"></script>
   <script src="/static/live.js"></script>
 </body>
 </html>

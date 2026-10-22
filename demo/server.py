@@ -3,7 +3,8 @@
 Run:
   python -m demo.server --script demo/scripts/demo_main.txt                   # replay (default)
   python -m demo.server --source livekit --room demo --pipeline real          # live voice
-  python -m demo.server --pipeline real --llm ollama:qwen2.5:3b --script ...
+  python -m demo.server --pipeline real --llm ollama --script ...        # model from env OTR_LLM_MODEL (default granite4.2:3b)
+  python -m demo.server --pipeline real --llm ollama:MODEL --script ...
 Typed lines (POST /api/say, the box at the bottom of the page) work with every source.
 """
 from __future__ import annotations
@@ -20,8 +21,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from demo.categories import js_source, taxonomy
+from demo.live_session import warm_llm
 from otr.runtime import StreamRunner
 from otr.types import Segment
 
@@ -72,22 +75,26 @@ def load_pipeline_class(kind: str):
 
 
 def build_llm(spec: str):
-    """'none' | 'ollama:MODEL'. Falls back to None (with a warning) if unavailable."""
+    """'none' | 'ollama' | 'ollama:MODEL' via otr.llm.parse_llm_spec (the default model comes from env
+    OTR_LLM_MODEL, else granite4.2:3b). Falls back to None (with a warning) if unavailable."""
     if not spec or spec == "none":
         return None
-    if spec.startswith("ollama"):
-        model = spec.partition(":")[2] or "qwen2.5:3b"
-        try:
-            from otr.llm import OllamaLLM
-            llm = OllamaLLM(model=model)
-            urllib.request.urlopen(llm.host + "/api/tags", timeout=1.5).read()
-            return llm
-        except Exception as e:
-            print(f"[demo] WARNING: Ollama model {model!r} unavailable ({e!r}); running with --llm none",
-                  file=sys.stderr)
-            return None
-    print(f"[demo] WARNING: unknown --llm {spec!r}; running with --llm none", file=sys.stderr)
-    return None
+    try:
+        from otr.llm import parse_llm_spec
+        llm = parse_llm_spec(spec)
+    except Exception as e:
+        print(f"[demo] WARNING: bad --llm {spec!r} ({e!r}); running with --llm none", file=sys.stderr)
+        return None
+    if llm is None:
+        print(f"[demo] WARNING: unknown --llm {spec!r}; running with --llm none", file=sys.stderr)
+        return None
+    try:
+        urllib.request.urlopen(llm.host + "/api/tags", timeout=1.5).read()
+    except Exception as e:
+        print(f"[demo] WARNING: Ollama model {getattr(llm, 'model', '?')!r} unavailable ({e!r}); "
+              "running with --llm none", file=sys.stderr)
+        return None
+    return llm
 
 
 def build_livekit_source(room: str):
@@ -114,7 +121,7 @@ def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autos
     if source == "livekit":  # per-person consent mode (demo/live_session.py)
         from demo.live_session import create_live_app
         return create_live_app(cls, kind, live_source=live_source, hold_seconds=hold_seconds,
-                               autostart=autostart)
+                               autostart=autostart, llm=llm)
 
     def new_pipe():
         return cls(llm=llm, hold_seconds=hold_seconds)
@@ -136,6 +143,7 @@ def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autos
     @asynccontextmanager
     async def lifespan(app):
         runner.start()
+        warm_llm(llm)
         yield
         await runner.stop()
 
@@ -145,6 +153,21 @@ def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autos
     @app.get("/")
     async def index():
         return FileResponse(STATIC / "index.html")
+
+    @app.get("/static/categories.js")
+    async def categories_js():
+        # The one category taxonomy (demo/categories.py), rendered for the page. Contains no meeting data.
+        return Response(js_source(), media_type="text/javascript", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/categories")
+    async def categories_json():
+        return taxonomy()
+
+    @app.get("/static/{asset}")
+    async def static_asset(asset: str):
+        if asset not in {"views.js", "views.css"}:
+            raise HTTPException(404)
+        return FileResponse(STATIC / asset)
 
     @app.get("/api/state")
     async def state():
@@ -237,7 +260,7 @@ def main(argv=None):
     ap.add_argument("--room", default="demo", help="LiveKit room name")
     ap.add_argument("--hold", type=float, default=10.0, help="initial hold seconds")
     ap.add_argument("--pipeline", choices=["real", "fake"], default=None)
-    ap.add_argument("--llm", default="none", help="none | ollama:MODEL")
+    ap.add_argument("--llm", default="none", help="none | ollama | ollama:MODEL (default model: env OTR_LLM_MODEL, else granite4.2:3b)")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     a = ap.parse_args(argv)
