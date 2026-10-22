@@ -30,7 +30,11 @@ def _local_whisper_model(model: str) -> Path:
     else:
         snapshot_root = repo_model / f"models--Systran--faster-whisper-{model}" / "snapshots"
         snapshots = sorted(snapshot_root.iterdir()) if snapshot_root.is_dir() else []
-        candidates = [Path(model).expanduser(), repo_model, *snapshots]
+        # Weights already on disk in the Hugging Face cache are local too: no network is used.
+        hf_home = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface")
+        hf_root = hf_home / "hub" / f"models--Systran--faster-whisper-{model}" / "snapshots"
+        hf_snapshots = sorted(hf_root.iterdir()) if hf_root.is_dir() else []
+        candidates = [Path(model).expanduser(), repo_model, *snapshots, *hf_snapshots]
     for candidate in candidates:
         if (candidate / "model.bin").is_file():
             return candidate.resolve()
