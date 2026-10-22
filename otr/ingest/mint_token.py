@@ -2,13 +2,14 @@
 
     python -m otr.ingest.mint_token --room demo --identity alice
 
-Reads LIVEKIT_API_KEY / LIVEKIT_API_SECRET (defaults: devkey / secret, which
-match docker-compose.livekit.yml dev mode). Requires `livekit-api`.
+Reads LIVEKIT_API_KEY / LIVEKIT_API_SECRET (defaults: see otr/ingest/defaults.py,
+which match docker-compose.livekit.yml). Requires `livekit-api`.
 """
 from __future__ import annotations
 
 import argparse
-import os
+
+from .defaults import api_key, api_secret
 
 
 def mint(room: str, identity: str, api_key: str, api_secret: str, ttl_s: int = 3600, can_subscribe: bool = True) -> str:
@@ -29,8 +30,7 @@ def main() -> None:
     ap.add_argument("--room", default="demo")
     ap.add_argument("--identity", required=True)
     a = ap.parse_args()
-    print(mint(a.room, a.identity, os.environ.get("LIVEKIT_API_KEY", "devkey"),
-               os.environ.get("LIVEKIT_API_SECRET", "secret")))
+    print(mint(a.room, a.identity, api_key(), api_secret()))
 
 
 if __name__ == "__main__":

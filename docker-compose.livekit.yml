@@ -1,8 +1,30 @@
-# Local LiveKit server in dev mode. API key/secret: devkey / secret
+# Local LiveKit server for the demo.
+#
+# API key / secret default to devkey / otr-dev-secret-change-me-0123456789abcdef
+# (override with LIVEKIT_API_KEY / LIVEKIT_API_SECRET; keep the secret at 32+ characters,
+# PyJWT warns about shorter HMAC keys).
+#
+# ICE: the server advertises LIVEKIT_NODE_IP (default 127.0.0.1) instead of the Docker bridge
+# address, and does not use STUN to discover a public address. That is what a same-machine demo
+# needs for the first connection attempt to succeed.
+# LAN or phone clients: set LIVEKIT_NODE_IP to this host's LAN address, e.g.
+#   LIVEKIT_NODE_IP=192.168.1.20 docker compose -f docker-compose.livekit.yml up -d --force-recreate
+# and allow TCP 7880, TCP 7881 and UDP 7882 in the Windows firewall. See docs/LIVE_PATH.md.
+#
+# We do not use --dev: it forces debug logging and the fixed devkey/secret pair.
 services:
   livekit:
     image: livekit/livekit-server:latest
-    command: --dev --bind 0.0.0.0
+    command: --bind 0.0.0.0 --node-ip ${LIVEKIT_NODE_IP:-127.0.0.1}
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-otr-dev-secret-change-me-0123456789abcdef}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: ${LIVEKIT_LOG_LEVEL:-info}
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: false
     ports:
       - "7880:7880"          # HTTP / WebSocket signalling
       - "7881:7881"          # WebRTC over TCP
