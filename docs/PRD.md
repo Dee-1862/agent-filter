@@ -306,7 +306,7 @@ claim. A meeting-wide state would let one person's request affect another's
 capture and would make the visible status misleading.
 
 Impact on foundation: clarifies A-001-A-003 and the two-person work split;
-logged in C-006. See [WORK_SPLIT.md](WORK_SPLIT.md).
+logged in C-006. See [WORK_SPLIT.md](archive/WORK_SPLIT.md).
 
 ### A-007 · 2026-10-22 · Wording corrections recommended by RESEARCH.md for PRD 1.1 and 1.4 · proposed
 What: `docs/RESEARCH.md` section 1 recommends these corrections. Part 1 is frozen and is NOT edited here; any change to it needs an explicit decision logged in CHANGES.md. (a) ConfAIde 39% / 57% is the Tier 4 meeting-summary "Leaks Secret" rate (mean of 10 runs, privacy instruction already in the prompt); the action-item figures are 29% / 38%. (b) PrivacyLens 25.68% / 38.69% is the helpfulness-adjusted leak rate; the raw rates are 24.54% / 39.15%. (c) Survey figures in 1.1: 34.7% always asked, 36.5% sometimes, 25.1% never, 3.6% found out afterward; commissioned by a law firm; n=167 exposed respondents. This does not support "most people aren't asked". (d) Novelty wording: "no prior published evaluation" of spoken off-the-record cues, scope end or retroactive requests in streaming meeting transcription; do not claim no prior work (a Zoom patent claims keyword-triggered off-the-record requests). Also: newer-model prompting results (RESEARCH.md bottom line item 2) make a one-pass B a weak baseline, so a B+ is needed (Q10). Note: A-002 is already used by Lance's addendum, so this is A-007.

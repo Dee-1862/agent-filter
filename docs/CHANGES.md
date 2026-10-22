@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-024 · Repository cleanup, results charts, one simple diagram
+- Type: process
+- Touches: none in PRD (one Part 2 link repointed to `archive/WORK_SPLIT.md`, path only); README, ARCHITECTURE.md, HOW_IT_WORKS.md, RUNNING.md
+- What changed: Moved STATUS.md, `.docs-keeper-state.json`, WORK_SPLIT.md, the four research drafts and critiques, and three old screenshots to `docs/archive/` (plan and reasons in CLEANUP_PLAN.md). Added `scripts/make_charts.py`, five charts in `docs/images/charts/` and RESULTS.md. Replaced the seven-box flowchart in ARCHITECTURE.md, README and HOW_IT_WORKS.md with one five-step diagram plus a tool table. Corrected the `--llm` and `--hold` defaults in RUNNING.md.
+- Why: Keep only material that supports the project, and show the measured results with their caveats in one place.
+- Decided by: Deekshith's request in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-023 · Separate transcript viewing from speaker capture
 - Type: addendum
 - Touches: PRD 2.7 (A-013), LOCAL_PRIVACY.md, PUBLIC_MEDIA_DEMO.md, vercel-demo/README.md

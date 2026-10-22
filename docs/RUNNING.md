@@ -14,8 +14,9 @@ Windows wrapper: `.\scripts\run_demo.ps1 <source> [-Audio ...] [-Llm ...] [-Chec
 | `--audio PATH...` | folder, several per-speaker files, or one mixed file (audio source) |
 | `--turns FILE` | speaker-turn JSON `[{"speaker","start","end"}]` for one mixed file |
 | `--script FILE` | replay script (`Alice: text` lines, `@pause N`) or `.jsonl` |
-| `--llm none\|ollama[:MODEL]` | default `none` (rules + Presidio only) |
-| `--hold N` | hold-buffer seconds (default 10) |
+| `--llm auto\|none\|ollama[:MODEL]` | default `auto`: uses the local model when Ollama is running and has it, otherwise rules + Presidio only |
+| `--hold N` | hold-buffer seconds (default `$OTR_HOLD_SECONDS`, else 5 for `--source livekit` and 10 otherwise) |
+| `--fast` | hold 2 s and close utterances after 450 ms of silence (a later "strike that" has less time to catch a line) |
 | `--speed N` | audio/replay pacing: `1` real time, `4` four times faster, `0` as fast as possible |
 | `--model tiny.en` | Whisper model (default `$OTR_WHISPER_MODEL` or `base.en`) |
 | `--port N`, `--host H`, `--room R`, `--no-docker` | server port/host, LiveKit room, never run docker compose |

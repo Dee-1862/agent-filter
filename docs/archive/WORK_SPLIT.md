@@ -46,7 +46,7 @@ implementation tasks, not a change to the product decision.
 
 ## Original implementation scaffold (superseded where it differs above)
 
-Split along the seam in [otr/types.py](../otr/types.py): **Person 1 owns everything that produces `Segment`s and shows `Event`s. Person 2 owns everything between them and the proof that it works.** If neither side changes `otr/types.py`, you will not collide.
+Split along the seam in [otr/types.py](../../otr/types.py): **Person 1 owns everything that produces `Segment`s and shows `Event`s. Person 2 owns everything between them and the proof that it works.** If neither side changes `otr/types.py`, you will not collide.
 
 ```
  PERSON 1: "Live side"                    PERSON 2: "Brain + proof"

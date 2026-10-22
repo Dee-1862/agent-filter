@@ -1,6 +1,6 @@
 # Local setup and current readiness
 
-Updated 2026-10-22. Remote commit `aa9835e` added a LiveKit ingest skeleton, a replay demo, a local pipeline, and benchmarks. The current feature branch wires the LiveKit path to a local meeting page and per-person consent. Follow [INGEST.md](INGEST.md) to run it, [LOCAL_PRIVACY.md](LOCAL_PRIVACY.md) for the data boundary, and [WORK_SPLIT.md](WORK_SPLIT.md) for ownership.
+Updated 2026-10-22. Remote commit `aa9835e` added a LiveKit ingest skeleton, a replay demo, a local pipeline, and benchmarks. The current feature branch wires the LiveKit path to a local meeting page and per-person consent. Follow [INGEST.md](INGEST.md) to run it, [LOCAL_PRIVACY.md](LOCAL_PRIVACY.md) for the data boundary, and [WORK_SPLIT.md](archive/WORK_SPLIT.md) for ownership.
 
 ## Prepared on Lance's Mac
 
