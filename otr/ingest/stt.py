@@ -13,10 +13,30 @@ from __future__ import annotations
 import array
 import itertools
 import math
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 
 SR = 16000
+
+
+def _local_whisper_model(model: str) -> Path:
+    """Resolve weights on disk; never ask faster-whisper to fetch at runtime."""
+    override = os.environ.get("OTR_WHISPER_MODEL_DIR")
+    repo_model = Path(__file__).resolve().parents[2] / "models" / "faster-whisper"
+    if override:
+        candidates = [Path(override).expanduser()]
+    else:
+        snapshot_root = repo_model / f"models--Systran--faster-whisper-{model}" / "snapshots"
+        snapshots = sorted(snapshot_root.iterdir()) if snapshot_root.is_dir() else []
+        candidates = [Path(model).expanduser(), repo_model, *snapshots]
+    for candidate in candidates:
+        if (candidate / "model.bin").is_file():
+            return candidate.resolve()
+    location = override or str(repo_model)
+    raise RuntimeError(f"Local faster-whisper weights not found at {location}; "
+                       "set OTR_WHISPER_MODEL_DIR to a directory containing model.bin")
 
 
 def load_whisper(model: str = "base.en") -> Callable[[object], str]:
@@ -24,7 +44,7 @@ def load_whisper(model: str = "base.en") -> Callable[[object], str]:
         from faster_whisper import WhisperModel
     except ImportError as e:
         raise RuntimeError("faster-whisper not installed: pip install -r requirements-ingest.txt") from e
-    m = WhisperModel(model, device="cpu", compute_type="int8")
+    m = WhisperModel(str(_local_whisper_model(model)), device="cpu", compute_type="int8")
 
     def transcribe(audio_f32) -> str:
         segs, _ = m.transcribe(audio_f32, language="en", beam_size=1, vad_filter=False,

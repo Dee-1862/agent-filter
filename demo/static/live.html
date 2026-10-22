@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:">
+  <title>Off The Record · Live meeting</title>
+  <link rel="stylesheet" href="/static/live.css">
+</head>
+<body>
+  <header><div class="brand"><span class="mark">●</span><div><strong>Off The Record</strong><small>Local meeting · participant-controlled notes</small></div></div><span id="connection" class="chip">Not connected</span></header>
+  <main>
+    <section id="join" class="join-card">
+      <p class="eyebrow">JOIN THE ROOM</p>
+      <h1>Your voice, your choice.</h1>
+      <p>Join the conversation with your microphone. The notetaker starts <strong>off</strong> for you. You can choose when your words enter its local transcript.</p>
+      <label for="name">Your display name</label>
+      <div class="join-row"><input id="name" maxlength="60" autocomplete="name" placeholder="Name"><button id="join-button" class="primary">Join meeting</button></div>
+      <p id="join-error" class="error" role="alert"></p>
+      <div class="privacy-note"><span>◉</span> Recording consent belongs to each participant. A spoken stop request also turns off the notetaker for that speaker.</div>
+    </section>
+    <section id="meeting" class="meeting hidden">
+      <div class="meeting-top"><div><p class="eyebrow">LIVE MEETING</p><h1>Room <span id="room-name">demo</span></h1></div><div class="top-actions"><button id="mic-button">Mute microphone</button><button id="leave-button">Leave</button></div></div>
+      <div class="grid">
+        <div class="primary-column">
+          <section class="consent-panel" id="consent-panel"><div><p class="eyebrow">YOUR CONSENT</p><h2 id="my-status">Not recorded</h2><p id="my-explanation">Your audio is shared with meeting participants, but the notetaker is not subscribed to your track.</p></div><button id="consent-button" class="start">Start recording me</button></section>
+          <section class="panel transcript-panel"><div class="panel-heading"><div><p class="eyebrow">APPROVED TRANSCRIPT</p><h2>What the notetaker kept</h2></div><span class="subtle">Only released lines appear here</span></div><div id="transcript" class="transcript"><div id="empty-transcript" class="empty">No approved transcript yet. Speech from people who are off is not transcribed.</div></div></section>
+        </div>
+        <aside><section class="panel"><div class="panel-heading"><div><p class="eyebrow">PEOPLE</p><h2>Recording status</h2></div><span id="participant-count" class="count">0</span></div><div id="participants" class="participants"></div><p class="aside-note">“Not recorded” means this notetaker does not subscribe to that person’s audio. Other people in the room can still hear them.</p></section><section class="panel personal"><p class="eyebrow">PRIVACY STATUS</p><h2>Sensitive pause</h2><div id="pending" class="empty">No sensitive pause. Your button controls capture at any time.</div></section></aside>
+      </div>
+    </section>
+  </main>
+  <footer>Self-hosted LiveKit · local speech recognition · consent before notetaker capture</footer>
+  <script src="/static/livekit-client.umd.js"></script>
+  <script src="/static/live.js"></script>
+</body>
+</html>

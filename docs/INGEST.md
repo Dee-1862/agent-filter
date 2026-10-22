@@ -5,7 +5,7 @@ Everything in `otr/ingest/` produces `otr.types.Segment` objects (id, speaker, t
 | Source | File | Needs | Status |
 |---|---|---|---|
 | Replay (JSONL or `Alice: text` script) | `replay_source.py` | nothing | tested |
-| LiveKit room bot | `livekit_source.py` | livekit, livekit-api, faster-whisper, a LiveKit server | written from the SDK docs, NOT run |
+| LiveKit room bot | `livekit_source.py` | livekit, livekit-api, faster-whisper, a LiveKit server | tested against a local server with synthetic audio; microphone speech still needs a human check |
 | Mixed-audio diarization | `diarize.py` | pyannote.audio + HF token (optional) | pyannote path untested; energy splitter is a placeholder |
 
 ## Why LiveKit
@@ -16,41 +16,57 @@ No ML diarization is needed, and it is more reliable than diarizing mixed audio.
 ## Run LiveKit locally
 
 ```bash
-pip install -r requirements-ingest.txt
-docker compose -f docker-compose.livekit.yml up -d     # ws://localhost:7880, key devkey / secret
-export LIVEKIT_URL=ws://localhost:7880 LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=secret
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-core.txt -r requirements-demo.txt -r requirements-ingest.txt
+.venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('base.en', device='cpu', compute_type='int8', download_root='models/faster-whisper')"
+livekit-server --dev --bind 127.0.0.1 --node-ip 127.0.0.1
 ```
+
+In another terminal:
+
+```bash
+HF_HUB_OFFLINE=1 .venv/bin/python -m demo.server --source livekit --pipeline real --host 127.0.0.1 --port 8765
+```
+
+Open `http://127.0.0.1:8765/` in two local browser tabs. Each person joins with a
+server-issued identity and starts **Not recorded**. The button controls only that
+person's recorder subscription; everyone can see the status. The dev server's
+placeholder key and secret are for the same-machine demo only. A LAN deployment
+needs its own keys, HTTPS and participant authentication.
 
 ## Join as a human
 
-Mint a token:
+The meeting page mints short-lived tokens locally. For a low-level SDK check,
+you can still mint one from the command line:
 
 ```bash
-python -m otr.ingest.mint_token --room demo --identity alice     # prints a JWT
-# or: lk token create --api-key devkey --api-secret secret --join --room demo --identity alice
+.venv/bin/python -m otr.ingest.mint_token --room demo --identity alice
 ```
 
-Open https://meet.livekit.io, choose "Custom", and enter `ws://localhost:7880` plus the token.
-(An https page may refuse a plain `ws://` server because of mixed content. If so, run the
-LiveKit Meet starter app locally, `github.com/livekit-examples/meet`, pointed at the
-local server, or use `localhost` in a browser that treats it as secure.) Repeat with
-`--identity bob` in a second tab. Each human is a separate track.
+Do not use a hosted meeting page for the privacy demo. The app serves its
+LiveKit browser SDK, CSS and JavaScript from local files.
 
 ## Start the bot
 
 ```bash
-python -m otr.ingest.livekit_source --room demo     # prints one Segment JSON per line
+.venv/bin/python -m otr.ingest.livekit_source --room demo --consent-identity alice
 ```
 
-The bot joins as `otr-bot` (subscribe-only), runs one `UtteranceChunker` per remote
-participant audio track (16 kHz mono, energy VAD, faster-whisper `base.en` CPU int8), and
-yields Segments. In code: `async for seg in LiveKitSource(room="demo").segments()`.
+The standalone bot needs an explicit `--consent-identity` for each consenting
+participant. The meeting app handles this from each person's authenticated
+button. The bot joins as `otr-bot` with `auto_subscribe=False`, runs local
+`faster-whisper` per opted-in audio track, and yields speaker-attributed Segments.
+Stop revokes that speaker, cancels pending work and unsubscribes.
 
-STT behaviour (`stt.py`): text is only emitted when confirmed, either by two consecutive
-passes agreeing on a word prefix (LocalAgreement-2, re-run every 2 s) or by end of
-utterance after 700 ms of silence. Caveats: the energy threshold (500 RMS) is untuned,
-a participant who joins after the bot is only picked up on `track_subscribed`, and
-whisper runs in a thread executor so many simultaneous speakers on CPU may lag.
+In the live path, STT waits for the utterance to close after 700 ms of silence;
+it does not emit partial prefixes that might reveal sensitive context too soon.
+The energy threshold (500 RMS) is untuned, the chunker caps uninterrupted speech
+at 20 seconds, and many simultaneous CPU transcriptions may lag. The privacy
+pipeline holds text beyond ASR; sensitivity checks are not yet proven complete.
+
+`load_whisper` resolves weights from the ignored local `models/faster-whisper`
+cache or `OTR_WHISPER_MODEL_DIR` and refuses to download at runtime. Install the
+model before disconnecting WAN; keep `HF_HUB_OFFLINE=1` for an offline run.
 
 ## Demo without any of this
 

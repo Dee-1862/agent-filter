@@ -1,5 +1,36 @@
 # Work Split: two people, working in parallel
 
+## Current decision (2026-10-22)
+
+**Lance owns the live meeting path. Deekshith owns local NLP and policy.** The
+original Person 1 / Person 2 task lists below are a scaffold, not authority to
+use one meeting-wide privacy state. Consent is always **per participant**.
+
+- **Lance / live side:** self-hosted LiveKit, join tokens and participant identity,
+  individual Start/Stop controls, selective recorder subscription, local per-track
+  ASR, visible recording states, approved per-speaker transcript, and live demo
+  wiring. Owns `otr/ingest/`, `demo/`, LiveKit configuration, and their tests.
+- **Deekshith / local NLP side:** spoken stop/delete cues, retrospective removal,
+  HR/number and contextual sensitivity checks, hold and confirmation policy,
+  per-speaker privacy state, local model evaluation, and benchmarks. Owns the
+  pipeline and policy modules under `otr/` plus `bench/` and their tests.
+- **Shared seam:** `Segment` carries the authenticated LiveKit participant identity.
+  Capture consent is enforced before ASR and defaults OFF; the policy pipeline
+  receives only segments from opted-in speakers. A stop invalidates that speaker's
+  pending work. The pipeline must keep speaker-specific state and return only
+  policy-approved text for the shared transcript. `otr/types.py` changes require
+  agreement from both owners before either side edits it.
+- **Privacy boundary:** raw audio, provisional ASR, held/redacted text, and raw audit
+  events never go to the shared browser feed. A transcript row appears only after
+  local policy approval. The browser may show a text-free processing indicator.
+
+The code committed as `aa9835e` is an initial scaffold. Its `Pipeline` currently
+has one global `StateMachine`, and its LiveKit source auto-subscribes to every
+track. Neither behavior satisfies the current consent requirement; both are
+implementation tasks, not a change to the product decision.
+
+## Original implementation scaffold (superseded where it differs above)
+
 Split along the seam in [otr/types.py](../otr/types.py): **Person 1 owns everything that produces `Segment`s and shows `Event`s. Person 2 owns everything between them and the proof that it works.** If neither side changes `otr/types.py`, you will not collide.
 
 ```
