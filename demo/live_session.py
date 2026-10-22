@@ -775,8 +775,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         live.set_consent(identity, False)
         meetings[room_id] = {"session": live, "host": identity, "requests": {}, "email": email}
         browser_sessions[sid] = (room_id, "host", None)
-        if autostart:
-            live.start()
+        # A fresh room has no consenting speaker. Keep its bot off the transport
+        # until someone opts in, avoiding unnecessary native connections on
+        # meetings that are immediately ended or never enable notes.
         public_origin = (os.environ.get("MEETING_PUBLIC_ORIGIN")
                          or os.environ.get("OTR_PUBLIC_ORIGIN")
                          or str(request.base_url).rstrip("/"))
@@ -1052,6 +1053,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
             raise HTTPException(409, "Notes already finalized")
         validate_origin(request)
         live.set_consent(identity, body["recording"])
+        if autostart and body["recording"] and not live.tasks:
+            live.start()
         return {"identity": identity, "recording": body["recording"]}
 
     @app.post("/api/notes/remove")

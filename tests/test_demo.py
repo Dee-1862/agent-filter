@@ -300,6 +300,22 @@ def test_meeting_waiting_room_requires_host_admission_and_scopes_access():
         assert host.get("/api/me").json()["participants"][status["identity"]]["recording"] is True
 
 
+def test_new_meeting_defers_capture_until_a_speaker_consents(monkeypatch):
+    started = []
+    monkeypatch.setattr(LiveSession, "start", lambda self: started.append(self))
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=True)
+    with TestClient(app) as host:
+        assert started == [app.state.session]  # legacy single-room session
+        created = host.post("/api/meetings", json={"name": "Host", "email": "host@example.test"})
+        assert created.status_code == 200
+        assert started == [app.state.session]
+        assert host.post("/api/meetings/" + created.json()["room_id"] + "/end").status_code == 200
+        assert started == [app.state.session]
+        host.post("/api/meetings", json={"name": "Host", "email": "host@example.test"})
+        assert host.post("/api/consent", json={"recording": True}).status_code == 200
+        assert len(started) == 2
+
+
 def test_meeting_denial_never_issues_room_access():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as host, TestClient(app) as guest:
