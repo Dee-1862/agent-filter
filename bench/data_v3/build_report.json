@@ -1,0 +1,282 @@
+{
+ "drops": {},
+ "n_authored": 764,
+ "n_windows": 764,
+ "contamination": {
+  "inserted_lines_checked": 2562,
+  "verbatim_in_tests_or_otr": 0,
+  "verbatim_in_old_bench_sets": 0,
+  "verbatim_in_v2_items": 0
+ },
+ "diversity_all": {
+  "n_cue_lines": 435,
+  "distinct_2grams": 3674,
+  "distinct_3grams": 5109,
+  "distinct_4grams": 5568,
+  "max_exact_line_repeat": 1,
+  "stock_phrase_line_rate": {
+   "off the record": 0.0,
+   "on the record": 0.0,
+   "strike that": 0.0,
+   "scratch that": 0.0,
+   "don't write": 0.0,
+   "do not write": 0.0,
+   "between us": 0.0,
+   "forget what i said": 0.0069,
+   "disregard": 0.0115,
+   "don't put": 0.0,
+   "keep this out": 0.0,
+   "keep that out": 0.0
+  },
+  "any_stock_phrase_rate": 0.0184,
+  "per_author_cue_lines": {
+   "Q1": 58,
+   "Q2": 65,
+   "Q3": 49,
+   "Q4": 54,
+   "Q5": 60,
+   "Q6": 49,
+   "S1": 12,
+   "S2": 20,
+   "S3": 15,
+   "S4": 14,
+   "S5": 16,
+   "S6": 11,
+   "S7": 12
+  },
+  "per_author_distinct_3grams": {
+   "Q1": 572,
+   "Q2": 834,
+   "Q3": 669,
+   "Q4": 928,
+   "Q5": 967,
+   "Q6": 643,
+   "S1": 152,
+   "S2": 156,
+   "S3": 188,
+   "S4": 236,
+   "S5": 303,
+   "S6": 151,
+   "S7": 272
+  }
+ },
+ "diversity_sealed": {
+  "n_cue_lines": 150,
+  "distinct_2grams": 1575,
+  "distinct_3grams": 1919,
+  "distinct_4grams": 1967,
+  "max_exact_line_repeat": 1,
+  "stock_phrase_line_rate": {
+   "off the record": 0.0,
+   "on the record": 0.0,
+   "strike that": 0.0,
+   "scratch that": 0.0,
+   "don't write": 0.0,
+   "do not write": 0.0,
+   "between us": 0.0,
+   "forget what i said": 0.0,
+   "disregard": 0.0,
+   "don't put": 0.0,
+   "keep this out": 0.0,
+   "keep that out": 0.0
+  },
+  "any_stock_phrase_rate": 0.0,
+  "per_author_cue_lines": {
+   "Q1": 10,
+   "Q2": 9,
+   "Q3": 9,
+   "Q4": 5,
+   "Q5": 10,
+   "Q6": 7,
+   "S1": 12,
+   "S2": 20,
+   "S3": 15,
+   "S4": 14,
+   "S5": 16,
+   "S6": 11,
+   "S7": 12
+  },
+  "per_author_distinct_3grams": {
+   "Q1": 100,
+   "Q2": 113,
+   "Q3": 145,
+   "Q4": 99,
+   "Q5": 163,
+   "Q6": 88,
+   "S1": 152,
+   "S2": 156,
+   "S3": 188,
+   "S4": 236,
+   "S5": 303,
+   "S6": 151,
+   "S7": 272
+  }
+ },
+ "diversity_dev": {
+  "n_cue_lines": 285,
+  "distinct_2grams": 2595,
+  "top_2grams": [
+   [
+    "the minutes",
+    41,
+    0.1439
+   ],
+   [
+    "the notes",
+    35,
+    0.1228
+   ],
+   [
+    "i said",
+    32,
+    0.1123
+   ],
+   [
+    "can we",
+    26,
+    0.0912
+   ],
+   [
+    "could we",
+    25,
+    0.0877
+   ],
+   [
+    "the next",
+    24,
+    0.0842
+   ],
+   [
+    "the clerk",
+    23,
+    0.0807
+   ],
+   [
+    "about the",
+    23,
+    0.0807
+   ]
+  ],
+  "distinct_3grams": 3524,
+  "top_3grams": [
+   [
+    "pause the minutes",
+    16,
+    0.0561
+   ],
+   [
+    "i said about",
+    16,
+    0.0561
+   ],
+   [
+    "what i said",
+    16,
+    0.0561
+   ],
+   [
+    "out of the",
+    16,
+    0.0561
+   ],
+   [
+    "the minutes for",
+    14,
+    0.0491
+   ],
+   [
+    "for a moment",
+    13,
+    0.0456
+   ],
+   [
+    "in the notes",
+    12,
+    0.0421
+   ],
+   [
+    "things i said",
+    12,
+    0.0421
+   ]
+  ],
+  "distinct_4grams": 3782,
+  "top_4grams": [
+   [
+    "what i said about",
+    15,
+    0.0526
+   ],
+   [
+    "pause the minutes for",
+    11,
+    0.0386
+   ],
+   [
+    "last two things i",
+    11,
+    0.0386
+   ],
+   [
+    "the minutes for a",
+    11,
+    0.0386
+   ],
+   [
+    "two things i said",
+    10,
+    0.0351
+   ],
+   [
+    "i said about my",
+    9,
+    0.0316
+   ],
+   [
+    "we pause the minutes",
+    8,
+    0.0281
+   ],
+   [
+    "out of the notes",
+    8,
+    0.0281
+   ]
+  ],
+  "max_exact_line_repeat": 1,
+  "stock_phrase_line_rate": {
+   "off the record": 0.0,
+   "on the record": 0.0,
+   "strike that": 0.0,
+   "scratch that": 0.0,
+   "don't write": 0.0,
+   "do not write": 0.0,
+   "between us": 0.0,
+   "forget what i said": 0.0105,
+   "disregard": 0.0175,
+   "don't put": 0.0,
+   "keep this out": 0.0,
+   "keep that out": 0.0
+  },
+  "any_stock_phrase_rate": 0.0281,
+  "per_author_cue_lines": {
+   "Q1": 48,
+   "Q2": 56,
+   "Q3": 40,
+   "Q4": 49,
+   "Q5": 50,
+   "Q6": 42
+  },
+  "per_author_distinct_3grams": {
+   "Q1": 485,
+   "Q2": 733,
+   "Q3": 547,
+   "Q4": 849,
+   "Q5": 845,
+   "Q6": 570
+  }
+ },
+ "max_cue_3gram_rate_all": 0.0575,
+ "max_cue_4gram_rate_all": 0.0437,
+ "noisy_check_errors": {}
+}
