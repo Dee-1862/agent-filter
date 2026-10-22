@@ -2,6 +2,27 @@
 
 This runs the meeting app, LiveKit, and speech processing on one computer. A friend can join from the same Wi-Fi network through HTTPS. The launcher does not use LiveKit Cloud or a public tunnel.
 
+## A link guests can open without installing a certificate
+
+Use a domain you control and a browser-trusted TLS certificate for it. The domain must resolve to the host computer's Wi-Fi IP on every guest device. A DNS `A` record with that private IP can work, but some networks block private IP answers from public DNS. A local DNS record on the Wi-Fi router is another option if every guest uses that router for DNS. Check the name from a second device before the meeting.
+
+Obtain the certificate with a DNS-01 challenge before the meeting. That checks domain control through DNS and does not require opening the meeting server to the internet. Keep the private key on the host. The launcher does not issue certificates, change DNS, or send meeting data to the certificate provider. DNS lookups and ordinary browser certificate checks may still use the internet.
+
+With the certificate chain and key already on the host, run:
+
+```sh
+chmod 600 /private/path/to/key.pem
+OTR_WHISPER_MODEL_DIR=/absolute/path/to/downloaded/faster-whisper-model \
+  python3 -m demo.lan --python .venv/bin/python \
+  --public-host meet.example.com \
+  --tls-cert /private/path/to/fullchain.pem \
+  --tls-key /private/path/to/key.pem
+```
+
+The launcher checks that the hostname resolves to the host's Wi-Fi IP, that the certificate and key load together, and that the meeting page passes the computer's normal HTTPS trust check. It then prints `https://meet.example.com:18443/`. Guests can open the meeting link without installing a certificate. The certificate must remain valid and match the hostname. Share the link only with people on the same reachable Wi-Fi; the server and WebRTC media still run locally.
+
+This mode needs a domain and certificate prepared in advance. It cannot turn an arbitrary `https://192.168.x.x` address into a browser-trusted link by itself.
+
 ## Start it on the host Mac
 
 Install the two local server binaries once:
@@ -21,11 +42,11 @@ OTR_WHISPER_MODEL_DIR=/absolute/path/to/downloaded/faster-whisper-model \
 
 If the Mac has several network interfaces, pass `--lan-ip 192.168.x.x` with its Wi-Fi address. For a UI-only check without speech recognition, add `--pipeline fake`.
 
-The launcher prints the meeting URL and the path to a **public root certificate**. Its default ports are HTTPS `18443`, LiveKit WSS `18444`, WebRTC UDP `17882`, WebRTC TCP fallback `17881`, and local STUN UDP `17883`. It checks that the STUN port responds before printing the link. Allow incoming connections for Caddy and LiveKit if the host firewall asks. Keep the terminal running during the meeting; Ctrl-C stops all three services.
+Without `--public-host`, the launcher prints the meeting URL and the path to a **public root certificate**. Its ports are HTTPS `18443`, LiveKit WSS `18444`, WebRTC UDP `17882`, WebRTC TCP fallback `17881`, and local STUN UDP `17883`. It checks that the STUN port responds before printing the link. Allow incoming connections for Caddy and LiveKit if the host firewall asks. Keep the terminal running during the meeting; Ctrl-C stops all three services.
 
 ## Trust the local certificate on each device
 
-Before opening the meeting URL, install and trust the printed `root.crt` on the host and each friend's device using that device's certificate trust settings. Transfer **only `root.crt`** to the friend through a channel you trust, such as AirDrop. Never transfer anything from `.local-lan/caddy-storage` with a `.key` extension. On iPhone/iPad, installing the profile is only the first step; enable full trust for the installed root in Settings > General > About > Certificate Trust Settings. After trusting it, open the printed `https://...:18443/` URL, create a meeting, and send the generated meeting link. The friend opens that link on the same Wi-Fi network and asks to join; the host admits them.
+This step applies only to the default local-certificate mode. Before opening its meeting URL, install and trust the printed `root.crt` on the host and each friend's device using that device's certificate trust settings. Transfer **only `root.crt`** to the friend through a channel you trust, such as AirDrop. Never transfer anything from `.local-lan/caddy-storage` with a `.key` extension. On iPhone/iPad, installing the profile is only the first step; enable full trust for the installed root in Settings > General > About > Certificate Trust Settings. After trusting it, open the printed `https://...:18443/` URL, create a meeting, and send the generated meeting link. The friend opens that link on the same Wi-Fi network and asks to join; the host admits them.
 
 The root certificate is local and is not issued by a public certificate authority. Installing it grants this host's local CA trust on that device, so remove it from the friend's trust store after the demo if they do not want to keep that trust. Do not bypass browser certificate warnings: LiveKit's secure WebSocket connection also needs the certificate to be trusted.
 
@@ -43,8 +64,8 @@ If a friend cannot join, check in this order:
 2. If the page loads but the meeting says disconnected, check the same certificate trust for WSS `18444` and allow Caddy on TCP `18444`.
 3. If the room connects but audio or video does not flow, allow LiveKit on UDP `17882` and `17883` and TCP `17881`. The UDP media and STUN ports must reach the host directly; Caddy does not proxy them.
 
-The current launcher uses a local certificate authority, so each device needs that one-time trust step. Removing that step would require a publicly trusted certificate for a domain you control; the meeting server and media could still remain on the LAN.
+The default mode uses a local certificate authority, so each device needs that one-time trust step. The public-certificate mode above removes that step once a domain and certificate are ready.
 
 The previous plain HTTP preview on `127.0.0.1:8772` is only for the host computer. Do not share that URL with another device.
 
-References: [LiveKit ports](https://docs.livekit.io/transport/self-hosting/ports-firewall/), [LiveKit self-hosted TLS](https://docs.livekit.io/transport/self-hosting/deployment/), [Caddy local HTTPS](https://caddyserver.com/docs/automatic-https), [Caddy WebSocket reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
+References: [LiveKit ports](https://docs.livekit.io/transport/self-hosting/ports-firewall/), [LiveKit self-hosted TLS](https://docs.livekit.io/transport/self-hosting/deployment/), [Caddy certificate files](https://caddyserver.com/docs/caddyfile/directives/tls), [Let's Encrypt DNS-01](https://letsencrypt.org/docs/challenge-types/), [Caddy local HTTPS](https://caddyserver.com/docs/automatic-https), [Caddy WebSocket reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
