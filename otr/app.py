@@ -123,6 +123,7 @@ class Options:
     model: Optional[str] = None
     room: str = "demo"
     no_docker: bool = False
+    service: bool = False   # long-lived service: model stays unloaded until otr.service wakes it
 
 
 def whisper_model(o: Options) -> str:
@@ -276,6 +277,12 @@ def build_llm(o: Options):
     if llm is None:
         print(f"[app] unknown --llm {o.llm!r}; using none", file=sys.stderr)
         return None
+    if o.service:
+        # Service mode: no warm-up now. Calls fail fast (rules only) until the supervisor
+        # reports the model loaded, so a cold model can never block a push.
+        from otr.service import GATE, GatedLLM
+        print(f"[app] service mode: {llm.model} stays unloaded until a meeting starts", file=sys.stderr)
+        return GatedLLM(llm, GATE)
     print(f"[app] warming LLM {llm.model} (first call loads it into memory)...", file=sys.stderr, flush=True)
     secs = llm.warmup()
     if secs == float("inf"):
@@ -353,9 +360,13 @@ def parse_args(argv=None) -> tuple[Options, bool]:
     ap.add_argument("--room", default="demo", help="LiveKit room")
     ap.add_argument("--no-docker", action="store_true", help="never run docker compose for LiveKit")
     ap.add_argument("--check", action="store_true", help="print the readiness table and exit")
+    ap.add_argument("--service", action="store_true",
+                    help="run under python -m otr.service: lazy model load, edge key and egress ledger")
     a = ap.parse_args(argv)
+    if a.service:
+        os.environ["OTR_SERVICE"] = "1"
     if a.llm == "auto":
-        a.llm = _auto_llm()
+        a.llm = "ollama" if a.service else _auto_llm()
     if a.fast:
         os.environ.setdefault("OTR_SILENCE_MS", "450")
         if a.hold is None and "OTR_HOLD_SECONDS" not in os.environ:
@@ -368,7 +379,7 @@ def parse_args(argv=None) -> tuple[Options, bool]:
             hold = 5.0 if a.source == "livekit" else 10.0
     o = Options(source=a.source, audio=a.audio or [], turns=a.turns, script=a.script, llm=a.llm,
                 hold=hold, speed=a.speed, port=a.port, host=a.host, model=a.model, room=a.room,
-                no_docker=a.no_docker)
+                no_docker=a.no_docker, service=a.service)
     return o, a.check
 
 

@@ -237,9 +237,9 @@ def test_live_endpoints_never_offer_replay_controls_or_raw_state():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
         home = client.get("/").text
-        assert "Start an instant meeting" in home and 'id="notes-button"' in home
-        assert "Join with your name" in client.get("/live").text
-        assert "Join with your name" in client.get("/live.html").text
+        assert "Create a meeting" in home and 'id="notes-button"' in home
+        assert "Your voice, your choice." in client.get("/live").text
+        assert "Your voice, your choice." in client.get("/live.html").text
         assert client.get("/api/state").status_code == 404
         assert client.post("/api/say", json={"speaker": "a", "text": "secret"}).status_code == 404
         assert client.post("/api/consent", json={"recording": True}).status_code == 401
@@ -355,12 +355,22 @@ def test_diagnostics_requires_meeting_session_even_from_loopback():
         assert "participants" not in body and "room" not in body
 
 
-def test_unused_standalone_insights_paths_do_not_reference_missing_files():
+def test_insights_popout_is_served_with_the_strict_csp_and_no_store():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
-        for path in ("/insights", "/insights.html", "/m/example/insights",
-                     "/static/insights.js", "/static/insights.css"):
-            assert client.get(path).status_code == 404
+        page = client.get("/insights")
+        assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
+        html = page.text
+        assert "default-src 'self'; script-src 'self'; style-src 'self'" in html
+        assert 'id="tab-how"' in html and 'id="kinds"' in html and 'id="events"' in html and 'id="timeline"' in html
+        import re
+        assert not re.search(r"\sstyle=", html) and not re.search(r"\son[a-z]+=", html)
+        for path in ("/static/insights.js", "/static/insights.css", "/static/views.js", "/static/categories.js"):
+            assert client.get(path).status_code == 200, path
+        assert client.get("/m/anything/insights").status_code == 200
+        assert client.get("/insights.html").status_code == 404
+        # the page itself carries no meeting data; the data endpoints need a session
+        assert client.get("/api/me").status_code == 401 and client.get("/api/diagnostics").status_code == 401
 
 
 def test_public_demo_pending_request_limit_frees_slots(monkeypatch):
@@ -909,8 +919,39 @@ def static_text(name):
     return (Path(__file__).resolve().parent.parent / "demo" / "static" / name).read_text(encoding="utf-8")
 
 
-def test_live_page_has_lobby_voice_and_one_side_panel():
-    html, js = static_text("live.html"), static_text("live.js")
+def test_live_page_is_lances_meeting_page_with_our_features_added():
+    html, js, css = static_text("live.html"), static_text("live.js"), static_text("live.css")
+    # his page: entry screens, lobby, controls, notes drawer, end dialog
+    for marker in ('id="home-screen"', 'id="create-button"', 'id="host-setup"', 'id="guest-setup"', 'id="waiting-screen"',
+                   'id="share-screen"', 'id="host-lobby"', 'id="tile-grid"', 'id="mic-button"', 'id="camera-button"',
+                   'id="notes-button"', 'id="leave-button"', 'id="drawer-button"', 'id="notes-drawer"',
+                   'id="finalize-button"', 'id="email-choice"', 'id="end-dialog"', 'id="share-meeting-link-button"'):
+        assert marker in html, marker
+    # our features, using his classes
+    for marker in ('id="kept-out-list"', 'id="popout-button"', 'id="devices-button"', 'id="device-menu"',
+                   'id="menu-meter"', 'id="check-meter"', 'id="check-mic"', 'id="check-cam"', 'id="engine"',
+                   'id="engine-input"', "/static/categories.js", "/static/views.js"):
+        assert marker in html, marker
+    # no side panel, tabs or caption stage from the Meet-style restyle
+    for gone in ('id="side-panel"', 'id="view-tabs"', 'id="captions"', 'id="view-explain"', 'id="agent-button"'):
+        assert gone not in html, gone
+    # strict CSP stays workable: no inline style attributes or inline event handlers in the consent page
+    import re
+    assert not re.search(r"\sstyle=", html) and not re.search(r"\son[a-z]+=", html)
+    assert "style-src 'self'" in html and "script-src 'self'" in html
+    for marker in ("setMicrophoneEnabled", "ActiveSpeakersChanged", "/api/consent", "/api/leave", "/api/meetings",
+                   "/api/me?summary=1", "/api/diagnostics", "kept_out_events", "audioCaptureDefaults",
+                   "autoGainControl: false", "noiseSuppression: true", "echoCancellation: true",
+                   "window.open(\"/insights\", \"otr-insights\", \"popup=yes,width=520,height=760\")",
+                   "Not connected yet"):
+        assert marker in js, marker
+    # the consent page never offers a reveal, never calls the replay-only confirm endpoint, never asks for line text
+    assert "reveal:" not in js and "/api/confirm" not in js and "Reveal text" not in html
+    assert '"/api/me")' not in js and "me.lines" not in js
+
+
+def test_meet_page_has_lobby_voice_and_one_side_panel():
+    html, js = static_text("meet.html"), static_text("meet.js")
     for marker in ('id="create-button"', 'id="host-lobby"', 'id="camera-button"', 'id="mic-button"', 'id="notes-button"',
                    'id="captions-button"', 'id="leave-button"', 'id="people-button"', 'id="info-button"', 'id="agent-button"',
                    'id="side-panel"', 'id="panel-agent"', 'id="link-insights"', 'id="link-explain"', 'id="panel-back"',
@@ -931,12 +972,31 @@ def test_live_page_has_lobby_voice_and_one_side_panel():
     assert "reveal:" not in js and "/api/confirm" not in js and "Reveal text" not in html
 
 
+def test_meet_page_is_served_with_links_between_the_two_pages():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as client:
+        for path in ("/meet", "/meet.html"):
+            r = client.get(path)
+            assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+            assert "Back to the classic page" in r.text and "default-src 'self'; script-src 'self'" in r.text
+        for path in ("/static/meet.js", "/static/meet.css"):
+            assert client.get(path).status_code == 200
+        home = client.get("/").text
+        assert "Create a meeting" in home and 'href="/meet"' in home
+        assert "Open the Realtime, Insights and Explainability view" in home
+
+
 def test_frontend_passes_ui_slop_audit():
-    """No single-side accent borders, gradients, glass, glow, emoji, dashes or decorative motion (docs/UI_STYLE.md)."""
+    """No single-side accent borders, gradients, glass, glow, emoji, dashes or decorative motion (docs/UI_STYLE.md).
+
+    live.html, live.css and live.js are Lance Streuber's own design and are deliberately not held to this audit
+    (run `python scripts/ui_slop_audit.py` to list what it would flag there). Everything else we own is.
+    """
     import subprocess
     import sys
     root = Path(__file__).resolve().parent.parent
-    r = subprocess.run([sys.executable, str(root / "scripts" / "ui_slop_audit.py"), "--fail"],
+    r = subprocess.run([sys.executable, str(root / "scripts" / "ui_slop_audit.py"), "--fail",
+                        "--skip", "live.html", "--skip", "live.css", "--skip", "live.js"],
                        capture_output=True, text=True, cwd=root)
     assert r.returncode == 0, r.stdout + r.stderr
 

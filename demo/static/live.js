@@ -3,33 +3,17 @@
   const $ = id => document.getElementById(id);
   const setText = (node, value) => { node.textContent = value; };
   const LiveKit = window.LivekitClient;
-  const Views = window.OTRViews;
   const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
-  const MIC_ON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3m5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>';
+  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
 
   let room = null, me = null, eventSource = null;
   let participants = {};
-  let lines = new Map();
   let finalized = false, readyForFinal = false, finalizedCount = null, contributorCount = null;
-  let redactionCounts = null;
-  // Text-free aggregates and placeholders from the server; see demo/live_session.py insights_for().
-  let insights = { approved: 0, kept_out: {}, total: 0, removed: 0, timeline: [], now: 0, hold_seconds: null };
-  const chips = new Map();   // segment id -> {id, category, seq, trail}; never any text
-  let panelView = null, panelLastFocus = null, captionsOn = false, explainSel = null, explainItem = null;
-  let capFollow = true, newCount = 0, pendingSeen = 0;
-  // Transcript bookkeeping. Ids and numbers only; the text of a kept-out line never reaches this page.
-  let insightsAt = Date.now(), waitingLines = 0, primed = false, announceTimer = null, announceNew = 0, announceOut = 0;
-  const expandedRows = new Set();   // kept-out row ids opened in place
-  const rowSeq = new Map();         // id -> seq of the approved line a removal replaced, so the placeholder keeps its place
-  const firstSeen = new Map();      // "l:id" / "k:id" -> seconds, when this browser first saw the row
-  const serverT = new Map();        // same keys -> seconds from the server's detail payload (preferred)
-  const knownRows = new Set();
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
   let speaking = new Set(), muted = new Map();
   const connectedPeople = new Set();
-  const videoTracks = new Map(), videoMuted = new Set(), videoEls = new Map();
-  let toastTimer = null, meRefreshTimer = null, clockTimer = null;
+  const videoTracks = new Map(), videoMuted = new Set();
+  let toastTimer = null, meRefreshTimer = null, drawerLastFocus = null;
   let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
   let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
@@ -55,11 +39,6 @@
     list.replaceChildren();
     $("lobby-count").textContent = String(pending.length);
     $("lobby-empty").classList.toggle("hidden", pending.length > 0);
-    const badge = $("people-badge");
-    badge.classList.toggle("hidden", pending.length === 0);
-    setText(badge, String(pending.length));
-    if (pending.length > pendingSeen && panelView !== "people") showPanel("people");
-    pendingSeen = pending.length;
     for (const request of pending) {
       const item = document.createElement("li");
       const label = document.createElement("span");
@@ -92,7 +71,7 @@
   function startLobby() {
     if (role !== "host") return;
     $("host-lobby").classList.remove("hidden");
-    $("info-link").value = `${location.origin}/m/${encodeURIComponent(roomId)}`;
+    $("share-meeting-link-button").classList.remove("hidden");
     pollLobby();
     clearInterval(lobbyTimer);
     lobbyTimer = setInterval(pollLobby, 1500);
@@ -205,17 +184,6 @@
     const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
     return ((parts[0] || "?")[0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
   }
-  function isMyLine(line) {
-    if (!me) return true;
-    const owner = line.speaker ?? line.identity ?? "";
-    return !owner || owner === me;
-  }
-  function indexLines(arr) {
-    const map = new Map();
-    for (const line of arr || []) if (line && line.id != null) map.set(line.id, line);
-    return map;
-  }
-
   function announce(message) { setText($("note-state-live"), message); }
   function setConnection(label, cls) {
     setText($("connection"), label);
@@ -239,11 +207,8 @@
       const isMuted = identity === me
         ? (room ? !room.localParticipant.isMicrophoneEnabled : false)
         : muted.get(identity) === true;
-      const state = tile.querySelector(".mic-state");
-      state.classList.toggle("hidden", !connected);
-      state.classList.toggle("muted", isMuted);
-      state.setAttribute("aria-label", isMuted ? "Microphone off" : "Microphone on");
-      tile.querySelector(".tile-presence").classList.toggle("hidden", connected);
+      tile.querySelector(".muted-badge").classList.toggle("hidden", !connected || !isMuted);
+      setText(tile.querySelector(".tile-mic"), !connected ? "Not connected yet" : isMuted ? "Muted" : "");
     }
   }
 
@@ -252,32 +217,31 @@
     if (!tile) return;
     const track = videoMuted.has(identity) ? null : videoTracks.get(identity);
     const avatar = tile.querySelector(".avatar");
-    let video = videoEls.get(identity);
-    if (video && video._livekitTrack !== track) {
-      video._livekitTrack.detach(video);
-      video.remove();
-      videoEls.delete(identity);
-      video = null;
+    const current = avatar.querySelector(".tile-video");
+    if (current && current._livekitTrack !== track) {
+      current._livekitTrack.detach(current);
+      current.remove();
     }
-    if (track && !video) {
-      video = document.createElement("video");
+    if (track && !avatar.querySelector(".tile-video")) {
+      const video = document.createElement("video");
       video.className = "tile-video";
       video.autoplay = true;
       video.playsInline = true;
-      video.setAttribute("playsinline", "");
-      video.muted = identity === me;   // a video track carries no sound; remote voices play from their audio element
+      video.muted = identity === me;
       video._livekitTrack = track;
       track.attach(video);
-      videoEls.set(identity, video);
-    }
-    if (video && video.parentNode !== avatar) {
       avatar.prepend(video);
-      if (video.play) { try { const played = video.play(); if (played && played.catch) played.catch(() => {}); } catch (_) { } }
     }
     tile.classList.toggle("has-video", !!track);
   }
 
   function setVideoTrack(identity, track) {
+    const old = videoTracks.get(identity);
+    if (old && old !== track) {
+      const tile = tileEls[identity];
+      const video = tile && tile.querySelector(".tile-video");
+      if (video) { old.detach(video); video.remove(); }
+    }
     if (track) videoTracks.set(identity, track);
     else videoTracks.delete(identity);
     updateVideoTile(identity);
@@ -297,338 +261,55 @@
 
   function renderTiles() {
     const grid = $("tile-grid");
+    for (const tile of Object.values(tileEls)) {
+      const video = tile.querySelector(".tile-video");
+      if (video) video._livekitTrack.detach(video);
+    }
     grid.replaceChildren();
     for (const key of Object.keys(tileEls)) delete tileEls[key];
     const members = Object.entries(participants);
     members.sort((a, b) => (a[0] === me ? -1 : b[0] === me ? 1 : 0));
     if (!members.length) {
-      grid.append(element("p", "grid-empty", "Waiting for people to join..."));
+      grid.append(element("p", "grid-empty", "Waiting for people to join…"));
       return;
     }
     for (const [identity, p] of members) {
       const on = notesOn(p);
       const tile = element("div", "tile" + (identity === me ? " self" : ""));
-      const avatar = element("div", "avatar", initials(p.name || identity));
-      const mic = element("span", "mic-state");
-      mic.setAttribute("role", "img");
-      const micOn = element("span", "m-on");
-      micOn.innerHTML = MIC_ON_SVG;
-      const micOff = element("span", "m-off");
-      micOff.innerHTML = MIC_OFF_SVG;
-      mic.append(micOn, micOff);
-      const label = element("div", "tile-label");
-      label.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
-      label.append(element("span", "tile-presence hidden", "Not connected yet"));
       const notes = element("span", "tile-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
       notes.prepend(element("span", "dot"));
-      label.append(notes);
-      label.append(element("span", "tile-mic"));
-      tile.append(avatar, mic, label);
-      if (identity === me) {
-        const level = element("canvas", "tile-level");
-        level.width = 36; level.height = 16;
-        level.setAttribute("role", "img");
-        level.setAttribute("aria-label", "Your microphone level");
-        tile.append(level);
-      }
+      const avatar = element("div", "avatar", initials(p.name || identity));
+      const badge = element("span", "muted-badge hidden");
+      badge.innerHTML = MIC_OFF_SVG;
+      avatar.append(badge);
+      const info = element("div", "tile-info");
+      info.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
+      info.append(element("span", "tile-mic", ""));
+      tile.append(notes, avatar, info);
       grid.append(tile);
       tileEls[identity] = tile;
     }
     updateTileFlags();
-    for (const [identity, video] of [...videoEls]) {
-      if (tileEls[identity]) continue;
-      video._livekitTrack.detach(video);
-      video.remove();
-      videoEls.delete(identity);
-    }
     for (const identity of Object.keys(tileEls)) updateVideoTile(identity);
-  }
-
-  function renderLines() {
-    renderCaptions();
-  }
-
-  // ------------------------------------------------------------ Realtime transcript
-  // One chronological list ordered by server seq: your approved lines, plus text-free placeholders for what was
-  // kept out ("Kept out, Pay and HR") or removed after approval. A placeholder opens in place to say why.
-  function setInsights(next) { insights = next; insightsAt = Date.now(); }
-  function elapsed() { return Math.max(0, (Number(insights.now) || 0) + (Date.now() - insightsAt) / 1000); }
-  function rowTime(kind, id) {
-    const key = kind + ":" + id;
-    if (serverT.has(key)) return serverT.get(key);
-    if (!firstSeen.has(key)) firstSeen.set(key, elapsed());
-    return firstSeen.get(key);
-  }
-  function clock(t) {
-    const total = Math.max(0, Math.round(t)), pad = n => (n < 10 ? "0" : "") + n;
-    return pad(Math.floor(total / 60)) + ":" + pad(total % 60);
-  }
-  function isRemovalChip(chip) { return Views.actionOf(chip.trail).key === "removed_after_approval"; }
-  function captionItems() {
-    const items = [];
-    let order = 0;
-    for (const line of lines.values()) {
-      const gone = chips.get(line.id);
-      if (!line.removed && isMyLine(line) && !(gone && isRemovalChip(gone))) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
-    }
-    for (const chip of chips.values()) {
-      const seq = rowSeq.has(chip.id) ? rowSeq.get(chip.id) : (chip.seq || 0);
-      items.push({ type: "chip", seq, order: order++, chip });
-    }
-    items.sort((a, b) => (a.seq - b.seq) || (a.order - b.order));
-    return items;
-  }
-  const CHEVRON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
-  function lineRow(line) {
-    const row = element("div", "cap line");
-    row.dataset.id = String(line.id);
-    const meta = element("div", "cap-meta");
-    meta.append(element("span", "who", line.name || "You"), element("span", "time", clock(rowTime("l", line.id))));
-    const remove = element("button", "remove", "Remove");
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Remove line: ${line.text}`);
-    remove.disabled = finalized;
-    remove.onclick = () => removeLine(line.id, remove);
-    meta.append(remove);
-    row.append(meta, element("p", "words", line.text));
-    return row;
-  }
-  function keptRow(chip) {
-    const removal = isRemovalChip(chip), open = expandedRows.has(chip.id);
-    const row = element("div", "cap out" + (removal ? " removed" : "") + (open ? " open" : ""));
-    row.dataset.id = String(chip.id);
-    const label = removal ? "Removed after approval" : `Kept out, ${Views.shortLabel(chip.category)}`;
-    const time = clock(rowTime("k", chip.id));
-    const head = element("button", "out-head");
-    head.type = "button";
-    head.setAttribute("data-category", chip.category);
-    head.setAttribute("aria-expanded", String(open));
-    head.setAttribute("aria-controls", "why-" + chip.id);
-    head.setAttribute("aria-label", `${label}, ${time}. ${open ? "Hide" : "Show"} why.`);
-    const caret = element("span", "caret");
-    caret.innerHTML = CHEVRON_SVG;
-    head.append(element("span", "out-label", label), element("span", "time", time), caret);
-    head.onclick = () => {
-      if (expandedRows.has(chip.id)) expandedRows.delete(chip.id); else expandedRows.add(chip.id);
-      renderCaptions();
-      const box = $("captions");
-      const again = [...box.children].find(r => r.dataset && r.dataset.id === String(chip.id));
-      const button = again && again.querySelector(".out-head");
-      if (button) button.focus();
-    };
-    row.append(head);
-    if (open) {
-      const detail = element("div", "out-detail");
-      detail.id = "why-" + chip.id;
-      for (const [name, value] of Views.explainFacts(chip, insights.hold_seconds)) {
-        const fact = element("div", "fact");
-        fact.append(element("b", null, name), element("span", null, value));
-        detail.append(fact);
-      }
-      const more = element("button", "secondary out-more", "See the full explanation");
-      more.type = "button";
-      more.onclick = () => openInsights("how=" + encodeURIComponent(chip.category));
-      detail.append(more);
-      row.append(detail);
-    }
-    return row;
-  }
-  let shownCaptions = 0;
-  function noteNewRows(items) {
-    let fresh = 0, out = 0;
-    for (const item of items) {
-      const key = item.type === "line" ? "l:" + item.line.id : "k:" + item.chip.id;
-      if (knownRows.has(key)) continue;
-      knownRows.add(key);
-      if (primed) { fresh++; if (item.type === "chip") out++; }
-    }
-    if (!fresh) return;
-    announceNew += fresh; announceOut += out;
-    if (announceTimer) return;
-    // One polite message per burst, counts only, never the words of a kept-out line.
-    announceTimer = setTimeout(() => {
-      announceTimer = null;
-      announce(`${announceNew} new ${announceNew === 1 ? "row" : "rows"} in the transcript${announceOut ? `, ${announceOut} kept out` : ""}.`);
-      announceNew = announceOut = 0;
-    }, 2000);
-  }
-  function renderTranscriptStatus() {
-    const paused = sensitivePaused && !finalized;
-    $("notes-off-row").classList.toggle("hidden", myNotesOn);
-    let message = "Your notes are off, nothing from you is transcribed.", action = "Turn on notes";
-    if (finalized) { message = "Your notes are finished, nothing more from you is transcribed."; action = ""; }
-    else if (paused) { message = "Your notes are paused, nothing from you is transcribed."; action = "Resume notes"; }
-    setIfChanged($("notes-off-text"), message);
-    $("notes-off-toggle").classList.toggle("hidden", !action);
-    if (action) setIfChanged($("notes-off-toggle"), action);
-    const waiting = myNotesOn ? waitingLines : 0;
-    $("cap-status").classList.toggle("hidden", waiting <= 0);
-    if (waiting > 0) setIfChanged($("cap-status"), `Listening, ${waiting} ${waiting === 1 ? "line" : "lines"} waiting`);
-  }
-  function renderCaptions() {
-    const box = $("captions");
-    const items = captionItems();
-    const keep = box.scrollTop;
-    box.replaceChildren();
-    if (!items.length) {
-      box.append(element("p", "cap-empty", myNotesOn
-        ? "Listening. Lines you approve appear here after a short safety hold."
-        : "Nothing is transcribed while your notes are off."));
-    }
-    for (const item of items) box.append(item.type === "line" ? lineRow(item.line) : keptRow(item.chip));
-    noteNewRows(items);
-    if (items.length > shownCaptions && !capFollow) newCount += items.length - shownCaptions;
-    shownCaptions = items.length;
-    if (capFollow) box.scrollTop = box.scrollHeight; else box.scrollTop = keep;
-    renderStageCaptions(items);
-    renderTranscriptStatus();
-    renderLive();
-  }
-  function renderStageCaptions(items) {
-    const stage = $("stage-captions");
-    stage.classList.toggle("hidden", !captionsOn);
-    if (!captionsOn) return;
-    stage.replaceChildren();
-    for (const item of items.filter(entry => entry.type === "line").slice(-2)) {
-      const row = element("p", "stage-cap");
-      row.append(element("span", "who", item.line.name || "You"), element("span", "words", item.line.text));
-      stage.append(row);
-    }
-    if (!stage.children.length) stage.append(element("p", "stage-cap", "Captions show the lines you approve."));
-  }
-  function renderLive() {
-    const button = $("live-button");
-    const behind = !capFollow;
-    button.classList.toggle("hidden", !behind);
-    $("live-count").classList.toggle("hidden", !behind || newCount === 0);
-    setText($("live-count"), newCount > 99 ? "99+ new" : `${newCount} new`);
-    button.setAttribute("aria-label", behind ? `Jump to latest, ${newCount} new` : "Jump to latest");
-  }
-  function goLive() {
-    if (panelView !== "agent") showPanel("agent");
-    capFollow = true; newCount = 0;
-    const box = $("captions");
-    box.scrollTop = box.scrollHeight;
-    renderLive();
-  }
-
-  // ------------------------------------------------------------ the side panel (one at a time)
-  const PANEL_TITLES = { agent: "Off The Record", insights: "What was kept out", explain: "How it decides", people: "People", info: "Meeting details" };
-  const PANEL_VIEWS = { agent: "panel-agent", insights: "view-insights", explain: "view-explain", people: "panel-people", info: "panel-info" };
-  const PANEL_ROOT = { agent: "agent", insights: "agent", explain: "agent", people: "people", info: "info" };
-  const PANEL_BUTTONS = { agent: "agent-button", people: "people-button", info: "info-button" };
-  // The detail page opens as a separate small window, so the meeting and the live panel stay where they are.
-  // The room path lets the server pick this meeting's cookie. A blocked pop-up falls back to a normal tab.
-  function insightsUrl(fragment) {
-    return (roomId ? `/m/${encodeURIComponent(roomId)}/insights` : "/insights") + (fragment ? "#" + fragment : "");
-  }
-  function openInsights(fragment) {
-    const url = insightsUrl(fragment);
-    let win = null;
-    try { win = window.open(url, "otr-insights", "popup=yes,width=520,height=760,noopener=no"); } catch (_) { win = null; }
-    if (win) { try { win.focus(); } catch (_) { } return; }
-    try { win = window.open(url, "_blank"); } catch (_) { win = null; }
-    showToast(win ? "Your browser blocked the pop-up window, so the insights page opened in a new tab."
-      : "Your browser blocked the pop-up. Allow pop-ups for this site, then try again.", "warn");
-  }
-  function renderInsightsView() {
-    Views.renderInsights($("view-insights"), Object.assign({}, insights, {
-      labels: { approved: "In your notes" },
-    }));
-  }
-  function renderExplainView() {
-    Views.renderExplain($("view-explain"), {
-      selected: explainSel,
-      item: explainItem,
-      counts: insights.kept_out,
-      holdSeconds: insights.hold_seconds,
-    }, {
-      onSelect: key => { explainSel = key; explainItem = null; renderViews(true); },
-      // No `reveal` here: in consent mode the server never sends text that was kept out.
-    });
-  }
-  let viewSignature = "";
-  function renderViews(force) {
-    if (panelView !== "insights" && panelView !== "explain") { viewSignature = ""; return; }
-    // The server repeats unchanged status often; skip identical renders so focus and selection are not lost.
-    const signature = JSON.stringify([panelView, insights, explainSel, explainItem && explainItem.id]);
-    if (!force && signature === viewSignature) return;
-    viewSignature = signature;
-    if (panelView === "insights") renderInsightsView();
-    else renderExplainView();
-  }
-  function renderPanelButtons() {
-    for (const [name, id] of Object.entries(PANEL_BUTTONS)) {
-      const open = !!panelView && PANEL_ROOT[panelView] === name;
-      const button = $(id);
-      button.setAttribute("aria-expanded", String(open));
-      button.classList.toggle("on", open);
-    }
-  }
-  function showPanel(name) {
-    if (!panelView) panelLastFocus = document.activeElement;
-    panelView = name;
-    $("side-panel").classList.remove("hidden");
-    for (const [key, id] of Object.entries(PANEL_VIEWS)) $(id).classList.toggle("hidden", key !== name);
-    setText($("panel-title"), PANEL_TITLES[name]);
-    $("panel-back").classList.toggle("hidden", PANEL_ROOT[name] === name);
-    $("panel-popout").classList.toggle("hidden", PANEL_ROOT[name] !== "agent");
-    renderPanelButtons();
-    renderViews(true);
-    if (name === "agent" && capFollow) { const box = $("captions"); box.scrollTop = box.scrollHeight; }
-    $("panel-title").focus();
-  }
-  function closePanel() {
-    if (!panelView) return;
-    panelView = null;
-    $("side-panel").classList.add("hidden");
-    renderPanelButtons();
-    if (panelLastFocus && panelLastFocus.isConnected) panelLastFocus.focus();
-    panelLastFocus = null;
-  }
-  function togglePanel(name) {
-    if (panelView && PANEL_ROOT[panelView] === name) closePanel();
-    else showPanel(name);
-  }
-  function setCaptions(on) {
-    captionsOn = on;
-    const button = $("captions-button");
-    button.classList.toggle("on", on);
-    button.setAttribute("aria-pressed", String(on));
-    const label = on ? "Turn off captions" : "Turn on captions";
-    button.setAttribute("aria-label", label);
-    button.title = label + " (c)";
-    renderCaptions();
-  }
-  function tickClock() {
-    setText($("meeting-clock"), new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
   }
 
   function renderNotesControl() {
     const button = $("notes-button");
     const paused = sensitivePaused && !finalized;
+    button.classList.toggle("on", myNotesOn);
+    button.classList.toggle("paused", paused);
     button.disabled = finalized;
-    button.setAttribute("aria-checked", String(myNotesOn));
-    let action, line;
-    if (finalized) { action = "Notes finished"; line = "Notes are finished"; }
-    else if (paused) { action = "Turn on notes"; line = "Notes are paused for you"; }
-    else if (myNotesOn) { action = "Turn off notes"; line = "Notes are on for you"; }
-    else { action = "Turn on notes"; line = "Notes are off"; }
-    setText($("notes-label"), action);
-    setText($("capture-status"), line);
-    $("agent-dot").classList.toggle("hidden", !myNotesOn);
-    const agent = $("agent-button");
-    agent.setAttribute("aria-label", `Off The Record. ${line}.`);
-    agent.title = `Off The Record: ${line.toLowerCase()}`;
-  }
-
-  function renderRedactionCounts() {
-    const node = $("my-redaction-counts");
-    if (!redactionCounts) { node.classList.add("hidden"); return; }
-    const suppressed = Number(redactionCounts.suppressed) || 0;
-    const removed = Number(redactionCounts.removed) || 0;
-    setText(node, `For you: ${suppressed} kept out before the draft · ${removed} removed from the draft. No withheld words are shown.`);
-    node.classList.remove("hidden");
+    button.setAttribute("aria-pressed", String(myNotesOn));
+    const label = finalized ? "Notes finished" : myNotesOn ? "Turn off notes" : "Turn on notes";
+    setText($("notes-label"), label);
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    const shortStatus = $("capture-status");
+    shortStatus.className = "capture-status" + (paused ? " paused" : myNotesOn ? " on" : "");
+    if (finalized) setText(shortStatus, "Your notes are finished.");
+    else if (paused) setText(shortStatus, "Your notes paused. Pending text was discarded.");
+    else if (myNotesOn) setText(shortStatus, "Your audio is being transcribed locally for notes.");
+    else setText(shortStatus, "Your notes are off. Others can still hear you.");
   }
 
   function renderFinalReport(data) {
@@ -645,18 +326,18 @@
     node.classList.remove("hidden");
   }
 
-  function renderPanelState() {
-    const list = $("people-list");
-    list.replaceChildren();
-    for (const [identity, p] of Object.entries(participants)) {
-      const on = notesOn(p);
-      const li = element("li");
-      li.append(element("span", "person-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
-      const status = element("span", "person-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
-      status.prepend(element("span", "dot"));
-      li.append(status);
-      list.append(li);
-    }
+  function renderDrawer() {
+    const paused = sensitivePaused && !finalized;
+    const subtitle = $("drawer-subtitle");
+    if (finalized) setText(subtitle, "Your notes are finished.");
+    else if (paused) setText(subtitle, "Notes are paused for you after a sensitive pause.");
+    else if (myNotesOn) setText(subtitle, "Notes are on — capture runs only for you.");
+    else setText(subtitle, "Notes are off.");
+    const explanation = $("note-state-explainer");
+    if (finalized) setText(explanation, "Your notes are finished. Your speech can no longer be added to the transcript.");
+    else if (paused) setText(explanation, "The local filter paused your notes and discarded the pending text. Nothing new is added until you restart notes yourself.");
+    else if (myNotesOn) setText(explanation, "The meeting host is transcribing your audio for notes.");
+    else setText(explanation, "Notes are off for you. The call still sends your audio to other people when your microphone is on.");
 
     const status = $("finalize-status");
     $("finalize-button").classList.toggle("hidden", finalized);
@@ -667,23 +348,23 @@
       $("delivery-email").value = deliveryEmail;
       $("email-opt-in").checked = emailOptedIn;
     }
-    renderRedactionCounts();
     if (!readyForFinal) {
       $("copy-result").className = "waiting";
       setText($("copy-result"), "");
     }
     if (readyForFinal) setText(status, "The final transcript is ready to copy.");
     else if (finalized) setText(status, finalizedCount != null && contributorCount != null
-      ? `Waiting for other contributors: ${finalizedCount} of ${contributorCount} finished.`
+      ? `Waiting for other contributors — ${finalizedCount} of ${contributorCount} finished.`
       : "Waiting for other contributors to finish their notes.");
-    else setText(status, "Review or remove lines above, then finish your notes. Finishing keeps notes off.");
+    else setText(status, "Finish your notes when you are ready. Finishing keeps notes off.");
   }
 
   function renderAll() {
     renderTiles();
-    renderLines();
     renderNotesControl();
-    renderPanelState();
+    renderDrawer();
+    renderKept();
+    renderViews(false);
   }
 
   function applyMe(data) {
@@ -694,15 +375,17 @@
     if (typeof data.ready_for_final === "boolean") readyForFinal = data.ready_for_final;
     if (typeof data.finalized_count === "number") finalizedCount = data.finalized_count;
     if (typeof data.contributor_count === "number") contributorCount = data.contributor_count;
-    if (Array.isArray(data.lines)) lines = indexLines(data.lines);
-    if (data.redaction_counts) redactionCounts = data.redaction_counts;
-    if (data.insights) setInsights(data.insights);
-    if (Array.isArray(data.kept_out_events)) for (const e of data.kept_out_events) serverT.set("k:" + e.id, e.t);
-    if (data.line_times && typeof data.line_times === "object") for (const [id, t] of Object.entries(data.line_times)) serverT.set("l:" + id, t);
-    if (typeof data.waiting === "number" && (!diag || diagGone)) waitingLines = data.waiting;
-    if (Array.isArray(data.kept_out)) setChips(data.kept_out);
     if (typeof data.delivery_email === "string") deliveryEmail = data.delivery_email;
     if (typeof data.email_opted_in === "boolean") emailOptedIn = data.email_opted_in;
+    if (Array.isArray(data.kept_out_events)) keptEvents = data.kept_out_events;
+    else if (Array.isArray(data.kept_out)) {
+      keptEvents = data.kept_out.map(item => ({ id: item.id, seq: item.seq, category: item.category,
+        family: item.trail && item.trail.family, before: item.trail && item.trail.before,
+        after: item.trail && item.trail.after, held_s: item.trail && item.trail.held_s,
+        action: item.trail && item.trail.family === "retro" ? "removed_after_approval" : "kept_out" }));
+    }
+    if (data.insights && typeof data.insights.hold_seconds === "number") holdSeconds = data.insights.hold_seconds;
+    if (data.insights) insightsData = data.insights;
     const mine = participants[me] || {};
     const nowPaused = mine.sensitive_paused === true;
     if (nowPaused && !sensitiveSeen) {
@@ -713,7 +396,6 @@
     sensitivePaused = nowPaused;
     myNotesOn = !finalized && !sensitivePaused && notesOn(mine);
     renderAll();
-    renderViews();
   }
 
   async function refreshMe(immediate) {
@@ -723,13 +405,7 @@
       return;
     }
     meRefreshTimer = null;
-    try { applyMe(await api("/api/me")); } catch (_) { }
-  }
-
-  function setChips(list) {
-    chips.clear();
-    for (const chip of list || []) if (chip && chip.id != null) chips.set(chip.id, chip);
-    renderCaptions();
+    try { applyMe(await api("/api/me?summary=1")); } catch (_) { }
   }
 
   function mergeProgress(message) {
@@ -738,7 +414,7 @@
     if (typeof message.ready_for_final === "boolean") { readyForFinal = message.ready_for_final; changed = true; }
     if (typeof message.finalized_count === "number") { finalizedCount = message.finalized_count; changed = true; }
     if (typeof message.contributor_count === "number") { contributorCount = message.contributor_count; changed = true; }
-    if (changed) { renderNotesControl(); renderPanelState(); }
+    if (changed) { renderNotesControl(); renderDrawer(); }
   }
 
   function connectStream() {
@@ -749,36 +425,23 @@
       if (message.type === "participants") applyMe({ participants: message.participants });
       else if (message.type === "service") setConnection(message.status, "warn");
       else if (message.type === "snapshot") {
-        if (Array.isArray(message.lines)) lines = indexLines(message.lines);
-        if (Array.isArray(message.kept_out)) chips.clear(), message.kept_out.forEach(c => chips.set(c.id, c));
-        renderLines();
-        primed = true;   // rows that exist at connect time are not announced
-      } else if (message.type === "status") {
-        const { type, ...rest } = message;
-        setInsights(rest);
-        renderViews();
+        myLines.clear();
+        for (const line of message.lines || []) myLines.set(line.id, line);
+        renderViews(false);
       } else if (message.type === "transcript") {
-        let changed = false;
         for (const change of message.changes || []) {
-          if (change.kind === "committed" && change.line && isMyLine(change.line)) {
-            lines.set(change.line.id, change.line);
-            changed = true;
-          }
-          if (change.kind === "removed" && lines.delete(change.id)) changed = true;
-          if (change.kind === "kept_out" && change.id != null) {
-            if (lines.has(change.id)) rowSeq.set(change.id, lines.get(change.id).seq);   // a removal keeps the line's place
-            // Category key and generic trail only. The server never sends the text that was kept out.
-            chips.set(change.id, { id: change.id, category: change.category, seq: change.seq, trail: change.trail });
-            changed = true;
-          }
+          if (change.kind === "committed" && change.line) myLines.set(change.line.id, change.line);
+          else if (change.kind === "removed") myLines.delete(change.id);
         }
-        if (changed) renderLines();
-      } else if (message.type === "redaction_counts" && message.redaction_counts) {
-        redactionCounts = message.redaction_counts;
-        renderRedactionCounts();
+        renderViews(false);
+      } else if (message.type === "status") {
+        const { type: _t, ...fresh } = message;
+        insightsData = fresh;
+        renderViews(false);
       }
+      // The compact meeting view does not render interim transcript events.
       mergeProgress(message);
-      refreshMe(false);
+      refreshMe(message.type === "status" || message.type === "transcript");
     };
     eventSource.onerror = () => setConnection("Reconnecting…", "warn");
     eventSource.onopen = () => setConnection("Live · local room", "online");
@@ -789,13 +452,12 @@
     const button = $("mic-button");
     button.classList.toggle("muted-on", isMuted);
     button.setAttribute("aria-pressed", String(!isMuted));
-    const label = isMuted ? "Turn on microphone" : "Turn off microphone";
-    button.setAttribute("aria-label", label);
-    button.title = label;
+    button.querySelector(".icon-mic").classList.toggle("hidden", isMuted);
+    button.querySelector(".icon-mic-off").classList.toggle("hidden", !isMuted);
     setText($("mic-label"), isMuted ? "Unmute" : "Mute");
   }
 
-  // ------------------------------------------------------------ devices, level meters, notes-engine status
+  // ------------------------------------------------------------ devices, level meter, notes-engine status
   // Camera and microphone belong to the call. They are separate from notes: the camera is never transcribed or
   // sent to the notes pipeline, and turning notes off does not mute the microphone or switch the camera off.
   const DEV_STORE = "otr.devices";
@@ -811,7 +473,6 @@
     unsupported: "The level meter is not available in this browser",
     idle: "",
   };
-  const PALETTES = { light: ["--blue", "--line"], call: ["--call-active", "--call-ink-2"], panel: ["--p-blue", "--p-line"] };
   function loadDevPrefs() {
     try { const v = JSON.parse(sessionStorage.getItem(DEV_STORE) || "{}"); return v && typeof v === "object" ? v : {}; }
     catch (_) { return {}; }
@@ -848,10 +509,10 @@
   function ctx2d(canvas) {
     try { return canvas && canvas.getContext ? canvas.getContext("2d") : null; } catch (_) { return null; }
   }
-  function drawWave(canvas, values, palette) {
+  function drawWave(canvas, values) {
     const c = ctx2d(canvas);
     if (!c) return;
-    const on = cssVar(PALETTES[palette][0], "#1a73e8"), off = cssVar(PALETTES[palette][1], "#9aa0a6");
+    const on = cssVar("--blue", "#1a73e8"), off = cssVar("--outline", "#dadce0");
     const w = canvas.width, h = canvas.height, n = values.length, gap = 2;
     const bw = Math.max(1, Math.floor((w - gap * (n - 1)) / n));
     c.clearRect(0, 0, w, h);
@@ -861,18 +522,7 @@
       c.fillRect(i * (bw + gap), Math.round((h - bh) / 2), bw, bh);
     });
   }
-  function drawStrip(canvas, level, palette) {
-    const c = ctx2d(canvas);
-    if (!c) return;
-    const on = cssVar(PALETTES[palette][0], "#1a73e8"), off = cssVar(PALETTES[palette][1], "#9aa0a6");
-    const w = canvas.width, h = canvas.height, gap = 2, bw = Math.max(1, Math.floor((w - gap * (BARS - 1)) / BARS));
-    const clamped = Math.max(0, Math.min(1, level));
-    const lit = Math.round(clamped * BARS);
-    c.clearRect(0, 0, w, h);
-    for (let i = 0; i < BARS; i++) { c.fillStyle = i < lit ? on : off; c.fillRect(i * (bw + gap), 0, bw, h); }
-    canvas.dataset.level = clamped.toFixed(2);
-  }
-  // Web Audio level meter over a MediaStream. targets() returns [[canvas, palette], ...] to draw into.
+  // Web Audio level meter over a MediaStream. targets() returns the canvases to draw into.
   function createMeter(targets, onState) {
     let audio = null, analyser = null, samples = null, timer = null, track = null, lastSound = 0;
     const m = { state: "idle", rms: 0, soundSince: 0 };
@@ -899,7 +549,7 @@
         else if (m.state === "sound" && now - lastSound > HOLD_MS) set("listening");
       }
       m.rms = rms;
-      for (const [canvas, palette] of targets()) { drawWave(canvas, values, palette); canvas.dataset.level = rms.toFixed(3); }
+      for (const canvas of targets()) { drawWave(canvas, values); canvas.dataset.level = rms.toFixed(3); }
     }
     m.attach = stream => {
       m.stop();
@@ -923,7 +573,7 @@
       audio = analyser = track = null;
       m.soundSince = 0; m.rms = 0;
       set("idle");
-      for (const [canvas, palette] of targets()) drawWave(canvas, new Array(BARS).fill(0), palette);
+      for (const canvas of targets()) drawWave(canvas, new Array(BARS).fill(0));
     };
     return m;
   }
@@ -946,7 +596,7 @@
   }
   function stopTracks(stream) { if (stream) for (const t of stream.getTracks()) t.stop(); }
 
-  // ---- lobby device check
+  // ---- device check before joining (create-meeting and ask-to-join screens)
   const check = { audio: null, video: null, meter: null, busy: false };
   function renderCheckStatus(state) {
     const node = $("check-mic-status");
@@ -1013,7 +663,7 @@
       if (!check.video) { $("check-camera-on").checked = false; devPrefs.cameraOn = false; }
       $("device-check-live").classList.remove("hidden");
       if (check.audio) {
-        if (!check.meter) check.meter = createMeter(() => [[$("check-meter"), "light"]], renderCheckStatus);
+        if (!check.meter) check.meter = createMeter(() => [$("check-meter")], renderCheckStatus);
         check.meter.attach(check.audio);
       } else renderCheckStatus("idle");
       await refreshCheckLists();
@@ -1038,15 +688,8 @@
     if (mediaSupport() && !check.audio) setText($("check-error"), mediaProblem(null, "microphone"));
   }
 
-  // ---- in-call device menu (Meet-style chevrons beside the mic and camera buttons)
-  const localMeter = createMeter(() => {
-    const out = [];
-    const tile = me && tileEls[me] && tileEls[me].querySelector(".tile-level");
-    if (tile) out.push([tile, "call"]);
-    if (deviceMenuOpen()) out.push([$("menu-meter"), "panel"]);
-    if (panelView === "agent" && !$("engine").classList.contains("hidden")) out.push([$("engine-browser-meter"), "panel"]);
-    return out;
-  }, state => {
+  // ---- in-call device menu (opened from the Devices button in the control bar)
+  const localMeter = createMeter(() => (deviceMenuOpen() ? [$("menu-meter")] : []), state => {
     setText($("menu-mic-status"), METER_TEXT[state] || "");
     $("menu-mic-status").setAttribute("data-state", state);
     renderDiagnostics();
@@ -1057,7 +700,7 @@
     return t && typeof MediaStream !== "undefined" ? new MediaStream([t]) : null;
   }
   function rebindLocalMeter() {
-    const stream = localMicStream();
+    const stream = room ? localMicStream() : null;
     if (stream && room.localParticipant.isMicrophoneEnabled) localMeter.attach(stream);
     else localMeter.stop();
   }
@@ -1102,22 +745,21 @@
     } catch (error) { setText($("menu-error"), mediaProblem(error, WHAT[kind])); }
     await renderDeviceMenu();
   }
-  function openDeviceMenu(group) {
+  function openDeviceMenu() {
     $("device-menu").classList.remove("hidden");
-    for (const id of ["mic-chevron", "camera-chevron"]) $(id).setAttribute("aria-expanded", "true");
+    $("devices-button").setAttribute("aria-expanded", "true");
     setText($("menu-error"), "");
     rebindLocalMeter();
     renderDeviceMenu().then(() => {
-      const first = $(group || "menu-mic").querySelector("button");
+      const first = $("menu-mic").querySelector("button");
       if (first) first.focus();
     });
   }
   function closeDeviceMenu() {
     if (!deviceMenuOpen()) return;
     $("device-menu").classList.add("hidden");
-    for (const id of ["mic-chevron", "camera-chevron"]) $(id).setAttribute("aria-expanded", "false");
+    $("devices-button").setAttribute("aria-expanded", "false");
   }
-  function toggleDeviceMenu(group) { if (deviceMenuOpen()) closeDeviceMenu(); else openDeviceMenu(group); }
   async function testSpeaker(statusId) {
     const AC = window.AudioContext || window.webkitAudioContext;
     const out = $(statusId);
@@ -1174,7 +816,7 @@
     navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
   }
 
-  // ---- notes engine status (text-free, from GET /api/diagnostics)
+  // ---- notes engine status (text-free, from GET /api/diagnostics; hidden when the server has no such endpoint)
   let diagTimer = null, diagBusy = false, diagGone = false, diag = null;
   function engineModelRows(models) {
     const rows = [];
@@ -1197,9 +839,6 @@
   function renderDiagnostics() {
     const block = $("engine");
     if (!block) return;
-    const known = diag && !diagGone && diag.me && typeof diag.me.waiting_lines === "number";
-    if (known) waitingLines = diag.me.waiting_lines;
-    renderTranscriptStatus();
     if (!diag || diagGone) { block.classList.add("hidden"); return; }
     block.classList.remove("hidden");
     const rows = engineModelRows(diag.models);
@@ -1212,7 +851,6 @@
     const mine = diag.me || {};
     setIfChanged($("engine-input"), engineInputText(mine));
     $("engine-input").setAttribute("data-state", mine.state || "");
-    drawStrip($("engine-server-meter"), typeof mine.audio_level === "number" ? mine.audio_level : 0, "panel");
     // The browser hears sound but the notes engine does not: say so in plain words.
     const hearsSound = localMeter.state === "sound" && localMeter.soundSince && performance.now() - localMeter.soundSince > SILENCE_MS;
     const stale = mine.state === "waiting_for_audio" || mine.last_frame_age_s == null || mine.last_frame_age_s > 5;
@@ -1234,20 +872,122 @@
   function startDiagnostics() {
     stopDiagnostics();
     diagGone = false;
-    diagTimer = setInterval(pollDiagnostics, 500);
+    diagTimer = setInterval(pollDiagnostics, 1000);
     pollDiagnostics();
   }
   function stopDiagnostics() { clearInterval(diagTimer); diagTimer = null; }
-  function renderAudioButton() {
-    $("audio-button").classList.toggle("hidden", !(room && room.canPlaybackAudio === false));
+
+  // ---- kept-out placeholders: the owner's own kept-out or removed lines, never their words
+  let keptEvents = [], holdSeconds = 0;
+  const keptOpen = new Set();
+  function clock(t) {
+    const total = Math.max(0, Math.round(Number(t) || 0)), pad = n => (n < 10 ? "0" : "") + n;
+    return pad(Math.floor(total / 60)) + ":" + pad(total % 60);
   }
+  function keptLabel(category) {
+    const views = window.OTRViews;
+    return views ? views.shortLabel(category) : String(category || "Other");
+  }
+  function keptFacts(item) {
+    const views = window.OTRViews;
+    if (views) return views.explainFacts({ category: item.category, trail: { family: item.family, before: item.before, after: item.after, held_s: item.held_s } }, holdSeconds);
+    return [["Why", "This line was kept out of your notes."]];
+  }
+  function keptItem(item, index, prefix) {
+    const key = String(item.id || index);
+    const open = keptOpen.has(key);
+    const li = element("li", "kept-item");
+    li.setAttribute("data-category", item.category);
+    const toggle = element("button", "kept-toggle");
+    toggle.type = "button";
+    toggle.setAttribute("data-key", key);
+    toggle.setAttribute("aria-expanded", String(open));
+    const detailId = `${prefix}-detail-${index}`;
+    if (open) toggle.setAttribute("aria-controls", detailId);
+    toggle.append(element("span", null, `${item.action === "removed_after_approval" ? "Removed" : "Kept out"}, ${keptLabel(item.category)}`),
+      element("span", "kept-when", typeof item.t === "number" ? clock(item.t) : ""));
+    toggle.onclick = () => {
+      if (keptOpen.has(key)) keptOpen.delete(key); else keptOpen.add(key);
+      renderKept();
+      renderRealtime();
+      const again = $(prefix === "rt" ? "rt-list" : "kept-out-list").querySelector(`button[data-key="${key}"]`);
+      if (again) again.focus();
+    };
+    li.append(toggle);
+    if (open) {
+      const dl = element("dl", "kept-detail");
+      dl.id = detailId;
+      for (const [name, value] of keptFacts(item)) {
+        const group = element("div");
+        group.append(element("dt", null, name), element("dd", null, value));
+        dl.append(group);
+      }
+      li.append(dl);
+    }
+    return li;
+  }
+  function renderKept() {
+    const list = $("kept-out-list");
+    $("kept-out-empty").classList.toggle("hidden", keptEvents.length > 0);
+    list.replaceChildren();
+    keptEvents.forEach((item, index) => list.append(keptItem(item, index, "kept")));
+  }
+
+  // ---- the Realtime, Insights and How it decides views (shared views.js; only the owner's own data, never kept-out text)
+  const myLines = new Map();
+  let insightsData = null, viewsTab = "realtime", explainSel = null, viewSignature = "";
+  function viewsOpen() { return !$("views-panel").classList.contains("hidden"); }
+  function renderRealtime() {
+    if (!viewsOpen()) return;
+    const rows = [...myLines.values()].map(line => ({ type: "line", seq: line.seq || 0, line }))
+      .concat(keptEvents.map(item => ({ type: "kept", seq: item.seq || 0, item })));
+    rows.sort((x, y) => x.seq - y.seq);
+    $("rt-empty").classList.toggle("hidden", rows.length > 0);
+    const list = $("rt-list");
+    list.replaceChildren();
+    rows.forEach((row, index) => {
+      if (row.type === "kept") { list.append(keptItem(row.item, index, "rt")); return; }
+      const li = element("li", "rt-line");
+      li.append(element("b", null, row.line.name || "You"), document.createTextNode(row.line.text || ""));
+      list.append(li);
+    });
+  }
+  function renderViews(force) {
+    if (!viewsOpen()) return;
+    const views = window.OTRViews;
+    for (const name of ["realtime", "insights", "explain"]) {
+      const on = viewsTab === name;
+      $("vp-" + name).classList.toggle("hidden", !on);
+      $("vtab-" + name).classList.toggle("on", on);
+      $("vtab-" + name).setAttribute("aria-selected", String(on));
+    }
+    if (viewsTab === "realtime") { renderRealtime(); return; }
+    if (!views || !insightsData) return;
+    const signature = JSON.stringify([viewsTab, insightsData, explainSel]);
+    if (!force && signature === viewSignature) return;
+    viewSignature = signature;
+    if (viewsTab === "insights") views.renderInsights($("vp-insights"), Object.assign({}, insightsData, { labels: { approved: "In your notes" } }));
+    else views.renderExplain($("vp-explain"), { selected: explainSel, item: null, counts: insightsData.kept_out, holdSeconds: insightsData.hold_seconds },
+      { onSelect: key => { explainSel = key; renderViews(true); } });
+  }
+  function openViews() {
+    $("views-panel").classList.remove("hidden");
+    $("views-button").setAttribute("aria-expanded", "true");
+    renderViews(true);
+    $("views-close").focus();
+  }
+  function closeViews() {
+    $("views-panel").classList.add("hidden");
+    $("views-button").setAttribute("aria-expanded", "false");
+    $("views-button").focus();
+  }
+
 
   async function join(accessOverride = null, configOverride = null) {
     if (joinInProgress) return false;
     joinInProgress = true;
     const button = $("join-button");
     setText($("join-error"), "");
-    setText($("share-error"), "");
     const name = $("name").value.trim();
     if (!accessOverride && !name) {
       setText($("join-error"), "Enter a display name");
@@ -1262,9 +1002,8 @@
       const access = accessOverride || await post("/api/join", { name });
       me = access.identity;
       stopDeviceCheck();
+      // Close-talk capture: no automatic gain (it lifts room noise), keep noise suppression and echo cancellation.
       const roomOptions = { adaptiveStream: true, dynacast: true,
-        // Close-talk capture: no auto gain, so people talking far from the microphone stay quiet
-        // and the notes engine can ignore them; the browser still removes steady noise and echo.
         audioCaptureDefaults: { autoGainControl: false, noiseSuppression: true, echoCancellation: true } };
       if (devPrefs.audioinput) roomOptions.audioCaptureDefaults = Object.assign({}, roomOptions.audioCaptureDefaults, { deviceId: devPrefs.audioinput });
       if (devPrefs.videoinput) roomOptions.videoCaptureDefaults = { deviceId: devPrefs.videoinput };
@@ -1279,10 +1018,7 @@
         if (track.kind === LiveKit.Track.Kind.Audio) {
           const media = track.attach();
           media.dataset.livekitAudio = "true";
-          media.muted = false;
-          if (participant) media.dataset.participant = participant.identity;
           document.body.append(media);
-          renderAudioButton();
           if (participant) muted.set(participant.identity, publication.isMuted);
           updateTileFlags();
         } else if (participant && publication.source === LiveKit.Track.Source.Camera) {
@@ -1351,36 +1087,26 @@
         updateTileFlags();
       });
       room.on(LiveKit.RoomEvent.Disconnected, () => { setConnection("Disconnected", "off"); stopDiagnostics(); localMeter.stop(); });
-      room.on(LiveKit.RoomEvent.AudioPlaybackStatusChanged, renderAudioButton);
       room.on(LiveKit.RoomEvent.ActiveDeviceChanged, kind => { if (kind === "audioinput") rebindLocalMeter(); });
       room.on(LiveKit.RoomEvent.MediaDevicesError, error =>
         showToast(escapeHtml(mediaProblem(error, "microphone or camera")), "warn"));
-      try { await room.connect(config.url, access.token); }
-      catch (_) {
-        throw new Error("Could not connect to the call server. Check that LiveKit is running and reachable from this browser, then try again.");
-      }
-      if (room.remoteParticipants) {
-        for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
-      }
+      await room.connect(config.url, access.token);
+      for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
       setText($("room-chip"), `Room ${config.room}`);
       $("room-chip").classList.remove("hidden");
       for (const screen of ENTRY_SCREENS) $(screen).classList.add("hidden");
       $("meeting").classList.remove("hidden");
       $("control-bar").classList.remove("hidden");
-      setText($("meeting-room-name"), roomId || config.room);
-      tickClock();
-      clearInterval(clockTimer);
-      clockTimer = setInterval(tickClock, 30000);
+      setText($("meeting-room-name"), `Meeting ${config.room}`);
       startLobby();
-      bindDeviceChange();
-      renderAudioButton();
-      startDiagnostics();
       startRoomStatus();
       renderMicButton();
       renderCameraButton();
       setConnection("Live · local room", "online");
-      api("/api/me").then(applyMe).catch(() => {});
+      api("/api/me?summary=1").then(applyMe).catch(() => {});
       connectStream();
+      bindDeviceChange();
+      startDiagnostics();
       room.localParticipant.setMicrophoneEnabled(true).then(() => {
         renderMicButton();
         updateTileFlags();
@@ -1391,17 +1117,15 @@
         showToast(`Microphone is off. ${escapeHtml(mediaProblem(error, "microphone"))}`, "warn");
       });
       if (devPrefs.cameraOn) {
-        room.localParticipant.setCameraEnabled(true).then(renderCameraButton).catch(error => {
+        room.localParticipant.setCameraEnabled(true).then(() => renderCameraButton()).catch(error => {
           renderCameraButton();
           showToast(`Camera is off. ${escapeHtml(mediaProblem(error, "camera"))}`, "warn");
         });
       }
       return true;
     } catch (error) {
-      const reason = error && error.message ? error.message : "Could not connect to the meeting.";
-      setText($("join-error"), reason);
-      setText($("share-error"), reason);
-      if (accessOverride) showToast(`Could not join the meeting: ${escapeHtml(reason)} Try again or ask the host to check the connection.`, "err");
+      setText($("join-error"), accessOverride ? "Could not connect to the call." : (error.message || "Could not connect to the meeting."));
+      if (accessOverride) showToast("Could not join the meeting. Try again or ask the host to check the connection.", "err");
       setConnection("Not connected", "off");
       if (room) { try { await room.disconnect(); } catch (_) { } room = null; }
       if (me && !accessOverride) { try { await post("/api/leave", {}); } catch (_) { } }
@@ -1427,19 +1151,6 @@
       showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
     } finally {
       button.disabled = false;
-    }
-  }
-
-  async function removeLine(id, removeButton) {
-    removeButton.disabled = true;
-    try {
-      await post("/api/notes/remove", { id });
-      lines.delete(id);
-      renderLines();
-      announce("Line removed.");
-    } catch (error) {
-      showToast(`<strong>Couldn't remove the line.</strong> ${escapeHtml(error.message)}`, "err");
-      removeButton.disabled = false;
     }
   }
 
@@ -1548,7 +1259,7 @@
       deliveryEmail = saved.email;
       emailOptedIn = saved.enabled;
       emailChoiceDirty = false;
-      renderPanelState();
+      renderDrawer();
       result.classList.add("ok");
       setText(result, enabled ? "Saved. The host can include this address in the final email draft." : "Saved. Your address will not be in the host's draft.");
     } catch (error) {
@@ -1565,7 +1276,7 @@
   }
 
   async function showEndDialog() {
-    closePanel();
+    if (!$("notes-drawer").hidden) closeDrawer();
     endDialogLastFocus = document.activeElement;
     $("end-dialog").classList.remove("hidden");
     $("end-backdrop").classList.remove("hidden");
@@ -1639,6 +1350,30 @@
     }
   }
 
+  function openDrawer() {
+    const drawer = $("notes-drawer");
+    drawer.hidden = false;
+    document.body.classList.add("drawer-open");
+    $("drawer-backdrop").classList.remove("hidden");
+    requestAnimationFrame(() => drawer.classList.add("open"));
+    $("drawer-button").setAttribute("aria-expanded", "true");
+    drawerLastFocus = document.activeElement;
+    $("drawer-close").focus();
+  }
+
+  function closeDrawer() {
+    const drawer = $("notes-drawer");
+    drawer.classList.remove("open");
+    $("drawer-button").setAttribute("aria-expanded", "false");
+    document.body.classList.remove("drawer-open");
+    setTimeout(() => {
+      drawer.hidden = true;
+      $("drawer-backdrop").classList.add("hidden");
+    }, 240);
+    if (drawerLastFocus && drawerLastFocus.isConnected) drawerLastFocus.focus();
+    drawerLastFocus = null;
+  }
+
   $("join-button").onclick = () => join();
   $("name").onkeydown = event => { if (event.key === "Enter") join(); };
   $("create-button").onclick = () => showEntry("host-setup");
@@ -1655,7 +1390,7 @@
   $("host-create-button").onclick = async () => {
     const button = $("host-create-button");
     button.disabled = true;
-    setText(button, "Starting...");
+    setText(button, "Creating…");
     setText($("host-error"), "");
     try {
       const access = await post("/api/meetings", {name: $("host-name").value.trim(), email: $("host-email").value.trim()});
@@ -1666,7 +1401,7 @@
       $("share-link").value = access.join_url;
       showEntry("share-screen");
     } catch (error) { setText($("host-error"), error.message); }
-    finally { button.disabled = false; setText(button, "Start meeting"); }
+    finally { button.disabled = false; setText(button, "Create meeting"); }
   };
   $("copy-link-button").onclick = async () => {
     try { await navigator.clipboard.writeText($("share-link").value); setText($("copy-link-button"), "Copied"); }
@@ -1708,11 +1443,10 @@
   $("mic-button").onclick = async () => {
     if (!room) return;
     const enabled = room.localParticipant.isMicrophoneEnabled;
-    try { await room.localParticipant.setMicrophoneEnabled(!enabled); }
-    catch (error) { showToast(`Microphone is off. ${escapeHtml(mediaProblem(error, "microphone"))}`, "warn"); }
-    rebindLocalMeter();
+    await room.localParticipant.setMicrophoneEnabled(!enabled);
     renderMicButton();
     updateTileFlags();
+    rebindLocalMeter();
     announce(enabled ? "Microphone muted." : "Microphone on.");
   };
   $("camera-button").onclick = async () => {
@@ -1725,6 +1459,8 @@
       const publication = room.localParticipant.getTrackPublication(LiveKit.Track.Source.Camera);
       setVideoTrack(me, publication && (publication.videoTrack || publication.track));
       renderCameraButton();
+      devPrefs.cameraOn = !enabled;
+      saveDevPrefs();
       announce(enabled ? "Camera off." : "Camera on.");
     } catch (error) {
       renderCameraButton();
@@ -1736,34 +1472,25 @@
   $("check-cam").onchange = () => { devPrefs.videoinput = $("check-cam").value; saveDevPrefs(); startDeviceCheck("videoinput"); };
   $("check-spk").onchange = () => { devPrefs.audiooutput = $("check-spk").value; saveDevPrefs(); };
   $("check-camera-on").onchange = () => { devPrefs.cameraOn = $("check-camera-on").checked; saveDevPrefs(); };
-  $("check-test-speaker").onclick = () => testSpeaker("check-error");
-  $("mic-chevron").onclick = () => toggleDeviceMenu("menu-mic");
-  $("camera-chevron").onclick = () => toggleDeviceMenu("menu-cam");
-  $("test-speaker-button").onclick = () => testSpeaker("menu-error");
-  $("audio-button").onclick = async () => { try { await room.startAudio(); } catch (_) { } renderAudioButton(); };
+  $("check-test-speaker").onclick = () => testSpeaker("check-speaker-status");
+  $("menu-test-speaker").onclick = () => testSpeaker("menu-speaker-status");
+  $("devices-button").onclick = () => { if (deviceMenuOpen()) closeDeviceMenu(); else openDeviceMenu(); };
   document.addEventListener("click", event => {
     if (!deviceMenuOpen()) return;
-    const inside = n => n && (n === event.target || n.contains(event.target));
-    if (!inside($("device-menu")) && !inside($("mic-chevron")) && !inside($("camera-chevron"))) closeDeviceMenu();
+    if ($("device-menu").contains(event.target) || $("devices-button").contains(event.target)) return;
+    closeDeviceMenu();
   });
+  $("popout-button").onclick = () => window.open("/insights", "otr-insights", "popup=yes,width=520,height=760");
+  $("views-button").onclick = () => { if (viewsOpen()) closeViews(); else openViews(); };
+  $("views-close").onclick = closeViews;
+  for (const name of ["realtime", "insights", "explain"]) $("vtab-" + name).onclick = () => { viewsTab = name; renderViews(true); };
   $("notes-button").onclick = toggleNotes;
-  $("live-button").onclick = goLive;
-  $("captions-button").onclick = () => setCaptions(!captionsOn);
-  $("captions").addEventListener("scroll", () => {
-    const box = $("captions");
-    capFollow = box.scrollHeight - box.scrollTop - box.clientHeight < 12;
-    if (capFollow) newCount = 0;
-    renderLive();
-  });
-  $("agent-button").onclick = () => togglePanel("agent");
-  $("people-button").onclick = () => togglePanel("people");
-  $("info-button").onclick = () => togglePanel("info");
-  $("panel-close").onclick = closePanel;
-  $("panel-back").onclick = () => showPanel("agent");
-  $("panel-popout").onclick = () => openInsights(panelView === "explain" ? "how" + (explainSel ? "=" + encodeURIComponent(explainSel) : "") : "");
-  $("notes-off-toggle").onclick = toggleNotes;
-  $("link-insights").onclick = () => showPanel("insights");
-  $("link-explain").onclick = () => showPanel("explain");
+  $("drawer-button").onclick = () => {
+    if ($("notes-drawer").hidden) openDrawer();
+    else closeDrawer();
+  };
+  $("drawer-close").onclick = closeDrawer;
+  $("drawer-backdrop").onclick = closeDrawer;
   $("finalize-button").onclick = finalize;
   $("copy-button").onclick = copyFinal;
   $("report-button").onclick = viewFinalReport;
@@ -1796,6 +1523,8 @@
     else await endMeeting();
   };
   document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && deviceMenuOpen()) { closeDeviceMenu(); $("devices-button").focus(); return; }
+    if (event.key === "Escape" && viewsOpen() && $("notes-drawer").hidden && $("end-dialog").classList.contains("hidden")) { closeViews(); return; }
     if (!$("end-dialog").classList.contains("hidden")) {
       if (event.key === "Escape") { closeEndDialog(); return; }
       if (event.key === "Tab") {
@@ -1809,15 +1538,17 @@
       }
       return;
     }
-    const tag = event.target && event.target.tagName;
-    if (!["INPUT", "TEXTAREA", "SELECT"].includes(tag) && !event.ctrlKey && !event.metaKey && !event.altKey
-        && !$("meeting").classList.contains("hidden")) {
-      const key = String(event.key).toLowerCase();
-      if (key === "l") goLive();
-      else if (key === "c") setCaptions(!captionsOn);
+    const drawer = $("notes-drawer");
+    if (event.key === "Escape" && !drawer.hidden) { closeDrawer(); return; }
+    if (!drawer.hidden && event.key === "Tab") {
+      const nodes = [...drawer.querySelectorAll(FOCUSABLE)]
+        .filter(node => node.offsetParent !== null || node === document.activeElement);
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
-    if (event.key === "Escape" && deviceMenuOpen()) { const from = $("mic-chevron"); closeDeviceMenu(); from.focus(); return; }
-    if (event.key === "Escape" && panelView) closePanel();
   });
   const initialRoom = location.pathname.match(/^\/m\/([^/]+)\/?$/);
   if (initialRoom) {

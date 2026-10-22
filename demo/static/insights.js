@@ -144,6 +144,17 @@
       box.append(tile);
     }
   }
+  function renderKinds(counts) {
+    const box = $("kinds");
+    box.replaceChildren();
+    for (const cat of Views.categories) {
+      const n = Number(counts[cat.key]) || 0;
+      const li = el("li", n ? "has" : "none");
+      li.setAttribute("data-category", cat.key);
+      li.append(el("span", "iv-name", cat.label), el("b", "iv-n", String(n)));
+      box.append(li);
+    }
+  }
   function renderEvents(events) {
     const box = $("events");
     box.replaceChildren();
@@ -211,6 +222,7 @@
     const ins = me.insights || {};
     setText($("state-line"), stateLine());
     renderIfChanged("tiles", [ins.approved, ins.total, ins.removed], () => renderTiles(ins));
+    renderIfChanged("kinds", ins.kept_out || {}, () => renderKinds(ins.kept_out || {}));
     renderIfChanged("timeline", [ins.timeline, ins.now], () => {
       const box = $("timeline");
       box.replaceChildren();
@@ -291,7 +303,7 @@
       } else if (session === "none") {
         setText($("gate-title"), "Join the meeting first");
         setText($("gate-text"), sessionDetail && sessionDetail !== "Join the meeting first" ? sessionDetail + "." :
-          "This window shows your own notes activity. Join a meeting in your browser, then open this window again from the Off The Record panel.");
+          "This window shows your own notes activity. Join a meeting in your browser, then open this window again from My notes.");
       }
       return;
     }

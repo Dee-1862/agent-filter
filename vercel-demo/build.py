@@ -7,6 +7,7 @@ The backend URL is public configuration, never a secret.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -36,8 +37,13 @@ def replace_required(source: str, old: str, new: str) -> str:
     return source.replace(old, new)
 
 
-def build(origin: str) -> None:
+def build(origin: str, proxy: bool | None = None) -> None:
+    """proxy=True (default when OTR_EDGE_KEY is set in the environment) routes /api/* through
+    api/proxy.js, which adds the edge key. The key itself is never written here: set BACKEND_URL
+    and OTR_EDGE_KEY in the Vercel project. proxy=False keeps the raw external rewrite."""
     origin = backend_origin(origin)
+    if proxy is None:
+        proxy = bool(os.environ.get("OTR_EDGE_KEY"))
     assets = OUTPUT / "static"
     assets.mkdir(parents=True, exist_ok=True)
 
@@ -91,7 +97,8 @@ def build(origin: str) -> None:
         "framework": None,
         "outputDirectory": "public",
         "rewrites": [
-            {"source": "/api/:path*", "destination": origin + "/api/:path*"},
+            ({"source": "/api/:path*", "destination": "/api/proxy?__otr_path=:path*"} if proxy
+             else {"source": "/api/:path*", "destination": origin + "/api/:path*"}),
             {"source": "/m/:room", "destination": "/index.html"},
         ],
         "headers": [
@@ -100,9 +107,14 @@ def build(origin: str) -> None:
         ],
     }
     (ROOT / "vercel.json").write_text(json.dumps(config, indent=2) + "\n")
+    if proxy:
+        print("Proxy mode: set BACKEND_URL=" + origin + " and OTR_EDGE_KEY in the Vercel project "
+              "(Settings, Environment Variables). api/proxy.js adds the key; the page never sees it.")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: python vercel-demo/build.py https://public-backend.example")
-    build(sys.argv[1])
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = [a for a in sys.argv[1:] if a.startswith("--")]
+    if len(args) != 1 or any(f not in ("--proxy", "--no-proxy") for f in flags):
+        raise SystemExit("Usage: python vercel-demo/build.py https://public-backend.example [--proxy|--no-proxy]")
+    build(args[0], True if "--proxy" in flags else False if "--no-proxy" in flags else None)
