@@ -1,0 +1,26 @@
+# Changes
+
+Append-only log of every change to the plan, scope, architecture, benchmark or results. Newest entries at the top. Each entry says what changed, why, and which part of [PRD.md](PRD.md) it touches.
+
+**Entry format**
+
+```
+## YYYY-MM-DD · C-### · <short title>
+- Type: foundation | addendum | benchmark | system | eval | demo | process
+- Touches: PRD section(s)
+- What changed:
+- Why:
+- Decided by:
+```
+
+A `foundation` change is rare and needs a stated reason. Everything else is an `addendum`-type change.
+
+---
+
+## 2026-10-22 · C-001 · Initial PRD created
+- Type: foundation
+- Touches: PRD Part 1 (all), Part 2 (2.1–2.7)
+- What changed: Created `docs/` with PRD.md, CHANGES.md and LESSONS_LEARNED.md. Part 1 captures the research question, hypothesis, architecture, evaluation design and risks from the source plan. Part 2 seeds the build plan, team split, demo script, future-work backlog and open questions.
+- Why: Fix the foundation so later work adds to it instead of drifting from it.
+- Decided by: project owner
+- Note: Literature figures (ConfAIde, PrivacyLens) were carried over from the source plan and have not been independently re-verified.
