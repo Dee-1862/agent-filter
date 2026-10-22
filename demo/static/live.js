@@ -25,7 +25,7 @@
   const videoTracks = new Map(), videoMuted = new Set(), videoEls = new Map();
   let toastTimer = null, meRefreshTimer = null, clockTimer = null;
   let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
-  let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
+  let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false, endSessionExpired = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
   let admissionCheckInProgress = false, admissionFailures = 0, joinInProgress = false;
   const ENTRY_SCREENS = ["home-screen", "host-setup", "guest-setup", "share-screen", "waiting-screen", "join"];
@@ -1487,11 +1487,13 @@
 
   async function showEndDialog() {
     closePanel();
+    endSessionExpired = false;
     endDialogLastFocus = document.activeElement;
     $("end-dialog").classList.remove("hidden");
     $("end-backdrop").classList.remove("hidden");
     $("end-email-review").classList.add("hidden");
     $("end-without-email").classList.remove("hidden");
+    setText($("end-without-email"), "End without email");
     $("end-confirm").classList.add("hidden");
     setText($("end-summary"), "Checking whether the final transcript is ready…");
     setText($("end-error"), "");
@@ -1534,6 +1536,11 @@
       $("end-confirm").classList.remove("hidden");
     } catch (error) {
       if (error.status === 409) setText($("end-summary"), "The final transcript is still waiting for contributors to finish. You can keep the meeting open or end without email.");
+      else if (error.status === 401 || error.status === 404) {
+        endSessionExpired = true;
+        setText($("end-summary"), "This meeting's server session expired, so the email draft is unavailable. You can leave this call, but we can't end it for everyone from here.");
+        setText($("end-without-email"), "Leave this call");
+      }
       else {
         setText($("end-summary"), "Could not prepare an email draft.");
         setText($("end-error"), error.message);
@@ -1543,20 +1550,32 @@
 
   async function endMeeting() {
     try {
-      if (role === "host" && roomId) await post(`/api/meetings/${encodeURIComponent(roomId)}/end`, {});
-      else await post("/api/leave", {});
+      if (!endSessionExpired) {
+        if (role === "host" && roomId) await post(`/api/meetings/${encodeURIComponent(roomId)}/end`, {});
+        else await post("/api/leave", {});
+      }
+    } catch (error) {
+      if (error.status === 401 || error.status === 404) {
+        endSessionExpired = true;
+      } else {
+        if (role === "host") setText($("end-error"), `Could not end meeting: ${error.message}`);
+        else showToast(`Could not leave: ${escapeHtml(error.message)}`, "err");
+        return;
+      }
+    }
+    try {
       clearInterval(lobbyTimer);
       clearInterval(waitingTimer);
       clearInterval(roomTimer);
       stopDiagnostics();
+      clearTimeout(meRefreshTimer);
+      clearInterval(clockTimer);
       localMeter.stop();
       closeDeviceMenu();
       if (eventSource) eventSource.close();
       if (room) await room.disconnect();
+    } finally {
       location.href = "/";
-    } catch (error) {
-      if (role === "host") setText($("end-error"), `Could not end meeting: ${error.message}`);
-      else showToast(`Could not leave: ${escapeHtml(error.message)}`, "err");
     }
   }
 

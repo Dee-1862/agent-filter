@@ -234,7 +234,7 @@ function makeEnv(html, opts) {
     constructor() { this.handlers = {}; this.localParticipant = new Participant(); this.canPlaybackAudio = true; rooms.push(this); }
     on(ev, fn) { this.handlers[ev] = fn; return this; }
     async connect(url, token) { this.url = url; this.token = token; }
-    async disconnect() {}
+    async disconnect() { this.disconnected = true; }
     async startAudio() {}
   }
   const LivekitClient = {
@@ -317,6 +317,9 @@ async function consentHost() {
         pending: [{ request_id: "r1", name: "Guest Gail", email: "gail@example.com" }] },
       "POST /api/meetings/room1/admit": { ok: true },
       "POST /api/consent": body => { recordingOn = body.recording; return { identity: "person-host", recording: recordingOn }; },
+      "GET /api/notes/final": { text: "Hana: Plan the launch", redaction_counts: { suppressed: 0, removed: 0 } },
+      "GET /api/meetings/room1/mail-recipients": { recipients: [] },
+      "POST /api/meetings/room1/end": { ok: true },
     },
   });
   loadScripts(env, html);
@@ -466,7 +469,57 @@ async function consentHost() {
     && text($("captions")).includes("I will send the agenda") && visible($("panel-agent")),
     "turning notes off keeps the shared transcript open");
   check(!env.calls.some(c => c.url === "/api/confirm"), "consent page never calls /api/confirm");
+  $("leave-button").click(); await sleep(20);
+  check(visible($("end-dialog")) && text($("end-summary")).includes("final transcript is ready"),
+    "host can review the final transcript before ending normally");
+  $("end-without-email").click(); await sleep(20);
+  check(env.calls.some(c => c.method === "POST" && c.url === "/api/meetings/room1/end")
+    && env.rooms[0].disconnected && env.sandbox.location.href === "/",
+    "normal end closes the server meeting and disconnects the local call");
   return env;
+}
+
+// ------------------------------------------------------------------ scenario 1b: server session expired while the host is in LiveKit
+async function consentHostExpired() {
+  const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  const baseRoutes = {
+    "POST /api/meetings": { room_id: "expired-room", join_url: "http://127.0.0.1:8000/m/expired-room", identity: "person-host",
+      name: "Hana", role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "expired-room" },
+    "GET /api/config": { mode: "livekit", url: "ws://127.0.0.1:7880", room: "expired-room" },
+    "GET /api/me": { identity: "person-host", participants: { "person-host": { name: "Hana", recording: false } },
+      lines: [], kept_out: [], insights: {}, redaction_counts: {}, finalized: false },
+    "GET /api/meetings/expired-room/status": { status: "admitted", role: "host", identity: "person-host",
+      name: "Hana", token: "tok", url: "ws://127.0.0.1:7880", room: "expired-room", pending: [] },
+  };
+  for (const failedStep of ["draft", "end"]) {
+    const routes = { ...baseRoutes,
+      "GET /api/notes/final": failedStep === "draft" ? { status: 401, json: { detail: "Join the meeting first" } }
+        : { text: "Hana: Plan the launch", redaction_counts: {} },
+      "GET /api/meetings/expired-room/mail-recipients": { recipients: [] },
+      "POST /api/meetings/expired-room/end": { status: 401, json: { detail: "Join the meeting first" } },
+    };
+    const env = makeEnv(html, { routes });
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana";
+    $("host-email").value = "hana@example.com";
+    $("host-create-button").click(); await sleep(20);
+    $("share-join-button").click(); await sleep(40);
+    $("leave-button").click(); await sleep(20);
+    if (failedStep === "draft") {
+      check(text($("end-summary")).includes("server session expired")
+        && text($("end-without-email")) === "Leave this call"
+        && !text($("end-error")),
+      "expired session explains why no draft is available and offers local leave");
+    }
+    $("end-without-email").click(); await sleep(20);
+    check(env.rooms[0].disconnected && env.sandbox.location.href === "/"
+      && !text($("end-error")).includes("Could not end meeting"),
+      `expired session at ${failedStep} still disconnects local call without a misleading end error`);
+    check(env.calls.filter(c => c.method === "POST" && c.url === "/api/meetings/expired-room/end").length === (failedStep === "draft" ? 0 : 1),
+      `server end ${failedStep === "draft" ? "is skipped after known expiry" : "is attempted before handling expiry"}`);
+  }
 }
 
 // ------------------------------------------------------------------ scenario 2: guest waits, then is admitted
@@ -556,6 +609,7 @@ async function operatorConsole() {
 (async () => {
   try {
     await consentHost();
+    await consentHostExpired();
     await consentGuest();
     await operatorConsole();
   } catch (e) {
