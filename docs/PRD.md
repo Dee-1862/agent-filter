@@ -403,3 +403,28 @@ target in the foundation remains a fully local runtime.
 Impact on foundation: temporary exception to G6, the cloud-processing
 non-goal, and the locality rule in 1.6. Supersedes A-010 for this demo only;
 logged in C-021.
+
+### A-012 · 2026-10-22 · Shared live approved transcript · accepted
+
+What: Keep a separate notes switch for each participant, OFF by default, next
+to microphone and camera. Turning notes ON lets the local notetaker subscribe
+to that person's audio. Turning it OFF stops capture; their speech is not
+transcribed for notes. The side drawer shows one shared live transcript to
+authenticated participants with notes ON. It contains lines from all opted-in
+speakers only after the local hold and policy check approve them. No viewer sees
+provisional ASR or withheld text. A notes-off participant sees no live text.
+Each speaker can remove their own approved lines; removal must propagate to
+every viewer and the final report. Nobody can remove another speaker's lines.
+
+On the temporary hosted demo, approved live transcript responses pass through
+Vercel and Cloudflare when viewers request them. The UI must say so plainly.
+Transcription and filtering still run on the meeting host. The filter may miss
+sensitive content, so approval is not a guarantee that a line is safe to share.
+
+Why: Participants want to follow the approved notes during the call while
+still controlling capture of their own speech. This replaces the private
+live-draft visibility in G5, section 1.6, and A-008. Per-person consent, the
+hold buffer, owner-only removal, and the count-only redaction report remain.
+
+Impact on foundation: supersedes the private-draft display and final-only
+combined-text rules in G5, section 1.6, A-008, and A-011; logged in C-022.

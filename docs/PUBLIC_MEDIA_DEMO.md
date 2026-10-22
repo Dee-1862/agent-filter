@@ -1,19 +1,20 @@
 # Temporary public media route
 
-The Vercel page and API tunnel are already public, but the current self-hosted
-LiveKit server advertises a private Wi-Fi address for WebRTC media. Signaling can
-connect through the tunnel while a guest outside the Wi-Fi network cannot join
-the media room. For an internet-wide hackathon demo, use a LiveKit Cloud project
-for the **media and signaling server**. The FastAPI meeting service, per-person
-consent logic, Whisper transcription, and filtering continue to run on this Mac.
+The public demo uses LiveKit Cloud for media and signaling. The FastAPI meeting
+service, per-person consent logic, Whisper transcription, and filtering continue
+to run on this Mac. A self-hosted LiveKit server remains an option for the
+longer-term local deployment.
 
 This is a temporary cloud-media mode. LiveKit Cloud carries every participant's
 meeting audio and video, including media from people who have notes turned off.
 Notes-off controls what the local notetaker subscribes to and transcribes; it
 does not stop the meeting server from routing that person's media to other
 participants. Separately, the Vercel API proxy and Cloudflare tunnel carry
-meeting-control requests and responses, including approved transcript data
-when requested. Do not describe this mode as fully local or cloud-private.
+meeting-control requests and responses. When a notes-on participant polls the
+shared live transcript, approved text also passes through Vercel and
+Cloudflare. Do not describe this mode as fully local or cloud-private. A
+notes-off participant gets no live transcript text, but LiveKit Cloud still
+carries their meeting audio and video.
 
 ## Configure on the meeting host
 

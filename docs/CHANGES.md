@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-022 · Shared live approved notes
+- Type: addendum
+- Touches: PRD 2.7 (A-012), LOCAL_PRIVACY.md, PUBLIC_MEDIA_DEMO.md, vercel-demo/README.md
+- What changed: Authenticated participants with notes ON can see post-hold approved lines from all consenting speakers. Notes OFF means no capture from that speaker and no live transcript for that viewer. An owner's removal propagates to all viewers and the final report. The hosted path carries approved live text through Vercel and Cloudflare when requested.
+- Why: Lance wants approved notes visible during the meeting, with a familiar notes switch next to microphone and camera. Per-person capture consent remains.
+- Decided by: Lance in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-021 · Temporary Vercel and tunnel demo
 - Type: addendum
 - Touches: PRD 1.5–1.6 and 2.7 (A-011); LOCAL_PRIVACY.md
