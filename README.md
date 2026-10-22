@@ -120,4 +120,4 @@ The shared operator view can send private event text to its browser even when th
 
 ## License
 
-License: not yet chosen. ([docs/LOCAL_PRIVACY.md](docs/LOCAL_PRIVACY.md) says the project is planned as open source and the repository is currently private.)
+MIT, see [LICENSE](LICENSE).
