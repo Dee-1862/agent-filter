@@ -8,19 +8,27 @@ import argparse
 import asyncio
 import importlib
 import json
+import os
 import re
+import secrets
 import sys
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from otr.types import Segment
 
 STATIC = Path(__file__).parent / "static"
 LINE_RE = re.compile(r"^\s*([^:#@][^:]{0,40}?)\s*:\s*(.+?)\s*$")
+SPOKEN_STOP_RE = re.compile(
+    r"\b(?:stop\s+recording\s+me|(?:please\s+)?(?:don't|do\s+not)\s+record\s+me"
+    r"|i\s+(?:don't|do\s+not)\s+want\s+(?:this|that|my\s+voice|me)\s+(?:to\s+be\s+)?recorded)\b",
+    re.I,
+)
 
 
 # ---------------------------------------------------------------- helpers
@@ -148,14 +156,151 @@ class Session:
         self.start()
 
 
+class LiveSession:
+    """Consent-gated LiveKit input and a shared, approved-only transcript.
+
+    Each speaker has their own policy pipeline. The temporary text and full
+    audit trail stay in process memory and are never placed in ``messages``.
+    """
+
+    def __init__(self, pipeline_cls, kind, source, hold_seconds=10.0):
+        self.pipeline_cls, self.kind, self.source = pipeline_cls, kind, source
+        self.hold_seconds = hold_seconds
+        self.messages = [{"type": "reset", "mode": "livekit", "pipeline": kind}]
+        self.sessions: dict[str, str] = {}  # opaque browser session -> identity
+        self.names: dict[str, str] = {}
+        self.pipes: dict[str, object] = {}
+        self.sensitive_paused: set[str] = set()
+        self.approved: dict[str, dict] = {}
+        self.tasks: list[asyncio.Task] = []
+        self.t0 = time.monotonic()
+        if hasattr(source, "on_participant_left"):
+            source.on_participant_left = self.leave
+
+    def identity_for(self, request: Request) -> str:
+        sid = request.cookies.get("otr_session", "")
+        identity = self.sessions.get(sid)
+        if not identity:
+            raise HTTPException(401, "Join the meeting first")
+        return identity
+
+    def snapshot(self) -> dict:
+        consent = self.source.consent_snapshot()
+        return {identity: {"name": name, "recording": bool(consent.get(identity, False)),
+                           "sensitive_paused": identity in self.sensitive_paused}
+                for identity, name in self.names.items()}
+
+    def publish_participants(self):
+        self.messages.append({"type": "participants", "participants": self.snapshot()})
+
+    def set_consent(self, identity: str, enabled: bool, *, sensitive_pause: bool = False):
+        if sensitive_pause:
+            self.sensitive_paused.add(identity)
+        else:
+            self.sensitive_paused.discard(identity)
+        self.source.set_consent(identity, enabled)
+        if not enabled:
+            # Drop buffered/private text. Previously approved lines remain until
+            # an explicit retroactive removal is supported by the policy engine.
+            self.pipes.pop(identity, None)
+        self.publish_participants()
+
+    def leave(self, identity: str):
+        self.set_consent(identity, False)
+        self.names.pop(identity, None)
+        for sid, owner in list(self.sessions.items()):
+            if owner == identity:
+                del self.sessions[sid]
+        self.publish_participants()
+
+    def _pipe(self, identity: str):
+        if identity not in self.pipes:
+            self.pipes[identity] = self.pipeline_cls(hold_seconds=self.hold_seconds)
+        return self.pipes[identity]
+
+    def _publish_events(self, identity: str, events):
+        # A sensitive hold must never turn into a user-approved publication in
+        # this prototype. Stop the source first, discard its private pipeline,
+        # and publish only a text-free status. Other speakers keep recording.
+        if any(event.kind == "pending_confirm" for event in events):
+            self.set_consent(identity, False, sensitive_pause=True)
+            return
+        safe = []
+        for event in events:
+            if event.kind == "committed" and self.source.consent_snapshot().get(identity, False):
+                line = {"id": event.segment_id, "speaker": identity, "name": self.names.get(identity, identity),
+                        "text": event.text}
+                self.approved[event.segment_id] = line
+                safe.append({"kind": "committed", "line": line})
+            elif event.kind == "retro_removed":
+                self.approved.pop(event.segment_id, None)
+                safe.append({"kind": "removed", "id": event.segment_id})
+            elif event.kind == "state_change" and event.state == "OFF":
+                self.set_consent(identity, False)
+        if safe:
+            self.messages.append({"type": "transcript", "changes": safe})
+
+    def push(self, segment: Segment):
+        identity = segment.speaker
+        if not self.source.consent_snapshot().get(identity, False):
+            return
+        if SPOKEN_STOP_RE.search(segment.text):
+            self.set_consent(identity, False)
+            return
+        pipe = self._pipe(identity)
+        self._publish_events(identity, pipe.push(segment, now=self.now()))
+
+    def now(self):
+        return time.monotonic() - self.t0
+
+    async def _consume(self):
+        try:
+            async for segment in self.source.segments():
+                self.push(segment)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[demo] LiveKit capture stopped: {exc}", file=sys.stderr)
+            for identity in list(self.names):
+                self.set_consent(identity, False)
+            self.messages.append({"type": "service", "status": "Capture unavailable"})
+
+    async def _ticker(self):
+        while True:
+            await asyncio.sleep(0.2)
+            for identity, pipe in list(self.pipes.items()):
+                if self.source.consent_snapshot().get(identity, False):
+                    self._publish_events(identity, pipe.tick(self.now()))
+
+    def start(self):
+        self.tasks = [asyncio.create_task(self._consume()), asyncio.create_task(self._ticker())]
+
+    def stop(self):
+        for task in self.tasks:
+            task.cancel()
+        self.tasks = []
+
+
 # ---------------------------------------------------------------- app
-def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autostart=True):
+def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autostart=True,
+               source="replay", live_source=None):
     cls, kind = load_pipeline_class(pipeline)
-    session = Session(cls, kind, script=script, speed=speed, hold_seconds=hold_seconds)
+    live = source == "livekit"
+    if live:
+        if live_source is None:
+            from otr.ingest.livekit_source import LiveKitSource
+            live_source = LiveKitSource()
+        session = LiveSession(cls, kind, live_source, hold_seconds=hold_seconds)
+    else:
+        session = Session(cls, kind, script=script, speed=speed, hold_seconds=hold_seconds)
 
     @asynccontextmanager
     async def lifespan(app):
-        session.start(replay=autostart)
+        if live:
+            if autostart:
+                session.start()
+        else:
+            session.start(replay=autostart)
         yield
         session.stop()
 
@@ -164,7 +309,97 @@ def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autos
 
     @app.get("/")
     async def index():
-        return FileResponse(STATIC / "index.html")
+        return FileResponse(STATIC / ("live.html" if live else "index.html"))
+
+    @app.get("/static/{asset}")
+    async def static_asset(asset: str):
+        if asset not in {"live.js", "livekit-client.umd.js", "live.css"}:
+            raise HTTPException(404)
+        return FileResponse(STATIC / asset)
+
+    if live:
+        @app.get("/api/config")
+        async def config():
+            # The LiveKit URL is public room transport configuration; secrets
+            # are used only on the server to mint short-lived participant tokens.
+            return {"mode": "livekit", "url": os.environ.get("LIVEKIT_PUBLIC_URL", session.source.url),
+                    "room": session.source.room_name}
+
+        @app.post("/api/join")
+        async def join(body: dict):
+            from datetime import timedelta
+            from livekit import api
+            name = str(body.get("name", "")).strip()[:60]
+            if not name:
+                raise HTTPException(400, "Display name required")
+            identity = "person-" + uuid.uuid4().hex
+            sid = secrets.token_urlsafe(32)
+            token = (api.AccessToken(session.source.api_key, session.source.api_secret)
+                     .with_identity(identity).with_name(name)
+                     .with_ttl(timedelta(hours=2))
+                     .with_grants(api.VideoGrants(room_join=True, room=session.source.room_name,
+                                                  can_publish=True, can_subscribe=True))
+                     .to_jwt())
+            session.sessions[sid] = identity
+            session.names[identity] = name
+            session.set_consent(identity, False)
+            response = JSONResponse({"identity": identity, "name": name, "token": token})
+            response.set_cookie("otr_session", sid, httponly=True, samesite="strict",
+                                secure=False, max_age=7200)
+            return response
+
+        @app.get("/api/me")
+        async def me(request: Request):
+            identity = session.identity_for(request)
+            return {"identity": identity, "participants": session.snapshot(),
+                    "lines": list(session.approved.values())}
+
+        @app.post("/api/consent")
+        async def consent(request: Request, body: dict):
+            identity = session.identity_for(request)
+            if body.get("recording") is not True and body.get("recording") is not False:
+                raise HTTPException(400, "recording must be a boolean")
+            origin = request.headers.get("origin")
+            if origin and origin != str(request.base_url).rstrip("/"):
+                raise HTTPException(403, "Origin mismatch")
+            session.set_consent(identity, body["recording"])
+            return {"identity": identity, "recording": body["recording"]}
+
+        @app.post("/api/leave")
+        async def leave(request: Request):
+            identity = session.identity_for(request)
+            session.leave(identity)
+            response = JSONResponse({"ok": True})
+            response.delete_cookie("otr_session")
+            return response
+
+        @app.get("/stream")
+        async def live_stream(request: Request):
+            session.identity_for(request)
+            async def gen():
+                # Do not replay earlier approved text after retroactive deletion.
+                # A fresh connection gets only the current approved snapshot.
+                i = len(session.messages)
+                yield f"data: {json.dumps({'type': 'participants', 'participants': session.snapshot()})}\n\n"
+                yield f"data: {json.dumps({'type': 'snapshot', 'lines': list(session.approved.values())})}\n\n"
+                while True:
+                    if request.cookies.get("otr_session", "") not in session.sessions:
+                        return
+                    while i < len(session.messages):
+                        message = session.messages[i]
+                        if message.get("type") == "transcript":
+                            changes = [change for change in message["changes"] if change["kind"] != "committed"
+                                       or change["line"]["id"] in session.approved]
+                            message = {"type": "transcript", "changes": changes}
+                        yield f"data: {json.dumps(message)}\n\n"
+                        i += 1
+                    if await request.is_disconnected():
+                        return
+                    await asyncio.sleep(0.2)
+            return StreamingResponse(gen(), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+        return app
 
     @app.get("/api/state")
     async def state():
@@ -255,17 +490,19 @@ def main(argv=None):
 
     if a.source == "livekit":
         try:
-            importlib.import_module("otr.ingest.livekit_source")
+            from otr.ingest.livekit_source import LiveKitSource
         except ImportError as e:
             print("LiveKit mode needs otr/ingest/livekit_source.py, which is not available "
                   f"({e}). Use --source replay, or type lines in the page.", file=sys.stderr)
             return 2
-        print("otr.ingest.livekit_source found, but live wiring into the demo is not implemented yet; "
-              "use replay/typed input.", file=sys.stderr)
-        return 2
+        source = LiveKitSource(room=os.environ.get("LIVEKIT_ROOM", "demo"),
+                               model=os.environ.get("OTR_WHISPER_MODEL", "base.en"))
+    else:
+        source = None
 
     import uvicorn
-    app = create_app(a.pipeline or "auto", a.script, a.speed, a.hold)
+    app = create_app(a.pipeline or "auto", a.script, a.speed, a.hold,
+                     source=a.source, live_source=source)
     print(f"[demo] pipeline={app.state.session.kind}  open http://{a.host}:{a.port}/")
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
     return 0

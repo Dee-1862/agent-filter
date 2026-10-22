@@ -15,6 +15,13 @@ Append-only. Newest entries at the top. Record what surprised us, what failed, w
 
 ---
 
+## 2026-10-22 · L-004 · Hold full utterances before shared text
+- Area: asr
+- What happened: The initial streaming chunker emitted confirmed word prefixes before an utterance ended. A later sensitive phrase could change the meaning of an earlier prefix already eligible for display.
+- Why it happened (root cause): Transcription confidence and privacy approval are different decisions.
+- What we do now / next time: Live capture emits text only when an utterance closes, then waits for local policy and the hold timer. Test long uninterrupted speech separately because the chunker still closes at 20 seconds.
+- Related: C-007 / A-002 / A-003
+
 ## 2026-10-22 · L-003 · Portfolio alignment does not require a cloud integration
 - Area: process
 - What happened: Ketch's Permission Vault and enforcement language fit the product, but its public docs describe a server-side platform and hosted API path, with no verified offline local deployment.

@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-007 · Implement local LiveKit consent demo
+- Type: system
+- Touches: PRD A-001–A-006, INGEST.md, LOCAL_PRIVACY.md
+- What changed: Added a local meeting page, server-issued participant identities, per-person Start/Stop and status, selective LiveKit recorder subscription, local utterance-level ASR, and a shared transcript containing only approved lines. Sensitive flags pause only the affected speaker and discard the pending utterance.
+- Why: Make the per-person capture boundary visible and testable without sending meeting data to hosted services.
+- Decided by: project owner request on 2026-10-22
+
 ## 2026-10-22 · C-006 · Make per-person consent the shared contract
 - Type: addendum
 - Touches: PRD A-006, WORK_SPLIT.md
