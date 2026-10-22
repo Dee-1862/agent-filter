@@ -211,7 +211,9 @@ Opened and read:
 - Fireflies consent guide: https://guide.fireflies.ai/articles/7003995379-Recording+Consent+and+Meeting+Compliance+in+Fireflies%3A+Opt-In%2C+Opt-Out%2C+and+Controls
 - Fathom privacy policy: https://fathom.ai/privacy
 - Fathom consent help: https://help.fathom.video/en/articles/294272
-- Zoom AI trust (data use): https://www.zoom.com/en/trust/ai/ did not load; the training statement was read on the Zoom whitepaper link above via the fetch tool, so treat its URL as: https://library.zoom.com/ai/ai-whitepaper.md (retention and notification) and the support KB page https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0057623
+- Zoom AI whitepaper (retention and participant notification): https://library.zoom.com/ai/ai-whitepaper.md
+- Zoom support article (no-training statement, third-party models): https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0057623
+- (https://www.zoom.com/en/trust/ai/ returned 404.)
 - Teams intelligent recap privacy: https://learn.microsoft.com/en-us/microsoftteams/privacy/intelligent-recap
 - Teams Premium overview: https://learn.microsoft.com/en-nz/MicrosoftTeams/enhanced-teams-experience
 - Copilot in Teams without transcription: https://support.microsoft.com/office/use-copilot-without-recording-a-teams-meeting-a59cb88c-0f6b-4a20-a47a-3a1c9a818bd9
