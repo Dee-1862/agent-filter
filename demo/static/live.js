@@ -15,6 +15,8 @@
   let speaking = new Set(), muted = new Map();
   const videoTracks = new Map(), videoMuted = new Set();
   let toastTimer = null, meRefreshTimer = null, drawerLastFocus = null;
+  let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
+  let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
   const ENTRY_SCREENS = ["home-screen", "host-setup", "guest-setup", "share-screen", "waiting-screen", "join"];
   function showEntry(id) {
@@ -345,6 +347,11 @@
     $("finalize-button").classList.toggle("hidden", finalized);
     $("report-button").classList.toggle("hidden", !readyForFinal);
     $("copy-button").classList.toggle("hidden", !readyForFinal);
+    $("email-choice").classList.toggle("hidden", !finalized);
+    if (!emailChoiceDirty) {
+      $("delivery-email").value = deliveryEmail;
+      $("email-opt-in").checked = emailOptedIn;
+    }
     renderRedactionCounts();
     if (!readyForFinal) {
       $("copy-result").className = "waiting";
@@ -374,6 +381,8 @@
     if (typeof data.finalized_count === "number") finalizedCount = data.finalized_count;
     if (typeof data.contributor_count === "number") contributorCount = data.contributor_count;
     if (data.redaction_counts) redactionCounts = data.redaction_counts;
+    if (typeof data.delivery_email === "string") deliveryEmail = data.delivery_email;
+    if (typeof data.email_opted_in === "boolean") emailOptedIn = data.email_opted_in;
     const mine = participants[me] || {};
     const nowPaused = mine.sensitive_paused === true;
     if (nowPaused && !sensitiveSeen) {
@@ -670,6 +679,122 @@
     } finally { button.disabled = false; }
   }
 
+  function officialTranscript(data) {
+    if (typeof data.text === "string" && data.text) return data.text;
+    return Array.isArray(data.lines) ? data.lines.map(line => {
+      const who = line.name || line.speaker || "";
+      return `${who ? who + ": " : ""}${line.text}`;
+    }).join("\n") : "";
+  }
+
+  function emailAddress(value) {
+    const address = value.trim();
+    const probe = document.createElement("input");
+    probe.type = "email";
+    probe.value = address;
+    if (!address || /[\r\n,;<>]/.test(address) || !probe.checkValidity())
+      throw new Error("Enter one valid email address.");
+    return address;
+  }
+
+  async function saveEmailChoice() {
+    const button = $("save-email-choice");
+    const result = $("email-choice-result");
+    button.disabled = true;
+    result.className = "waiting";
+    setText(result, "");
+    try {
+      const enabled = $("email-opt-in").checked;
+      const address = enabled ? emailAddress($("delivery-email").value) : $("delivery-email").value.trim();
+      const saved = await post("/api/notes/email-opt-in", {email: address, enabled});
+      deliveryEmail = saved.email;
+      emailOptedIn = saved.enabled;
+      emailChoiceDirty = false;
+      renderDrawer();
+      result.classList.add("ok");
+      setText(result, enabled ? "Saved. The host can include this address in the final email draft." : "Saved. Your address will not be in the host's draft.");
+    } catch (error) {
+      result.classList.add("err");
+      setText(result, error.status === 409 ? "Finish your notes before choosing email delivery." : error.message);
+    } finally { button.disabled = false; }
+  }
+
+  function closeEndDialog() {
+    $("end-dialog").classList.add("hidden");
+    $("end-backdrop").classList.add("hidden");
+    if (endDialogLastFocus && endDialogLastFocus.isConnected) endDialogLastFocus.focus();
+    endDialogLastFocus = null;
+  }
+
+  async function showEndDialog() {
+    if (!$("notes-drawer").hidden) closeDrawer();
+    endDialogLastFocus = document.activeElement;
+    $("end-dialog").classList.remove("hidden");
+    $("end-backdrop").classList.remove("hidden");
+    $("end-email-review").classList.add("hidden");
+    setText($("end-summary"), "Checking whether the final transcript is ready…");
+    setText($("end-error"), "");
+    $("end-cancel").focus();
+    try {
+      const [finalData, recipientData] = await Promise.all([
+        api("/api/notes/final"),
+        api(`/api/meetings/${encodeURIComponent(roomId)}/mail-recipients`)
+      ]);
+      if ($("end-dialog").classList.contains("hidden")) return;
+      const transcript = officialTranscript(finalData);
+      const recipients = recipientData.recipients || [];
+      $("end-transcript").value = transcript || "(No approved lines)";
+      const counts = finalData.redaction_counts || {};
+      const suppressed = Number(counts.suppressed) || 0;
+      const removed = Number(counts.removed) || 0;
+      setText($("end-redactions"), `Privacy report: ${suppressed} utterances kept out before the draft; ${removed} lines removed later. Withheld words are not included.`);
+      if (!recipients.length) {
+        setText($("end-summary"), "The final transcript is ready. No one opted in to email, so you can copy it from My notes or end the meeting.");
+        return;
+      }
+      const addresses = recipients.map(item => emailAddress(item.email));
+      setText($("end-summary"), "Review the final transcript and recipients before opening an email draft.");
+      setText($("end-recipients"), `To: ${recipients.map(item => `${item.name} <${item.email}>`).join(", ")}`);
+      const report = `Privacy report: ${suppressed} utterances kept out before the draft; ${removed} lines removed later. Withheld words are not included.`;
+      endEmailBody = `Official meeting transcript\n\n${transcript || "(No approved lines)"}\n\n${report}`;
+      const subject = "Meeting transcript";
+      const prefix = `mailto:${addresses.map(address => encodeURIComponent(address).replace("%40", "@")).join(",")}?subject=${encodeURIComponent(subject)}`;
+      if (prefix.length > 1800) throw new Error("Too many email addresses for one mail draft. Copy the transcript from My notes or end without email.");
+      const fullLink = `${prefix}&body=${encodeURIComponent(endEmailBody)}`;
+      endNeedsCopy = fullLink.length > 1800;
+      endCopied = !endNeedsCopy;
+      $("end-mail-limit").classList.toggle("hidden", !endNeedsCopy);
+      $("end-copy-transcript").classList.toggle("hidden", !endNeedsCopy);
+      const link = $("end-email-link");
+      link.href = endNeedsCopy ? prefix : fullLink;
+      link.classList.toggle("disabled", endNeedsCopy);
+      link.setAttribute("aria-disabled", String(endNeedsCopy));
+      $("end-email-review").classList.remove("hidden");
+    } catch (error) {
+      if (error.status === 409) setText($("end-summary"), "The final transcript is still waiting for contributors to finish. You can keep the meeting open or end without email.");
+      else {
+        setText($("end-summary"), "Could not prepare an email draft.");
+        setText($("end-error"), error.message);
+      }
+    }
+  }
+
+  async function endMeeting() {
+    try {
+      if (role === "host" && roomId) await post(`/api/meetings/${encodeURIComponent(roomId)}/end`, {});
+      else await post("/api/leave", {});
+      clearInterval(lobbyTimer);
+      clearInterval(waitingTimer);
+      clearInterval(roomTimer);
+      if (eventSource) eventSource.close();
+      if (room) await room.disconnect();
+      location.href = "/";
+    } catch (error) {
+      if (role === "host") setText($("end-error"), `Could not end meeting: ${error.message}`);
+      else showToast(`Could not leave: ${escapeHtml(error.message)}`, "err");
+    }
+  }
+
   function openDrawer() {
     const drawer = $("notes-drawer");
     drawer.hidden = false;
@@ -788,21 +913,45 @@
   $("finalize-button").onclick = finalize;
   $("copy-button").onclick = copyFinal;
   $("report-button").onclick = viewFinalReport;
+  $("email-opt-in").onchange = () => { emailChoiceDirty = true; setText($("email-choice-result"), ""); };
+  $("delivery-email").oninput = () => { emailChoiceDirty = true; setText($("email-choice-result"), ""); };
+  $("save-email-choice").onclick = saveEmailChoice;
+  $("end-cancel").onclick = closeEndDialog;
+  $("end-keep-open").onclick = closeEndDialog;
+  $("end-backdrop").onclick = closeEndDialog;
+  $("end-without-email").onclick = endMeeting;
+  $("end-copy-transcript").onclick = async () => {
+    try {
+      await copyText(endEmailBody);
+      endCopied = true;
+      $("end-email-link").classList.remove("disabled");
+      $("end-email-link").setAttribute("aria-disabled", "false");
+      setText($("end-mail-limit"), "Copied. Open the addressed draft, then paste and send it in your mail app.");
+    } catch (error) { setText($("end-error"), `Could not copy transcript: ${error.message}`); }
+  };
+  $("end-email-link").onclick = event => {
+    if (endNeedsCopy && !endCopied) { event.preventDefault(); return; }
+    // The user's click opens a local mail app draft; the server never sends email.
+    setTimeout(endMeeting, 0);
+  };
   $("leave-button").onclick = async () => {
-    clearInterval(lobbyTimer);
-    clearInterval(waitingTimer);
-    clearInterval(roomTimer);
-    if (me) {
-      try {
-        if (role === "host" && roomId) await post(`/api/meetings/${encodeURIComponent(roomId)}/end`, {});
-        else await post("/api/leave", {});
-      } catch (error) { showToast(`Could not leave: ${escapeHtml(error.message)}`, "err"); return; }
-    }
-    if (eventSource) eventSource.close();
-    if (room) await room.disconnect();
-    location.href = "/";
+    if (role === "host" && roomId) await showEndDialog();
+    else await endMeeting();
   };
   document.addEventListener("keydown", event => {
+    if (!$("end-dialog").classList.contains("hidden")) {
+      if (event.key === "Escape") { closeEndDialog(); return; }
+      if (event.key === "Tab") {
+        const nodes = [...$("end-dialog").querySelectorAll(FOCUSABLE)]
+          .filter(node => node.offsetParent !== null || node === document.activeElement);
+        if (nodes.length) {
+          const first = nodes[0], last = nodes[nodes.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+      }
+      return;
+    }
     const drawer = $("notes-drawer");
     if (event.key === "Escape" && !drawer.hidden) { closeDrawer(); return; }
     if (!drawer.hidden && event.key === "Tab") {
