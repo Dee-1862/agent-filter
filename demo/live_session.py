@@ -19,6 +19,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -472,15 +473,28 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     def meeting_cookie(room_id: str) -> str:
         return "otr_session_" + room_id
 
+    def allowed_origins(request: Request) -> set[str]:
+        origins = {str(request.base_url).rstrip("/")}
+        # A static public frontend may proxy API requests to this local host.
+        # Only its explicitly configured origin may submit state-changing calls.
+        public_origin = os.environ.get("OTR_PUBLIC_ORIGIN", "").rstrip("/")
+        if public_origin:
+            origins.add(public_origin)
+        return origins
+
     def sid_for(request: Request, room_id: str | None = None) -> str:
         if room_id is None:
-            # Same-origin browser requests to /api/me and /stream carry their
-            # meeting page as Referer. Use its room-specific cookie so a second
-            # tab creating a different meeting cannot evict this host session.
+            # /api/me and /stream carry their meeting page as Referer. A public
+            # frontend's origin may differ from the local backend's base URL.
+            # Use its room-specific cookie so another tab does not evict this one.
             referer = request.headers.get("referer", "")
-            prefix = str(request.base_url).rstrip("/") + "/m/"
-            if referer.startswith(prefix):
-                room_id = referer[len(prefix):].split("?", 1)[0].split("/", 1)[0]
+            try:
+                parts = urlsplit(referer)
+                referer_origin = f"{parts.scheme}://{parts.netloc}"
+                if referer_origin in allowed_origins(request) and parts.path.startswith("/m/"):
+                    room_id = parts.path[len("/m/"):].split("/", 1)[0]
+            except ValueError:
+                pass  # malformed Referer; fall back to the legacy session cookie
         if room_id:
             specific = request.cookies.get(meeting_cookie(room_id), "")
             if specific:
@@ -524,7 +538,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     def validate_origin(request: Request):
         origin = request.headers.get("origin")
-        if origin and origin != str(request.base_url).rstrip("/"):
+        if origin and origin not in allowed_origins(request):
             raise HTTPException(403, "Origin mismatch")
 
     def person(body: dict):
@@ -533,6 +547,12 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         if not name:
             raise HTTPException(400, "Display name required")
         return name, email
+
+    def demo_limit(env_name: str, default: int) -> int:
+        try:
+            return max(1, int(os.environ.get(env_name, default)))
+        except ValueError:
+            return default
 
     @app.get("/")
     async def index():
@@ -548,6 +568,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     async def create_meeting(request: Request, body: dict):
         validate_origin(request)
         name, email = person(body)
+        if len(meetings) >= demo_limit("OTR_MAX_ACTIVE_MEETINGS", 4):
+            raise HTTPException(429, "Meeting capacity reached")
         room_id = secrets.token_urlsafe(9)
         while room_id in meetings:
             room_id = secrets.token_urlsafe(9)
@@ -562,7 +584,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         browser_sessions[sid] = (room_id, "host", None)
         if autostart:
             live.start()
-        public_origin = os.environ.get("MEETING_PUBLIC_ORIGIN", str(request.base_url).rstrip("/"))
+        public_origin = (os.environ.get("MEETING_PUBLIC_ORIGIN")
+                         or os.environ.get("OTR_PUBLIC_ORIGIN")
+                         or str(request.base_url).rstrip("/"))
         response = JSONResponse({"room_id": room_id, "join_url": public_origin.rstrip("/") + "/m/" + room_id,
                                  "identity": identity, "name": name, "role": "host",
                                  "token": mint_join_token(live.source, identity, name),
@@ -579,6 +603,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         if room is None:
             raise HTTPException(404, "Meeting not found")
         name, email = person(body)
+        if sum(guest["status"] == "waiting" for guest in room["requests"].values()) >= demo_limit(
+                "OTR_MAX_PENDING_JOIN_REQUESTS", 20):
+            raise HTTPException(429, "Too many pending join requests")
         request_id = secrets.token_urlsafe(12)
         identity = "person-" + uuid.uuid4().hex
         sid = secrets.token_urlsafe(32)
@@ -761,20 +788,22 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         return response
 
     @app.get("/api/me")
-    async def me(request: Request):
+    async def me(request: Request, summary: bool = False):
         _, live, identity = room_for(request)
         owners = live.finishers()
         delivery = live.delivery.get(identity, {})
-        return JSONResponse({"identity": identity,
+        payload = {"identity": identity,
                 "participants": live.public_participants(identity),
-                "lines": live.own_lines(identity),
                 "redaction_counts": live.redaction_counts(identity),
                 "finalized": identity in live.finalized,
                 "delivery_email": delivery.get("email", ""),
                 "email_opted_in": bool(delivery.get("enabled", False)),
                 "ready_for_final": live.ready_for_final(),
                 "finalized_count": sum(1 for o in owners if o in live.finalized),
-                "contributor_count": len(owners)}, headers={"Cache-Control": "no-store"})
+                "contributor_count": len(owners)}
+        if not summary:
+            payload["lines"] = live.own_lines(identity)
+        return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/consent")
     async def consent(request: Request, body: dict):
@@ -789,6 +818,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.post("/api/notes/remove")
     async def notes_remove(request: Request, body: dict):
+        validate_origin(request)
         _, live, identity = room_for(request)
         line_id = body.get("id")
         if not isinstance(line_id, str) or not line_id.strip():
@@ -798,6 +828,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.post("/api/notes/finalize")
     async def notes_finalize(request: Request, body: dict | None = None):
+        validate_origin(request)
         _, live, identity = room_for(request)
         live.finalize(identity)
         return {"ok": True, "finalized": True}
@@ -849,6 +880,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.post("/api/leave")
     async def leave(request: Request):
+        validate_origin(request)
         room, live, identity = room_for(request)
         live.leave(identity)
         room_id = live.source.room_name if room is not None else None
