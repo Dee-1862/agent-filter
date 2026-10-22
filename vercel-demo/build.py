@@ -44,20 +44,15 @@ def build(origin: str) -> None:
     html = (SOURCE / "live.html").read_text()
     for old, new in (
         ("Calls and notes are processed on the local meeting host.",
-         "Transcription and filtering run on the meeting host. This demo relays the call through cloud services."),
+         "Transcription and filtering run on the meeting host. This demo routes the call and approved live transcript through cloud services."),
         ("Notes are transcribed on the local meeting host. No cloud service is used.",
-         "Transcription runs on the meeting host. This demo relays meeting traffic through cloud services."),
+         "Transcription runs on the meeting host. This demo routes audio, video and approved live transcript text through cloud services."),
         ("the local meeting host transcribes your speech", "the meeting host transcribes your speech"),
         ("the local filter checks it", "the meeting host's filter checks it"),
         ("Speech recognition, filtering and the LiveKit room run on the local host serving this page. No cloud service is involved.",
-         "Speech recognition and filtering run on the meeting host. This demo relays meeting traffic through cloud services."),
+         "Speech recognition and filtering run on the meeting host. In this public demo, audio and video pass through LiveKit Cloud, and approved live transcript text passes through Vercel and Cloudflare while your notes are on. Withheld text is never sent to the notes panel."),
     ):
         html = replace_required(html, old, new)
-    # The hosted proxy intentionally receives only text-free status while the
-    # meeting is live. Keep caption elements in the DOM for the shared script,
-    # but do not offer live captions that cannot receive approved line text.
-    html = replace_required(html, '<div class="captions-wrap">', '<div class="captions-wrap hidden">')
-    html = replace_required(html, 'id="captions-button" class="control"', 'id="captions-button" class="control hidden"')
     (OUTPUT / "index.html").write_text(html)
 
     js = (SOURCE / "live.js").read_text()
@@ -65,18 +60,16 @@ def build(origin: str) -> None:
         ("Live · local room", "Live · demo room"),
     ):
         js = replace_required(js, old, new)
-    # Vercel's external rewrite buffers SSE responses in this demo. Fetch the
-    # viewer-scoped status summary instead; keep local source SSE.
+    # Vercel's external rewrite buffers SSE responses in this demo. Poll the
+    # viewer-scoped approved transcript; the backend sends no live text to
+    # viewers whose notes are off. Keep local source SSE.
     start = js.index("  function connectStream() {")
     end = js.index("  function renderMicButton()", start)
     js = js[:start] + js[end:]
-    js = replace_required(js, 'api("/api/me")', 'api("/api/me?summary=1")')
-    js = replace_required(js, '  function setCaptions(on) {\n    captionsOn = on;',
-                          '  function setCaptions(on) {\n    on = false;\n    captionsOn = on;')
     js = replace_required(js, "  let room = null, me = null, eventSource = null;",
                           "  let room = null, me = null, eventSource = null, cloudPollTimer = null;")
     js = replace_required(js, "      connectStream();",
-                          "      cloudPollTimer = setInterval(() => refreshMe(true), 5000);")
+                          "      cloudPollTimer = setInterval(() => refreshMe(true), 3000);")
     js = replace_required(js, "      clearInterval(roomTimer);\n      stopDiagnostics();",
                           "      clearInterval(roomTimer);\n      clearInterval(cloudPollTimer);\n      stopDiagnostics();")
     (assets / "live.js").write_text(js)

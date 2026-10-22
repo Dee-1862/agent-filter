@@ -340,12 +340,13 @@
     renderCaptions();
   }
 
-  // ------------------------------------------------------------ Realtime captions (your approved lines + kept-out markers)
+  // ------------------------------------------------------------ Realtime approved transcript + text-free kept-out markers
   function captionItems() {
     const items = [];
+    if (!myNotesOn) return items;
     let order = 0;
     for (const line of lines.values()) {
-      if (!line.removed && isMyLine(line)) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
+      if (!line.removed) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
     }
     for (const chip of chips.values()) items.push({ type: "chip", seq: chip.seq || 0, order: order++, chip });
     items.sort((a, b) => (a.seq - b.seq) || (a.order - b.order));
@@ -357,18 +358,22 @@
     const items = captionItems();
     box.replaceChildren();
     if (!items.length) {
-      box.append(element("p", "cap-empty", "Lines you approve appear here after a short safety hold. Turn notes on to start."));
+      box.append(element("p", "cap-empty", myNotesOn
+        ? "Approved lines from people with notes on appear here after a short safety hold."
+        : "Turn on notes to see the shared live transcript."));
     }
     for (const item of items) {
       const row = element("div", "cap" + (item.type === "chip" ? " out" : ""));
       if (item.type === "line") {
-        row.append(element("span", "who", item.line.name || "You"), element("span", "words", item.line.text));
-        const remove = element("button", "remove", "Remove");
-        remove.type = "button";
-        remove.setAttribute("aria-label", `Remove line: ${item.line.text}`);
-        remove.disabled = finalized;
-        remove.onclick = () => removeLine(item.line.id, remove);
-        row.append(remove);
+        row.append(element("span", "who", item.line.name || participants[item.line.speaker]?.name || "Participant"), element("span", "words", item.line.text));
+        if (isMyLine(item.line)) {
+          const remove = element("button", "remove", "Remove");
+          remove.type = "button";
+          remove.setAttribute("aria-label", `Remove line: ${item.line.text}`);
+          remove.disabled = finalized;
+          remove.onclick = () => removeLine(item.line.id, remove);
+          row.append(remove);
+        }
       } else {
         row.append(Views.chip(item.chip.category, () => openMarker(item.chip)));
       }
@@ -387,14 +392,14 @@
     stage.replaceChildren();
     for (const item of items.filter(entry => entry.type === "line").slice(-2)) {
       const row = element("p", "stage-cap");
-      row.append(element("span", "who", item.line.name || "You"), element("span", "words", item.line.text));
+      row.append(element("span", "who", item.line.name || participants[item.line.speaker]?.name || "Participant"), element("span", "words", item.line.text));
       stage.append(row);
     }
-    if (!stage.children.length) stage.append(element("p", "stage-cap", "Captions show the lines you approve."));
+    if (!stage.children.length) stage.append(element("p", "stage-cap", "Approved lines from the meeting appear here."));
   }
   function renderLive() {
     const button = $("live-button");
-    const behind = !capFollow;
+    const behind = myNotesOn && !capFollow;
     button.classList.toggle("hidden", !behind);
     $("live-count").classList.toggle("hidden", !behind || newCount === 0);
     setText($("live-count"), newCount > 99 ? "99+ new" : `${newCount} new`);
@@ -492,6 +497,7 @@
 
   function renderNotesControl() {
     const button = $("notes-button");
+    const control = $("notes-control");
     const paused = sensitivePaused && !finalized;
     button.disabled = finalized;
     button.setAttribute("aria-checked", String(myNotesOn));
@@ -502,6 +508,12 @@
     else { action = "Turn on notes"; line = "Notes are off"; }
     setText($("notes-label"), action);
     setText($("capture-status"), line);
+    control.disabled = finalized;
+    control.classList.toggle("notes-on", myNotesOn);
+    control.classList.toggle("notes-off", !myNotesOn);
+    control.setAttribute("aria-pressed", String(myNotesOn));
+    control.setAttribute("aria-label", action + " for me");
+    control.title = action + " for me";
     $("agent-dot").classList.toggle("hidden", !myNotesOn);
     const agent = $("agent-button");
     agent.setAttribute("aria-label", `Off The Record. ${line}.`);
@@ -595,6 +607,7 @@
     if (!nowPaused) sensitiveSeen = false;
     sensitivePaused = nowPaused;
     myNotesOn = !finalized && !sensitivePaused && notesOn(mine);
+    if (!myNotesOn) { lines.clear(); chips.clear(); capFollow = true; newCount = 0; }
     renderAll();
     renderViews();
   }
@@ -632,7 +645,7 @@
       if (message.type === "participants") applyMe({ participants: message.participants });
       else if (message.type === "service") setConnection(message.status, "warn");
       else if (message.type === "snapshot") {
-        if (Array.isArray(message.lines)) lines = indexLines(message.lines);
+        if (Array.isArray(message.lines)) lines = myNotesOn ? indexLines(message.lines) : new Map();
         if (Array.isArray(message.kept_out)) chips.clear(), message.kept_out.forEach(c => chips.set(c.id, c));
         renderLines();
       } else if (message.type === "status") {
@@ -642,7 +655,7 @@
       } else if (message.type === "transcript") {
         let changed = false;
         for (const change of message.changes || []) {
-          if (change.kind === "committed" && change.line && isMyLine(change.line)) {
+          if (change.kind === "committed" && change.line && myNotesOn) {
             lines.set(change.line.id, change.line);
             changed = true;
           }
@@ -1292,15 +1305,21 @@
     if (finalized) return;
     const button = $("notes-button");
     button.disabled = true;
+    $("notes-control").disabled = true;
     try {
       const target = sensitivePaused ? true : !myNotesOn;
       await post("/api/consent", { recording: target });
+      myNotesOn = target;
+      if (!target) { lines.clear(); chips.clear(); capFollow = true; newCount = 0; }
+      renderAll();
       announce(target ? "Notes on." : "Notes stopped.");
       await refreshMe(true);
+      if (target) showPanel("agent");
     } catch (error) {
       showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
     } finally {
       button.disabled = false;
+      $("notes-control").disabled = finalized;
     }
   }
 
@@ -1621,6 +1640,7 @@
     if (!inside($("device-menu")) && !inside($("mic-chevron")) && !inside($("camera-chevron"))) closeDeviceMenu();
   });
   $("notes-button").onclick = toggleNotes;
+  $("notes-control").onclick = toggleNotes;
   $("live-button").onclick = goLive;
   $("captions-button").onclick = () => setCaptions(!captionsOn);
   $("captions").addEventListener("scroll", () => {

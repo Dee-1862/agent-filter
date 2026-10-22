@@ -331,6 +331,8 @@ async function consentHost() {
   await sleep(60);
   check(visible($("meeting")) && visible($("control-bar")), "meeting and control bar shown after entering");
   check(text($("notes-label")) === "Turn on notes", "notes switch labels the action while notes are off");
+  check($("notes-control").getAttribute("aria-pressed") === "false" && $("notes-control").classList.contains("notes-off")
+    && $("notes-control").getAttribute("aria-label") === "Turn on notes for me", "control-bar notes button starts visibly off");
   check(env.rooms.length === 1 && env.rooms[0].token === "tok", "joined the LiveKit room with the server-issued token");
   check(visible($("host-lobby")), "host sees the lobby");
   await sleep(10);
@@ -347,11 +349,15 @@ async function consentHost() {
   check(!$("people-badge").classList.contains("hidden") && text($("people-badge")) === "1", "people button shows the waiting count");
   const es = env.sources[0];
   check(es && es.url === "/stream", "stream opened");
+  es.push({ type: "snapshot", lines: [{ id: "hidden-before-opt-in", speaker: "person-g", name: "Gail", text: "Private until I opt in", seq: 0 }], kept_out: [] });
+  check(!text($("captions")).includes("Private until I opt in"), "an off viewer never displays a stale or buggy transcript snapshot");
   es.push({ type: "participants", participants: { "person-host": { name: "Hana", recording: true } } });
   es.push({ type: "snapshot", lines: [], kept_out: [] });
   es.push({ type: "status", ...insights });
   es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-host",
     line: { id: "l1", speaker: "person-host", name: "Hana", text: "Plan the launch", seq: 1 } }] });
+  es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-g",
+    line: { id: "l2", speaker: "person-g", name: "Gail", text: "I will send the agenda", seq: 3 } }] });
   // A hostile / buggy server message that tries to smuggle text into the kept-out marker and status.
   es.push({ type: "transcript", changes: [{ kind: "kept_out", id: "k1", owner: "person-host", category: "pay_hr", seq: 2,
     text: SECRET, trail: { family: "kw", before: "ON", after: "PENDING_CONFIRM", held_s: 2.4, text: SECRET } }] });
@@ -367,8 +373,12 @@ async function consentHost() {
   check(text($("capture-status")) === "Notes are on for you" && $("notes-button").getAttribute("aria-checked") === "true",
     "one-line status and switch show notes on");
   check(text($("notes-label")) === "Turn off notes", "notes switch labels the action while notes are on");
+  check($("notes-control").getAttribute("aria-pressed") === "true" && $("notes-control").classList.contains("notes-on")
+    && $("notes-control").getAttribute("aria-label") === "Turn off notes for me", "call control mirrors the on state");
   const caps = text($("captions"));
-  check(caps.includes("Plan the launch"), "caption shows the approved line");
+  check(caps.includes("Plan the launch") && caps.includes("I will send the agenda") && caps.includes("Gail"),
+    "shared live transcript shows approved lines from both speakers");
+  check($("captions").all().filter(e => e.className === "remove").length === 1, "only the viewer's own line has Remove");
   const chip = $("captions").all().find(e => e.tagName === "BUTTON" && e.getAttribute("data-category") === "pay_hr");
   check(!!chip && text(chip).includes("Pay and HR"), "kept-out marker chip shows the kind only");
   check(!text(env.doc.body).includes(SECRET), "the planted secret never reaches the page (realtime)");
@@ -435,8 +445,10 @@ async function consentHost() {
   check(visible($("panel-agent")), "l opens the panel at the latest lines");
 
   // consent / mic / camera controls
-  $("notes-button").click(); await sleep(20);
+  $("notes-control").click(); await sleep(20);
   check(env.calls.some(c => c.url === "/api/consent" && c.body.recording === false), "Notes button posts the opposite consent choice");
+  check($("notes-control").getAttribute("aria-pressed") === "false" && !text($("captions")).includes("Plan the launch")
+    && !text($("captions")).includes("I will send the agenda"), "turning notes off promptly clears the shared transcript");
   check(!env.calls.some(c => c.url === "/api/confirm"), "consent page never calls /api/confirm");
   return env;
 }

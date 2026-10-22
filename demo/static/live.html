@@ -147,7 +147,8 @@
               <span class="switch-wrap"><span id="notes-label" class="switch-state">Turn on notes</span><button id="notes-button" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="notes-switch-label notes-label"><span class="switch-thumb"></span></button></span>
             </div>
             <div class="captions-wrap">
-              <div id="captions" class="captions" tabindex="0" aria-live="off" aria-label="Captions of your approved lines"></div>
+              <h3 class="transcript-heading">Live transcript</h3>
+              <div id="captions" class="captions" tabindex="0" aria-live="off" aria-label="Live approved transcript from people with notes on"></div>
               <button id="live-button" class="jump-chip hidden" type="button">Jump to latest<span id="live-count" class="live-count hidden">0</span></button>
             </div>
             <nav class="panel-links" aria-label="About your notes">
@@ -193,7 +194,7 @@
               <ol>
                 <li>Your microphone controls who hears you in the call. Notes are a separate choice.</li>
                 <li>With your notes on, the local meeting host transcribes your speech and holds each line briefly while the local filter checks it.</li>
-                <li>Only approved lines appear in your private live captions. You can remove them before finishing.</li>
+                <li>With notes on, you can see approved lines from everyone who has notes on. Only the speaker can remove their own lines.</li>
                 <li>After everyone finishes, someone can explicitly copy the combined final transcript. The final report shows counts, never withheld words.</li>
               </ol>
               <p>Speech recognition, filtering and the LiveKit room run on the local host serving this page. No cloud service is involved.</p>
@@ -219,6 +220,10 @@
         <span id="camera-label" class="sr-only">Turn on camera</span>
       </button>
       <button id="camera-chevron" class="control chevron" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="device-menu" aria-label="Camera settings" title="Camera settings"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
+      <button id="notes-control" class="control notes-off" type="button" aria-pressed="false" aria-label="Turn on notes for me" title="Turn on notes for me">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2v1h3a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3h3V4a2 2 0 0 1 2-2Zm-4 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm8 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-8 7v2h8v-2H8Z"/></svg>
+        <span class="notes-slash" aria-hidden="true"></span>
+      </button>
       <button id="captions-button" class="control" type="button" aria-pressed="false" aria-label="Turn on captions" title="Turn on captions (c)">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1z"/></svg>
       </button>

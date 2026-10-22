@@ -176,6 +176,10 @@ body:has(#meeting:not(.hidden)) #site-header { display: none; }
 .control.muted-on .icon-mic-off { display: block; }
 .control.camera-off .icon-cam { display: none; }
 .control.camera-off .icon-cam-off { display: block; }
+.control.notes-off { position: relative; background: var(--call-muted); color: #202124; }
+.control.notes-off .notes-slash { position: absolute; width: 29px; height: 3px; border-radius: 2px; background: #202124; transform: rotate(-45deg); pointer-events: none; }
+.control.notes-on { background: var(--call-active); color: var(--on-active); }
+.control.notes-on .notes-slash { display: none; }
 .control.on { background: var(--call-active); color: var(--on-active); }
 .control.leave { width: 64px; border-radius: 24px; background: var(--red); } /* ui-audit-allow: heavy-radius (wide leave pill, as in Meet) */
 .control.leave:hover { background: var(--red-hover); }
@@ -208,6 +212,7 @@ body:has(#meeting:not(.hidden)) #site-header { display: none; }
 .switch:disabled { opacity: .5; }
 .captions-wrap { position: relative; display: flex; flex-direction: column; min-height: 160px; flex: 1; border: 1px solid var(--p-line); border-radius: var(--r-tile); }
 .captions { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s2) var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
+.transcript-heading { margin: 0; padding: var(--s2) var(--s3) 0; font-size: 14px; font-weight: 600; }
 .cap { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: baseline; }
 .cap .who { font-weight: 500; }
 .cap .words { flex: 1 1 auto; word-break: break-word; }
