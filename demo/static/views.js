@@ -183,7 +183,7 @@
     return [
       ["Heard", "It waited a moment" + (holdSeconds ? " (" + secs(holdSeconds) + ")" : "") + " before reaching the notes."],
       ["Checked", f.label + (f.engine === "llm" ? " (local model)" : " (rule)") + " flagged it."],
-      ["Result", "It was kept out of the notes."]
+      ["Result", "Kept out of the notes" + (typeof trail.held_s === "number" ? ", " + secs(trail.held_s) + " after it was said." : ".")]
     ];
   }
 

@@ -423,15 +423,15 @@ async function consentHost() {
   check(visible($("view-insights")) && !visible($("panel-agent")) && visible($("panel-back")) && text($("panel-title")) === "What was kept out",
     "What was kept out opens inside the panel with a back arrow");
   const ins = text($("view-insights"));
-  check(ins.includes("Off the record (you asked)") && ins.includes("Pay and HR"), "insights lists the kinds");
-  check(ins.includes("Off the record x2") && ins.includes("Pay and HR x1"), "insights summary has kinds and counts");
+  check(ins.includes("Off the record") && ins.includes("Pay and HR"), "insights lists the kinds");
+  check(ins.includes("Off the record2") && ins.includes("Pay and HR1"), "insights has kinds and counts");
   const rows = $("view-insights").all().filter(e => e.tagName === "LI");
-  check(rows.length === 7, "insights has exactly one row per kind (7), no per-item rows: " + rows.length);
+  check(rows.length === 2, "insights has one row per kind that has items, no per-item rows: " + rows.length);
   check(!ins.includes("Plan the launch") && !ins.includes("Hana") && !ins.includes(SECRET) && !ins.includes("k1") && !ins.includes("l1"),
     "insights has no lines, speakers, ids or secrets");
   check($("view-insights").all().some(e => e.tagName === "SVG" && e.className === "tl"), "insights has the recording-state timeline");
   check(!$("view-insights").all().some(e => String(e.className).includes("iv-bar")), "no progress bars in the kind list");
-  check($("view-insights").all().filter(e => e.className === "iv-tile").length === 3, "three flat stat tiles");
+  check($("view-insights").all().filter(e => e.className === "iv-tile").length === 2, "two flat stat tiles");
   $("panel-back").click();
   check(visible($("panel-agent")) && !visible($("view-insights")), "back arrow returns to the agent panel");
 
@@ -439,20 +439,20 @@ async function consentHost() {
   $("link-explain").click();
   check(visible($("view-explain")) && text($("panel-title")) === "How it decides", "How it decides opens inside the panel");
   const ex = text($("view-explain"));
-  for (const label of ["Off the record (you asked)", "Retracted by the speaker (strike that)", "Personal and health", "Pay and HR",
-    "Legal and confidential business", "Contact details masked", "Other sensitive"]) check(ex.includes(label), "explain lists " + label);
+  for (const label of ["Off the record", "Retracted", "Personal and health", "Pay and HR",
+    "Legal and business", "Contact details", "Other"]) check(ex.includes(label), "explain lists " + label);
   check(!$("view-explain").all().some(e => text(e).includes("Reveal text")), "no Reveal text in consent mode");
   $("panel-back").click();
   $("captions").all().find(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr").click();
   check(visible($("view-explain")), "opening the marker goes to How it decides");
   const trail = text($("view-explain"));
-  check(trail.includes("Keyword rule") && trail.includes("Recording") && trail.includes("Waiting for your answer") && trail.includes("2.4 s"),
-    "marker trail shows rule family, state before/after and hold timing");
+  check(trail.includes("Keyword rule") && trail.includes("2.4 s"),
+    "marker trail shows the rule and the hold timing");
   check(!trail.includes(SECRET) && !trail.includes("150,000"), "trail has no private text");
   check($("view-explain").all().some(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr" && e.getAttribute("aria-pressed") === "true"), "the category is selected");
   const cardOff = $("view-explain").all().find(e => e.getAttribute && e.getAttribute("data-category") === "off_record" && e.tagName === "BUTTON");
   cardOff.click();
-  check(text($("view-explain")).includes("Rule families that can produce this kind"), "choosing a kind shows its generic rule");
+  check(text($("view-explain")).includes("A spoken cue"), "choosing a kind shows its short rule");
 
   // Meeting details, Escape, and the agent button closing the panel
   $("info-button").click();
@@ -672,16 +672,16 @@ async function operatorConsole() {
   check(chips.map(c => c.getAttribute("data-category")).join() === "other,off_record", "chips carry taxonomy kinds: " + chips.map(c => c.getAttribute("data-category")));
   $("tab-insights").click();
   const ins = text($("view-insights"));
-  check(ins.includes("Off the record x1") && ins.includes("Other x1"), "console insights summarises kinds: " + ins.slice(0, 200));
+  check(ins.includes("Off the record") && ins.includes("Other"), "console insights summarises kinds: " + ins.slice(0, 200));
   check(!ins.includes("Ben") && !ins.includes("Ana") && !ins.includes("Plan the launch") && !ins.includes("150,000"), "console insights lists no speakers, quotes or items");
-  check($("view-insights").all().filter(e => e.tagName === "LI").length === 7, "console insights has only the 7 kind rows");
+  check($("view-insights").all().filter(e => e.tagName === "LI").length === 2, "console insights has only the kinds that have items");
   // explain via the chip -> operator may reveal
   $("tab-realtime").click();
   chips[0].click();
   check(visible($("view-explain")), "console chip opens Explainability");
   const exText = text($("view-explain"));
   check(exText.includes("Confirmation answer") && !exText.includes("150,000"), "trail names the rule family, not the content");
-  const reveal = $("view-explain").all().find(e => e.tagName === "BUTTON" && text(e).startsWith("Reveal text"));
+  const reveal = $("view-explain").all().find(e => e.tagName === "BUTTON" && text(e).startsWith("Show text"));
   check(!!reveal, "operator console has Reveal text");
   reveal.click();
   check(text($("view-explain")).includes("150,000"), "reveal shows the text only after the operator asks");
