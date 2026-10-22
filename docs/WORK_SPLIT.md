@@ -55,7 +55,7 @@ Split along the seam in [otr/types.py](../otr/types.py): **Person 1 owns everyth
 | 5 | Wire `--source livekit` in `demo/server.py` to `otr.ingest.livekit_source` (currently a stub). Remove the duplicate script parser in favour of `otr.ingest.replay_source` | Live speech shows up as grey, then green, in the page |
 | 6 | Diarization for mixed audio: try pyannote (needs an HF token). `energy_turns()` is only a placeholder | A recorded 2-person clip gets SPEAKER_00 / SPEAKER_01 labels |
 | 7 | Run the LLM call off the event loop in `demo/server.py` (a slow Ollama call would freeze the stream) | Stream stays live while the LLM is working |
-| 8 | Stretch: Google Meet / Zoom via Vexa or Attendee bot | Only after 1–7 work. LiveKit cannot join Meet or Zoom itself |
+| 8 | Stretch: Google Meet / Zoom via Vexa or Attendee bot | Only after 1-7 work. LiveKit cannot join Meet or Zoom itself |
 
 **Demo fallback to keep working at all times:** `ReplaySource` with `demo/scripts/*.txt`. If LiveKit misbehaves on stage, the replay still shows the full story.
 
@@ -80,10 +80,10 @@ Split along the seam in [otr/types.py](../otr/types.py): **Person 1 owns everyth
 1. **Contract:** `otr/types.py` is the only shared file. Change it only after both of you agree, and log it in `docs/CHANGES.md`.
 2. **Handoff A (Person 2 → Person 1):** the real pipeline passes the three demo scripts. Until then Person 1 uses `demo/fake_pipeline.py`.
 3. **Handoff B (Person 1 → Person 2):** transcripts from real LiveKit sessions (save the Segment JSONL). Person 2 replays them through the pipeline as extra test data.
-4. **Integration checkpoint:** when both finish their tasks 3–5 (Person 1) and 3–4 (Person 2), do one run together: LiveKit speech → real pipeline → demo page.
+4. **Integration checkpoint:** when both finish their tasks 3-5 (Person 1) and 3-4 (Person 2), do one run together: LiveKit speech → real pipeline → demo page.
 5. **Git:** each person works on their own branch (`p1-live`, `p2-brain`) and touches only owned files. Merge to `master` after the checkpoint. Don't edit the other person's files; message them instead.
 6. **Docs:** append to `docs/CHANGES.md` and `docs/LESSONS_LEARNED.md` as you go (append-only, never rewrite).
-7. **Honesty:** the benchmark is small and synthetic, so call it early evidence. The live LiveKit path and the web page are untested until Person 1 finishes tasks 1–3.
+7. **Honesty:** the benchmark is small and synthetic, so call it early evidence. The live LiveKit path and the web page are untested until Person 1 finishes tasks 1-3.
 
 ## Needed from the machine
 
@@ -105,7 +105,7 @@ All 33 tests pass (`python -m pytest tests -q`, with `OTR_NO_PRESIDIO=1`). First
 
 | # | Issue | Owner | Evidence | Status (Docs Keeper pass 2, 2026-10-22) |
 |---|---|---|---|---|
-| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28–52% by case type | fixed on dev set, with caveat (pass 2): C leak 45% -> 1% on 47 items (`bench/results.md` 13:00), but tuned on those items; a 9-item fresh check was 53% before further fixes (`bench/README.md`). Not validated held-out |
+| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28-52% by case type | fixed on dev set, with caveat (pass 2): C leak 45% -> 1% on 47 items (`bench/results.md` 13:00), but tuned on those items; a 9-item fresh check was 53% before further fixes (`bench/README.md`). Not validated held-out |
 | I2 | Hold-seconds sweep gives identical numbers for 0 and 30. The harness only ticks at each segment's `t_start`, and the pipeline may not honour `hold_seconds` at tick time | Person 2 | `bench/results_sweep.json` | fixed on dev set (pass 2): sweep now varies committed-leak 11/10/1/1/1% at hold 0/5/15/30/60 (`bench/results_sweep.md`); final-notes leak flat by design (`bench/README.md`) |
 | I3 | Salary keyword check flags public text ("salary calculator we launched") and flush then redacts it | Person 2 | `demo/scripts/demo_false_alarm.txt` | fixed on dev set (pass 2): `tests/test_pipeline.py` line 405 asserts the salary-calculator sentence is public; 74 tests pass. `demo_false_alarm.txt` not rerun through `--pipeline real` on record |
 | I4 | `demo_retro_committed`: "Dana from finance told me in confidence..." was committed; confirm the script intends it as private | Person 2 | script run | open, no evidence (pass 2): no run of `demo_retro_committed.txt` through the real pipeline on record; script intent unconfirmed |

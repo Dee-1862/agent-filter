@@ -145,18 +145,18 @@ Historical plan; superseded for the LiveKit consent demo by A-005 below.
 
 | ID | Phase | Window | Deliverable | Status |
 |---|---|---|---|---|
-| P1 | Clone and run | 0:00–0:25 | Clone repos; Ollama with qwen2.5:7b (3b if slow); whisper_online.py transcribes a test file; locate LocalAgreement hook | proposed (2026-10-22 pass 2: still no evidence of whisper_streaming or an Ollama run; ingest uses faster-whisper chunking) |
-| P2 | Benchmark | 0:25–0:55 | 20 ConfAIde Tier 4 items + 20 QMSum chunks with LLM-inserted spans; hand-check ~10; save `otr_bench.jsonl` | in-progress (pass 2: 47 synthetic items incl. `bench/_items_c.py`; no ConfAIde/QMSum imported; labels unreviewed; the set doubled as the dev set, see R-003) |
-| P3 | Build system C | 0:55–1:45 | Hold buffer, cue detector, state machine, wired into emit point | in-progress (pass 2: built, 74 offline tests pass; C leak 1% on the dev set it was tuned on, held-out check not committed, see R-003) |
-| P4 | Evaluate | 1:45–2:15 | Run A, B, C; leak rate, over-redaction, per-type table; one table + one bar chart | in-progress (pass 2: A/B-stub/C and a 5-point hold sweep run with no LLM; `results.png` is stale at 12:32; no LLM run) |
-| P5 | Live demo | 2:15–2:45 | Streamlit page: grey = held, green = committed, red = redacted; scripted demo | in-progress (pass 2: web page, not Streamlit; rewritten UI uncommitted at 13:06; two LiveKit modes unreconciled; never viewed in a browser on record) |
-| P6 | Slides | 2:45–3:00 | Problem, gap, method, results, demo, future work | proposed |
+| P1 | Clone and run | 0:00-0:25 | Clone repos; Ollama with qwen2.5:7b (3b if slow); whisper_online.py transcribes a test file; locate LocalAgreement hook | proposed (2026-10-22 pass 2: still no evidence of whisper_streaming or an Ollama run; ingest uses faster-whisper chunking) |
+| P2 | Benchmark | 0:25-0:55 | 20 ConfAIde Tier 4 items + 20 QMSum chunks with LLM-inserted spans; hand-check ~10; save `otr_bench.jsonl` | in-progress (pass 2: 47 synthetic items incl. `bench/_items_c.py`; no ConfAIde/QMSum imported; labels unreviewed; the set doubled as the dev set, see R-003) |
+| P3 | Build system C | 0:55-1:45 | Hold buffer, cue detector, state machine, wired into emit point | in-progress (pass 2: built, 74 offline tests pass; C leak 1% on the dev set it was tuned on, held-out check not committed, see R-003) |
+| P4 | Evaluate | 1:45-2:15 | Run A, B, C; leak rate, over-redaction, per-type table; one table + one bar chart | in-progress (pass 2: A/B-stub/C and a 5-point hold sweep run with no LLM; `results.png` is stale at 12:32; no LLM run) |
+| P5 | Live demo | 2:15-2:45 | Streamlit page: grey = held, green = committed, red = redacted; scripted demo | in-progress (pass 2: web page, not Streamlit; rewritten UI uncommitted at 13:06; two LiveKit modes unreconciled; never viewed in a browser on record) |
+| P6 | Slides | 2:45-3:00 | Problem, gap, method, results, demo, future work | proposed |
 
 ## 2.2 Team split (initial)
 
-- **A**: whisper_streaming hook, hold buffer, demo page.
-- **B**: benchmark construction and evaluation.
-- **C**: cue detector, state machine, slides.
+- A: whisper_streaming hook, hold buffer, demo page.
+- B: benchmark construction and evaluation.
+- C: cue detector, state machine, slides.
 
 ## 2.3 Demo script (initial)
 
@@ -241,7 +241,7 @@ What: Use a self-hosted LiveKit room and one track per participant. The recorder
 
 Why: Filtering a mixed audio transcript after capture cannot guarantee that a declining person's speech was not processed. LiveKit exposes participant tracks and selective subscriptions. Sources: [LiveKit track management](https://docs.livekit.io/intro/basics/rooms-participants-tracks/tracks/) and [self-hosting](https://docs.livekit.io/transport/self-hosting/).
 
-Impact on foundation: explicit decision changes 1.1–1.3, 1.5–1.9; logged in C-003. F2 and F3 are superseded as future-work ideas by this accepted core scope. F1 (other meeting platforms) remains later work.
+Impact on foundation: explicit decision changes 1.1-1.3, 1.5-1.9; logged in C-003. F2 and F3 are superseded as future-work ideas by this accepted core scope. F1 (other meeting platforms) remains later work.
 
 ### A-002 · 2026-10-22 · Visible consent and live transcript · accepted
 
@@ -249,7 +249,7 @@ What: Put recording status beside every participant's name. The owner sees an al
 
 Why: The meeting must make consent legible to everyone and the real-time transcript cannot itself leak a sensitive utterance before the gate runs. Live text therefore has a short local policy delay; durable notes have a longer hold. The UI must show the measured delay rather than imply instantaneous protection.
 
-Impact on foundation: explicit decision changes 1.5–1.8; logged in C-003.
+Impact on foundation: explicit decision changes 1.5-1.8; logged in C-003.
 
 ### A-003 · 2026-10-22 · Local HR and numeric data policy · accepted
 
@@ -257,7 +257,7 @@ What: Process only opted-in audio locally. Before any text enters the displayed 
 
 Why: The requested outcome is no sensitive HR data or associated numbers in transcripts. A classifier can miss implicit context, so the product must report measured leak and over-redaction rates and retain manual controls. Spoken sensitivity can be judged only after brief volatile processing; this is not a claim of zero capture before detection.
 
-Impact on foundation: explicit decision changes 1.1, 1.5–1.8; logged in C-003.
+Impact on foundation: explicit decision changes 1.1, 1.5-1.8; logged in C-003.
 
 ### A-004 · 2026-10-22 · Ketch fit and zero-cloud boundary · accepted
 
@@ -269,7 +269,7 @@ Impact on foundation: none beyond C-003's local architecture; logged in C-004.
 
 ### A-005 · 2026-10-22 · Fastest implementation path · accepted
 
-What: Keep one local LiveKit server, one meeting web UI, and one local Python service for participant tokens, consent state, track subscription, ASR, policy checks and notes. Use the existing ASR plan only if it handles per-track streams with acceptable latency; otherwise choose a local in-memory ASR path. Do not build a Zoom/Meet bot, egress recording service, separate mobile app, remote auth, or Ketch integration for the hackathon. Supersede P1–P6's initial three-hour sequence with this order:
+What: Keep one local LiveKit server, one meeting web UI, and one local Python service for participant tokens, consent state, track subscription, ASR, policy checks and notes. Use the existing ASR plan only if it handles per-track streams with acceptable latency; otherwise choose a local in-memory ASR path. Do not build a Zoom/Meet bot, egress recording service, separate mobile app, remote auth, or Ketch integration for the hackathon. Supersede P1-P6's initial three-hour sequence with this order:
 
 1. Self-hosted room with two identities and visible consent states.
 2. Recorder starts unsubscribed; verify zero frames for an opted-out track and immediate unsubscribe on Stop.
@@ -280,7 +280,7 @@ What: Keep one local LiveKit server, one meeting web UI, and one local Python se
 
 Why: This is the shortest route to a demo that visibly proves Track 2's consent and privacy concepts. It avoids spending the hackathon on a mixed-audio benchmark while consent remains unimplemented. The [event](https://luma.com/superset-hy5n) lists a 5 PM Pacific project deadline on 2026-10-22.
 
-Impact on foundation: none beyond C-003; logged in C-004. Initial P1–P6 remain as historical plan entries and are superseded by this addendum.
+Impact on foundation: none beyond C-003; logged in C-004. Initial P1-P6 remain as historical plan entries and are superseded by this addendum.
 
 ### A-006 · 2026-10-22 · Per-person consent is the integration contract · accepted
 
@@ -302,7 +302,7 @@ Why: Source-level consent and speaker-specific policy are the product's core
 claim. A meeting-wide state would let one person's request affect another's
 capture and would make the visible status misleading.
 
-Impact on foundation: clarifies A-001–A-003 and the two-person work split;
+Impact on foundation: clarifies A-001-A-003 and the two-person work split;
 logged in C-006. See [WORK_SPLIT.md](WORK_SPLIT.md).
 
 ### A-007 · 2026-10-22 · Wording corrections recommended by RESEARCH.md for PRD 1.1 and 1.4 · proposed

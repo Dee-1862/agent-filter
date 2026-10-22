@@ -81,8 +81,8 @@ Benchmark: `python -m bench.run_eval --set all` regenerates dev, held-out and no
 
 **The three pages.** The meeting UI has three levels (names per the plan: Realtime, Insights, Explainability; the current code and ARCHITECTURE.md section 4 call them meeting view, Insights and "Why?"):
 
-1. **Realtime**: tiles, captions of committed lines only, status pill (recording / off the record), Live button.
-2. **Insights**: counts, state timeline, final notes, and a list of what was kept out as **kinds of redaction with reasons, not the specifics** (text hidden by default).
+1. Realtime: tiles, captions of committed lines only, status pill (recording / off the record), Live button.
+2. Insights: counts, state timeline, final notes, and a list of what was kept out as kinds of redaction with reasons, not the specifics (text hidden by default).
 3. **Explainability** ("Why?"): the rule that fired, state before and after, hold timeline; text only after clicking Reveal.
 
 Caveat from ARCHITECTURE.md: private text is hidden on screen but still travels to the browser in the event stream. The consent page `live.html` and the meeting view `index.html` are not yet unified.
