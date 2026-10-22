@@ -1,2 +1,15 @@
 .gyst/
 *.pyc
+.env
+.env.local
+.env.*.local
+.venv/
+node_modules/
+models/
+recordings/
+transcripts/
+*.wav
+*.mp3
+*.mp4
+*.sqlite*
+*.db
