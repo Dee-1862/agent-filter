@@ -1,15 +1,23 @@
-# Local runtime and open-source stack
+# Demo data path and open-source stack
 
-Meeting content stays on the machine running this demo. GitHub holds source code
-and documentation; it must never receive meeting audio, transcripts, consent
-records, model inputs, or generated notes.
+For the current hackathon demo, the static page is served from
+`consentmeeting.vercel.app`. Its API requests pass through a Vercel proxy and a
+Cloudflare Quick Tunnel to FastAPI on the meeting host. LiveKit signaling uses
+a tunneled WSS connection; media still requires the same Wi-Fi until a remote
+call proves otherwise. ASR and policy models run on the host. This temporary
+path allows meeting requests, identities, consent changes, signaling, and API
+transcript responses to cross cloud services. It is not a fully local or
+cloud-private deployment. The Quick Tunnel URL may change on restart, and the
+proxy must then be updated. The long-term target remains fully local. GitHub
+holds source code and documentation, not meeting data.
 
 ## Runtime path
 
 | Component | Runs where | Meeting data it handles |
 |---|---|---|
-| LiveKit server | `127.0.0.1:7880` | Participant media and room signaling |
-| Meeting page | Locally served at `127.0.0.1:8765` by default | Room media, each person's own approved draft, and the final transcript only after an explicit request |
+| LiveKit server | Meeting host (`127.0.0.1:17880` in this demo) | Participant media and room signaling |
+| Meeting page | Static UI on Vercel for the demo; local page at `127.0.0.1:8765` remains available | Room media and API responses; final transcript only after an explicit request |
+| Demo API route | Vercel proxy and Cloudflare Quick Tunnel to host FastAPI | Meeting requests and responses, including identity, consent, and approved transcript data |
 | Recorder and ASR | Local Python process | Only opted-in audio; provisional text in memory |
 | Privacy pipeline | Same Python process | Opted-in text; releases approved lines only |
 
@@ -49,12 +57,11 @@ See [SECURE_LAN.md](SECURE_LAN.md) for the local HTTPS/WSS launch paths. Its
 default local-certificate mode requires trust on each guest device; the
 public-certificate mode does not.
 
-The planned no-install guest link uses `meeting.lancestreuber.com` and a
-browser-trusted certificate while the app and LiveKit stay on the meeting host.
-Namecheap DNS and certificate validation handle the hostname and proof of
-domain control, not meeting content. Vercel does not serve this meeting app,
-process its media, or consume its hosting allowance. A DNS record and trusted
-certificate are still required before that link can be used.
+The earlier no-install plan used `meeting.lancestreuber.com` with a trusted
+certificate and no hosted meeting path. That remains a local-first option but
+is not the current demo route. The Vercel page and tunnel above are the demo
+exception; do not claim that Vercel has zero usage or that cloud providers
+cannot see routed traffic.
 
 Model weights are downloaded before a meeting into the ignored `models/`
 directory. At runtime, `load_whisper` requires local weights and refuses to

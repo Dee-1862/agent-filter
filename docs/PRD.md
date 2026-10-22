@@ -375,3 +375,31 @@ remote infrastructure and would not remove the need for a LiveKit media host.
 
 Impact on foundation: narrows the first deployment target and clarifies the
 local-data boundary; logged in C-020.
+
+### A-011 · 2026-10-22 · Temporary hosted demo path · accepted
+
+What: For the hackathon demo, serve the static meeting UI at
+`consentmeeting.vercel.app`. Its API calls go through a Vercel proxy and a
+Cloudflare Quick Tunnel to the FastAPI process on the meeting host. LiveKit
+signaling uses a tunneled WSS connection; the current media path still requires
+participants on the same Wi-Fi. Speech recognition and policy models remain on
+the host. Meeting requests, identities, consent changes, signaling, and any
+transcript data returned through the API can pass through Vercel and Cloudflare
+during this demo. Do not describe this path as fully local or private from
+cloud providers. A Quick Tunnel URL can change when restarted, so the proxy
+configuration and active link must be checked each time. Internet-wide media
+access is not established until a remote-device call works.
+
+The meeting UI keeps the call controls and consent state visible. Remove the
+large live-transcript, filtering explanation, and People panel from the main
+view; label the notes action by what a click does: **Turn on notes** or
+**Turn off notes**. Keep the final approved transcript and count-only report
+available in the end-of-meeting flow.
+
+Why: The DNS and certificate route is too slow for this demo. Lance explicitly
+allowed temporary cloud transit to get a usable link quickly. The longer-term
+target in the foundation remains a fully local runtime.
+
+Impact on foundation: temporary exception to G6, the cloud-processing
+non-goal, and the locality rule in 1.6. Supersedes A-010 for this demo only;
+logged in C-021.

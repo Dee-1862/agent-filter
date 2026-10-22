@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-021 · Temporary Vercel and tunnel demo
+- Type: addendum
+- Touches: PRD 1.5–1.6 and 2.7 (A-011); LOCAL_PRIVACY.md
+- What changed: Approved `consentmeeting.vercel.app` for the static UI, a Vercel API proxy through a Cloudflare Quick Tunnel to local FastAPI, and tunneled LiveKit WSS. Media still needs the same Wi-Fi until tested otherwise; ASR and policy models stay on the host. The UI drops the large live-transcript detail panel and uses action labels for the notes button.
+- Why: The DNS and certificate route will not be ready in time. Lance approved cloud transit for the demo while keeping fully local operation as the later target.
+- Decided by: Lance in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-020 · Shareable Wi-Fi hostname without hosted meeting processing
 - Type: addendum
 - Touches: PRD 2.7 (A-010), SECURE_LAN.md
