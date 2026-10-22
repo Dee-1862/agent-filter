@@ -231,7 +231,7 @@ function makeEnv(html, opts) {
   }
   const rooms = [];
   class Room {
-    constructor() { this.handlers = {}; this.localParticipant = new Participant(); this.canPlaybackAudio = true; rooms.push(this); }
+    constructor() { this.handlers = {}; this.localParticipant = new Participant(); this.canPlaybackAudio = true; this.remoteParticipants = new Map(); rooms.push(this); }
     on(ev, fn) { this.handlers[ev] = fn; return this; }
     async connect(url, token) { this.url = url; this.token = token; }
     async disconnect() {}
