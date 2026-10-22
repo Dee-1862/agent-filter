@@ -326,6 +326,44 @@ class LiveSession:
                for sid, rec in self.kept_out.get(identity, {}).items()]
         return sorted(out, key=lambda c: c["seq"])
 
+    # ---- text-free detail for the transcript and the pop-out page (owner only; never text)
+    def _stamp(self, identity: str, key: str) -> float:
+        """Seconds since this person's timeline began, noted the first time a detail payload sees `key`."""
+        stamps = self.__dict__.setdefault("detail_stamps", {})
+        steps = self.timeline.get(identity, [])
+        base = steps[0]["t"] if steps else self.now()
+        return stamps.setdefault((identity, key), round(max(0.0, self.now() - base), 1))
+
+    def waiting_count(self, identity: str) -> int:
+        """How many lines are in this person's hold buffer. A number only."""
+        pipe = self.pipes.get(identity)
+        try:
+            if getattr(pipe, "buf", None) is not None:
+                return len(pipe.buf.items())
+            return len(getattr(pipe, "_held", ()) or ()) + len(getattr(pipe, "_pending", ()) or ())
+        except Exception:  # noqa: BLE001 - a status number must never break /api/me
+            return 0
+
+    def kept_out_events(self, identity: str) -> list[dict]:
+        """One row per kept-out line for the owner: kinds, rule family, states, timing, action. No text.
+        `code` is family:kind built here, never the raw reason (whose tail can carry a topic word or a span)."""
+        out = []
+        for sid, rec in self.kept_out.get(identity, {}).items():
+            fam = rec["family"]
+            action = ("removed_after_approval" if fam == "retro"
+                      else "masked" if fam in ("presidio", "regex") else "kept_out")
+            out.append({"id": sid, "seq": rec["seq"], "t": self._stamp(identity, "k:" + sid),
+                        "category": rec["category"], "family": fam, "before": rec["before"],
+                        "after": rec["after"], "held_s": rec["held_s"], "action": action,
+                        "code": f"{fam}:{rec['category']}"})
+        return sorted(out, key=lambda e: e["seq"])
+
+    def detail_for(self, identity: str) -> dict:
+        return {"kept_out_events": self.kept_out_events(identity),
+                "line_times": {lid: self._stamp(identity, "l:" + lid)
+                               for lid, owner in self.line_owner.items() if owner == identity},
+                "waiting": self.waiting_count(identity)}
+
     def publish_status(self, identity: str):
         # The log holds only an owner marker; the payload is built per viewer in visible_message.
         self.messages.append({"type": "status", "owner": identity})
@@ -707,6 +745,14 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     async def classic_page():
         return FileResponse(STATIC / "live.html")
 
+    # The pop-out Insights and Explanation page. Same strict CSP (a meta tag in the file) and no-store as `/`.
+    # The room-scoped path lets /api/me and /stream pick this meeting's cookie from the Referer.
+    @app.get("/insights")
+    @app.get("/insights.html")
+    @app.get("/m/{room_id}/insights")
+    async def insights_page(room_id: str | None = None):
+        return FileResponse(STATIC / "insights.html", headers={"Cache-Control": "no-store"})
+
     @app.get("/m/{room_id}")
     async def meeting_page(room_id: str):
         if room_id not in meetings:
@@ -918,7 +964,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.get("/static/{asset}")
     async def static_asset(asset: str):
-        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css"}:
+        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css",
+                         "insights.js", "insights.css"}:
             raise HTTPException(404)
         return FileResponse(STATIC / asset)
 
@@ -965,6 +1012,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
                 "ready_for_final": live.ready_for_final(),
                 "finalized_count": sum(1 for o in owners if o in live.finalized),
                 "contributor_count": len(owners)}
+        payload.update(live.detail_for(identity))   # text-free: kept_out_events, line_times, waiting
         if not summary:
             payload["lines"] = live.own_lines(identity)
         return JSONResponse(payload, headers={"Cache-Control": "no-store"})
@@ -1007,7 +1055,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
             return JSONResponse({"models": model_info(), "hold_seconds": hold_seconds,
                                  "bot": session.source.diagnostics()["bot"] if hasattr(session.source, "diagnostics") else {},
                                  "participants": people}, headers=headers)
-        return JSONResponse({"models": model_info(), "me": live.diagnostics_for(identity),
+        mine = live.diagnostics_for(identity)
+        mine["waiting_lines"] = live.waiting_count(identity)   # a count of lines in the hold buffer, never text
+        return JSONResponse({"models": model_info(), "me": mine,
                              "hold_seconds": live.hold_seconds}, headers=headers)
 
     @app.post("/api/consent")
