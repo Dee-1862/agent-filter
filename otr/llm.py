@@ -253,7 +253,10 @@ Utterance: "{text}"
 JSON:"""
 
 _POSS = r"\b(?:my|his|her|their|your|(?!(?:let|that|it|what|there|here|he|she|who|how|where|when)'s\b)\w+'s)"
-_AMT = r"(?:\$\s?\d[\d,.]*\s?(?:k|m|thousand|million)?\b|\d[\d,.]*\s?(?:k\b|thousand|grand|million))"
+_SPOKEN_NUM = (r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|"
+               r"eighty|ninety)\b[\s-]+(?:\w+[\s-]+){0,2}(?:hundred|thousand|grand|million)\b(?:\s+dollars?)?")
+_AMT = (r"(?:\$\s?\d[\d,.]*\s?(?:k|m|thousand|million)?\b|\d[\d,.]*\s?(?:k\b|thousand|grand|million)"
+        rf"|{_SPOKEN_NUM})")
 
 _KEYWORDS: dict[str, list[str]] = {
     "health": [r"diagnos", r"cancer", r"chemo", r"surgery", r"medication", r"prescri", r"therapy",
