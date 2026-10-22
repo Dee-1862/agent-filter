@@ -123,6 +123,7 @@ class Options:
     model: Optional[str] = None
     room: str = "demo"
     no_docker: bool = False
+    service: bool = False   # long-lived service: model stays unloaded until otr.service wakes it
 
 
 def whisper_model(o: Options) -> str:
@@ -276,6 +277,12 @@ def build_llm(o: Options):
     if llm is None:
         print(f"[app] unknown --llm {o.llm!r}; using none", file=sys.stderr)
         return None
+    if o.service:
+        # Service mode: no warm-up now. Calls fail fast (rules only) until the supervisor
+        # reports the model loaded, so a cold model can never block a push.
+        from otr.service import GATE, GatedLLM
+        print(f"[app] service mode: {llm.model} stays unloaded until a meeting starts", file=sys.stderr)
+        return GatedLLM(llm, GATE)
     print(f"[app] warming LLM {llm.model} (first call loads it into memory)...", file=sys.stderr, flush=True)
     secs = llm.warmup()
     if secs == float("inf"):
@@ -321,16 +328,31 @@ def make_app(o: Options, llm=None, audio_src=None):
                          live_source=live_source)
 
 
+def _auto_llm() -> str:
+    """"ollama" if the local Ollama answers and has the default model, else "none" (rules only)."""
+    try:
+        from otr.llm import OllamaLLM, default_model
+        have = [str(m.get("name", m)) if isinstance(m, dict) else str(m) for m in OllamaLLM().installed()]
+        want = default_model()
+        if any(h == want or h.split(":")[0] == want.split(":")[0] for h in have):
+            return "ollama"
+    except Exception:  # noqa: BLE001 - any failure means no model, rules only
+        pass
+    print("[app] --llm auto: Ollama or the default model is not available, using rules only", file=sys.stderr)
+    return "none"
+
+
 def parse_args(argv=None) -> tuple[Options, bool]:
     ap = argparse.ArgumentParser(prog="python -m otr.app", description=__doc__.split("\n")[0])
     ap.add_argument("--source", choices=SOURCES, default="replay")
     ap.add_argument("--audio", nargs="+", metavar="PATH", help="folder / per-speaker files / one mixed file")
     ap.add_argument("--turns", help="speaker-turn JSON for a single mixed file")
     ap.add_argument("--script", help="replay script (Alice: text lines, @pause N) or .jsonl")
-    ap.add_argument("--llm", default="none", help="none | ollama | ollama:MODEL")
+    ap.add_argument("--llm", default="auto", help="auto | none | ollama | ollama:MODEL (auto uses the local model when Ollama is running and has it)")
     ap.add_argument("--hold", type=float, default=None,
                     help="hold seconds before a line is released (default $OTR_HOLD_SECONDS, else 5 for "
                          "--source livekit and 10 otherwise; shorter = less time for a later 'strike that')")
+    ap.add_argument("--fast", action="store_true", help="fastest redaction for demos: hold 2 s and utterances close after 450 ms of silence (a later 'strike that' has less time to catch a line)")
     ap.add_argument("--speed", type=float, default=1.0, help="1 = real time, 0 = as fast as possible (audio/replay)")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--host", default="127.0.0.1")
@@ -338,7 +360,17 @@ def parse_args(argv=None) -> tuple[Options, bool]:
     ap.add_argument("--room", default="demo", help="LiveKit room")
     ap.add_argument("--no-docker", action="store_true", help="never run docker compose for LiveKit")
     ap.add_argument("--check", action="store_true", help="print the readiness table and exit")
+    ap.add_argument("--service", action="store_true",
+                    help="run under python -m otr.service: lazy model load, edge key and egress ledger")
     a = ap.parse_args(argv)
+    if a.service:
+        os.environ["OTR_SERVICE"] = "1"
+    if a.llm == "auto":
+        a.llm = "ollama" if a.service else _auto_llm()
+    if a.fast:
+        os.environ.setdefault("OTR_SILENCE_MS", "450")
+        if a.hold is None and "OTR_HOLD_SECONDS" not in os.environ:
+            a.hold = 2.0
     hold = a.hold
     if hold is None:
         try:
@@ -347,7 +379,7 @@ def parse_args(argv=None) -> tuple[Options, bool]:
             hold = 5.0 if a.source == "livekit" else 10.0
     o = Options(source=a.source, audio=a.audio or [], turns=a.turns, script=a.script, llm=a.llm,
                 hold=hold, speed=a.speed, port=a.port, host=a.host, model=a.model, room=a.room,
-                no_docker=a.no_docker)
+                no_docker=a.no_docker, service=a.service)
     return o, a.check
 
 

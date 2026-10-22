@@ -1,0 +1,151 @@
+{
+ "split": "sealed",
+ "files": {
+  "sealed": {
+   "path": "bench/data_v3/sealed/otr3_sealed.jsonl",
+   "md5": "686c3bfcf45f4e34e30b676fbda95056",
+   "n_items": 260
+  },
+  "sealed_noisy": {
+   "path": "bench/data_v3/sealed/otr3_sealed_noisy.jsonl",
+   "md5": "0d5dd2ce9ea9233ef223c5b65b98d48f",
+   "n_items": 67
+  }
+ },
+ "counts": {
+  "n_items": 260,
+  "n_with_private": 168,
+  "n_no_private": 92,
+  "n_segments": 5827,
+  "n_clusters": 260,
+  "case_type": {
+   "explicit_start_end": 38,
+   "explicit_start_implicit_end": 28,
+   "false_alarm": 40,
+   "implicit": 62,
+   "public": 29,
+   "retroactive": 63
+  },
+  "subtype": {
+   "cross_segment_pii": 14,
+   "ese_long_reactions": 19,
+   "ese_short": 19,
+   "esie_long": 14,
+   "esie_short": 14,
+   "fa_named_work": 8,
+   "fa_negated_cue": 8,
+   "fa_public_lookalike": 8,
+   "fa_quoted_cue": 8,
+   "fa_record_sense": 8,
+   "implicit_health": 8,
+   "implicit_hr_performance": 8,
+   "implicit_layoffs": 8,
+   "implicit_legal": 8,
+   "implicit_personal": 8,
+   "implicit_salary": 8,
+   "public_plain": 29,
+   "repair": 15,
+   "retro_count": 12,
+   "retro_other_confirmed": 11,
+   "retro_other_refused": 8,
+   "retro_topic": 17
+  },
+  "author": {
+   "Q1": 12,
+   "Q2": 12,
+   "Q3": 12,
+   "Q4": 12,
+   "Q5": 12,
+   "Q6": 11,
+   "S1": 27,
+   "S2": 27,
+   "S3": 27,
+   "S4": 27,
+   "S5": 27,
+   "S6": 27,
+   "S7": 27
+  },
+  "domain": {
+   "ami": 25,
+   "committee": 15,
+   "council-AlamedaCC": 36,
+   "council-BostonCC": 8,
+   "council-DenverCityCouncil": 41,
+   "council-KingCountyCC": 38,
+   "council-LongBeachCC": 41,
+   "council-SeattleCityCouncil": 31,
+   "icsi": 25
+  },
+  "source": {
+   "meetingbank+llm-insert": 195,
+   "qmsum+llm-insert": 65
+  }
+ },
+ "noisy_counts": {
+  "n_items": 67,
+  "n_with_private": 44,
+  "n_no_private": 23,
+  "n_segments": 1465,
+  "n_clusters": 67,
+  "case_type": {
+   "explicit_start_end": 10,
+   "explicit_start_implicit_end": 8,
+   "false_alarm": 10,
+   "implicit": 16,
+   "public": 7,
+   "retroactive": 16
+  },
+  "subtype": {
+   "cross_segment_pii": 4,
+   "ese_long_reactions": 5,
+   "ese_short": 5,
+   "esie_long": 4,
+   "esie_short": 4,
+   "fa_named_work": 2,
+   "fa_negated_cue": 2,
+   "fa_public_lookalike": 2,
+   "fa_quoted_cue": 2,
+   "fa_record_sense": 2,
+   "implicit_health": 2,
+   "implicit_hr_performance": 2,
+   "implicit_layoffs": 2,
+   "implicit_legal": 2,
+   "implicit_personal": 2,
+   "implicit_salary": 2,
+   "public_plain": 7,
+   "repair": 4,
+   "retro_count": 3,
+   "retro_other_confirmed": 3,
+   "retro_other_refused": 2,
+   "retro_topic": 4
+  },
+  "author": {
+   "Q1": 3,
+   "Q2": 2,
+   "Q3": 4,
+   "Q4": 2,
+   "Q5": 6,
+   "Q6": 2,
+   "S1": 4,
+   "S2": 6,
+   "S3": 4,
+   "S4": 9,
+   "S5": 7,
+   "S6": 9,
+   "S7": 9
+  },
+  "domain": {
+   "ami": 8,
+   "committee": 3,
+   "council-AlamedaCC": 6,
+   "council-BostonCC": 6,
+   "council-DenverCityCouncil": 13,
+   "council-KingCountyCC": 7,
+   "council-LongBeachCC": 9,
+   "council-SeattleCityCouncil": 8,
+   "icsi": 7
+  }
+ },
+ "seen_author_items": 71,
+ "unseen_author_items": 189
+}

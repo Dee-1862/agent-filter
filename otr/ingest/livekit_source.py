@@ -22,6 +22,7 @@ import time
 from typing import AsyncIterator, Callable, Optional
 
 from otr.types import Segment
+from . import defaults as _defaults
 from .stt import SR, UtteranceChunker, load_whisper, next_id, shared_whisper, to_mono16k
 
 
@@ -37,8 +38,8 @@ class LiveKitSource:
                  on_participant_left: Optional[Callable[[str], None]] = None):
         self.room_name, self.identity, self.model = room, identity, model
         self.url = url or os.environ.get("LIVEKIT_URL", "ws://localhost:7880")
-        self.api_key = api_key or os.environ.get("LIVEKIT_API_KEY", "devkey")
-        self.api_secret = api_secret or os.environ.get("LIVEKIT_API_SECRET", "secret")
+        self.api_key = api_key or _defaults.api_key()
+        self.api_secret = api_secret or _defaults.api_secret()
         self._transcribe = transcribe
         self.on_participant_left = on_participant_left
         self._room = None

@@ -28,6 +28,8 @@
   let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false, endSessionExpired = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
   let admissionCheckInProgress = false, admissionFailures = 0, joinInProgress = false;
+  let sessionExpired = false;
+  const expiredSessionMessage = "This meeting session expired. Leave this call, then start or request a new meeting.";
   const ENTRY_SCREENS = ["home-screen", "host-setup", "guest-setup", "share-screen", "waiting-screen", "join"];
   function showEntry(id) {
     for (const screen of ENTRY_SCREENS) $(screen).classList.toggle("hidden", screen !== id);
@@ -99,9 +101,7 @@
       catch (error) {
         if (error.status !== 401 && error.status !== 404) return;
         clearInterval(roomTimer);
-        if (eventSource) eventSource.close();
-        if (room) await room.disconnect();
-        location.href = "/?ended=1";
+        expireSession();
       }
     }, 3000);
   }
@@ -526,16 +526,17 @@
     const button = $("notes-button");
     const control = $("notes-control");
     const paused = sensitivePaused && !finalized;
-    button.disabled = finalized;
+    button.disabled = finalized || sessionExpired;
     button.setAttribute("aria-checked", String(myNotesOn));
     let action, line;
-    if (finalized) { action = "Notes finished"; line = "Notes are finished"; }
+    if (sessionExpired) { action = "Notes unavailable"; line = "Meeting session expired"; }
+    else if (finalized) { action = "Notes finished"; line = "Notes are finished"; }
     else if (paused) { action = "Turn on notes"; line = "Notes are paused for you"; }
     else if (myNotesOn) { action = "Turn off notes"; line = "Notes are on for you"; }
     else { action = "Turn on notes"; line = "Notes are off"; }
     setText($("notes-label"), action);
     setText($("capture-status"), line);
-    control.disabled = finalized;
+    control.disabled = finalized || sessionExpired;
     control.classList.toggle("notes-on", myNotesOn);
     control.classList.toggle("notes-off", !myNotesOn);
     control.setAttribute("aria-pressed", String(myNotesOn));
@@ -640,6 +641,7 @@
   }
 
   async function refreshMe(immediate) {
+    if (sessionExpired) return;
     if (!immediate) {
       clearTimeout(meRefreshTimer);
       meRefreshTimer = setTimeout(() => refreshMe(true), 1500);
@@ -648,12 +650,36 @@
     meRefreshTimer = null;
     try {
       const data = await api("/api/me");
+      if (sessionExpired) return;
       transcriptUnavailable = false;
       applyMe(data);
-    } catch (_) {
+    } catch (error) {
+      if (room && (error.status === 401 || error.status === 404)) {
+        expireSession();
+        return;
+      }
       transcriptUnavailable = true;
       $("transcript-status").classList.remove("hidden");
     }
+  }
+
+  function expireSession() {
+    if (sessionExpired) return;
+    sessionExpired = true;
+    clearInterval(lobbyTimer);
+    clearInterval(roomTimer);
+    clearTimeout(meRefreshTimer);
+    if (eventSource) eventSource.close();
+    endSessionExpired = true;
+    transcriptUnavailable = true;
+    myNotesOn = false;
+    setConnection("Session expired", "off");
+    setText($("transcript-status"), expiredSessionMessage);
+    $("transcript-status").classList.remove("hidden");
+    $("notes-button").disabled = true;
+    $("notes-control").disabled = true;
+    showToast(escapeHtml(expiredSessionMessage), "err");
+    renderAll();
   }
 
   function setChips(list) {
@@ -1185,6 +1211,14 @@
     try {
       const config = configOverride || await api("/api/config");
       const access = accessOverride || await post("/api/join", { name });
+      if (accessOverride) {
+        const current = await api("/api/me");
+        if (!access.identity || current.identity !== access.identity) {
+          const error = new Error("This meeting session expired. Start or request a new meeting.");
+          error.status = 401;
+          throw error;
+        }
+      }
       if (!accessOverride) rememberDetails(name, $("host-email").value.trim() || $("guest-email").value.trim());
       me = access.identity;
       stopDeviceCheck();
@@ -1321,9 +1355,16 @@
       }
       return true;
     } catch (error) {
-      setText($("join-error"), accessOverride ? "Could not connect to the call." : (error.message || "Could not connect to the meeting."));
-      setText($("share-error"), error.message || "Could not connect to the meeting.");
-      if (accessOverride) showToast("Could not join the meeting. Try again or ask the host to check the connection.", "err");
+      const expired = accessOverride && (error.status === 401 || error.status === 404);
+      const message = expired ? "This meeting session expired. Start or request a new meeting."
+        : (error.message || "Could not connect to the meeting.");
+      setText($("join-error"), accessOverride && !expired ? "Could not connect to the call." : message);
+      setText($("share-error"), message);
+      if (accessOverride) showToast(escapeHtml(expired ? message : "Could not join the meeting. Try again or ask the host to check the connection."), "err");
+      if (expired && role === "host") {
+        setText($("share-join-button"), "Start a new meeting");
+        $("share-join-button").onclick = () => { location.href = "/"; };
+      }
       setConnection("Not connected", "off");
       if (room) { try { await room.disconnect(); } catch (_) { } room = null; }
       if (me && !accessOverride) { try { await post("/api/leave", {}); } catch (_) { } }
@@ -1337,7 +1378,7 @@
   }
 
   async function toggleNotes() {
-    if (finalized) return;
+    if (finalized || sessionExpired) return;
     const button = $("notes-button");
     button.disabled = true;
     $("notes-control").disabled = true;
@@ -1350,10 +1391,12 @@
       await refreshMe(true);
       showPanel("agent");
     } catch (error) {
-      showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
+      if (error.status === 401 || error.status === 404) expireSession();
+      else showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
     } finally {
       button.disabled = false;
-      $("notes-control").disabled = finalized;
+      $("notes-control").disabled = finalized || sessionExpired;
+      if (sessionExpired) button.disabled = true;
     }
   }
 
@@ -1493,7 +1536,7 @@
 
   async function showEndDialog() {
     closePanel();
-    endSessionExpired = false;
+    endSessionExpired = sessionExpired;
     endDialogLastFocus = document.activeElement;
     $("end-dialog").classList.remove("hidden");
     $("end-backdrop").classList.remove("hidden");
@@ -1504,6 +1547,11 @@
     setText($("end-summary"), "Checking whether the final transcript is ready…");
     setText($("end-error"), "");
     $("end-cancel").focus();
+    if (sessionExpired) {
+      setText($("end-summary"), "This meeting session expired. Leave this call, then start or request a new meeting.");
+      setText($("end-without-email"), "Leave this call");
+      return;
+    }
     try {
       const [finalData, recipientData] = await Promise.all([
         api("/api/notes/final"),

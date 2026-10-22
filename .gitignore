@@ -27,3 +27,6 @@ bench/data_v2/work/
 bench/data_v3/sealed/
 bench/data_v3/raw/
 bench/data_v3/work/
+
+# long-lived service config (tunnel names, tokens): never commit
+.otr-service.json

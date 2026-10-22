@@ -76,7 +76,10 @@ def load_whisper(model: str = "base.en", cpu_threads: Optional[int] = None,
             t = time.perf_counter()
             segs, _ = m.transcribe(audio_f32, language="en", beam_size=1, vad_filter=False,
                                    condition_on_previous_text=False)
-            text = " ".join(s.text.strip() for s in segs).strip()
+            # Drop segments Whisper itself doubts (far-field chatter and noise hallucinations).
+            text = " ".join(s.text.strip() for s in segs
+                            if not (getattr(s, "no_speech_prob", 0.0) > 0.6 and getattr(s, "avg_logprob", 0.0) < -0.8)
+                            and getattr(s, "avg_logprob", 0.0) > -1.4).strip()
             n = len(audio_f32)
             if n >= SR:   # real-time factor of the last decode (ignore tiny clips)
                 stats["rtf"] = round((time.perf_counter() - t) / (n / SR), 3)
@@ -209,6 +212,10 @@ class UtteranceChunker:
                  max_utt_s: float = 20.0, soft_utt_s: float = 8.0, soft_silence_ms: int = 350,
                  preroll_ms: Optional[int] = None, to_audio: Callable[[bytes], object] = _to_float,
                  t0: float = 0.0, vad: Optional[AdaptiveVAD] = None):
+        try:  # OTR_SILENCE_MS lets a fast preset close utterances sooner (default 700 ms)
+            silence_ms = int(os.environ.get("OTR_SILENCE_MS", silence_ms))
+        except ValueError:
+            pass
         self.transcribe, self.to_audio = transcribe, to_audio
         self.energy_thresh, self.silence_ms = energy_thresh, silence_ms
         self.min_speech_ms, self.partial_every, self.max_utt_s = min_speech_ms, partial_every, max_utt_s
@@ -231,6 +238,14 @@ class UtteranceChunker:
         self.last_transcribe_s = 0.0
         self.last_audio_s = 0.0
         self.transcribe_count = 0
+        # Near-field gate: speech much quieter than this speaker's own usual level (people talking
+        # in the background of their room) is dropped before it is transcribed. 0 disables it.
+        try:
+            self.nearfield_ratio = float(os.environ.get("OTR_NEARFIELD_RATIO", "0.4"))
+        except ValueError:
+            self.nearfield_ratio = 0.4
+        self._levels: deque = deque(maxlen=12)   # RMS of recent accepted utterances
+        self.dropped_quiet = 0
 
     @property
     def in_utterance(self) -> bool:
@@ -322,6 +337,13 @@ class UtteranceChunker:
         self._start, self._buf, self._silence = None, bytearray(), 0.0
         if (end - start) * 1000 < self.min_speech_ms:
             return []
+        level = _rms(buf)
+        if self.nearfield_ratio > 0 and len(self._levels) >= 3:
+            ref = sorted(self._levels)[len(self._levels) // 2]
+            if level < self.nearfield_ratio * ref:
+                self.dropped_quiet += 1          # background speech, not the person on this mic
+                return []
+        self._levels.append(level)
         words = self._run(buf)
         rest = words[self._emitted_words:]
         return [Utterance(" ".join(rest), self._t0 + start, self._t0 + end)] if rest else []

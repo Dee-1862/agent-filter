@@ -19,7 +19,7 @@ No ML diarization is needed, and it is more reliable than diarizing mixed audio.
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-core.txt -r requirements-demo.txt -r requirements-ingest.txt
 .venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('base.en', device='cpu', compute_type='int8', download_root='models/faster-whisper')"
-livekit-server --dev --bind 127.0.0.1 --node-ip 127.0.0.1
+livekit-server --bind 127.0.0.1 --node-ip 127.0.0.1 --keys "devkey: otr-dev-secret-change-me-0123456789abcdef"
 ```
 
 In another terminal:

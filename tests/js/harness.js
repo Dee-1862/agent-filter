@@ -446,7 +446,7 @@ async function consentHost() {
   $("captions").all().find(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr").click();
   check(visible($("view-explain")), "opening the marker goes to How it decides");
   const trail = text($("view-explain"));
-  check(trail.includes("Keyword rule") && trail.includes("Recording") && trail.includes("Needs your OK") && trail.includes("2.4 s"),
+  check(trail.includes("Keyword rule") && trail.includes("Recording") && trail.includes("Waiting for your answer") && trail.includes("2.4 s"),
     "marker trail shows rule family, state before/after and hold timing");
   check(!trail.includes(SECRET) && !trail.includes("150,000"), "trail has no private text");
   check($("view-explain").all().some(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr" && e.getAttribute("aria-pressed") === "true"), "the category is selected");
@@ -549,6 +549,67 @@ async function consentHostExpired() {
   }
 }
 
+// A LiveKit token can outlive the local server session after a backend restart.
+async function consentStaleSession() {
+  const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  const access = { room_id: "room1", join_url: "http://127.0.0.1:8000/m/room1", identity: "person-host",
+    name: "Hana", role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "room1" };
+  for (const meResponse of [
+    { status: 401, json: { detail: "Join the meeting first" } },
+    { identity: "another-person", participants: {}, lines: [] },
+  ]) {
+    const env = makeEnv(html, { routes: {
+      "POST /api/meetings": access,
+      "GET /api/me": meResponse,
+    } });
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana"; $("host-email").value = "hana@example.com";
+    $("host-create-button").click(); await sleep(10);
+    $("share-join-button").click(); await sleep(20);
+    check(env.rooms.length === 0 && !visible($("meeting")), "stale or mismatched host access never connects LiveKit");
+    check(text($("share-error")).includes("Start or request a new meeting")
+      && !text($("share-error")).includes("Join the meeting first"), "stale join gives a useful next step");
+    check(text($("share-join-button")) === "Start a new meeting", "stale host gets a new-meeting action");
+    $("share-join-button").click();
+    check(env.sandbox.location.href === "/", "stale host can return home to start again");
+    check(!env.calls.some(c => c.url === "/api/consent"), "stale join never changes consent");
+  }
+
+  for (const expiredBy of ["notes", "refresh"]) {
+    let meCalls = 0;
+    const env = makeEnv(html, { routes: {
+      "POST /api/meetings": access,
+      "GET /api/me": () => {
+        meCalls++;
+        return expiredBy === "refresh" && meCalls > 2
+          ? { status: 401, json: { detail: "Join the meeting first" } }
+          : { identity: "person-host", participants: { "person-host": { name: "Hana", recording: false } }, lines: [], kept_out: [] };
+      },
+      "GET /api/meetings/room1/status": { status: "admitted", role: "host", identity: "person-host", pending: [] },
+      "POST /api/consent": { status: 401, json: { detail: "Join the meeting first" } },
+    } });
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana"; $("host-email").value = "hana@example.com";
+    $("host-create-button").click(); await sleep(10);
+    $("share-join-button").click(); await sleep(30);
+    check(visible($("meeting")) && env.rooms.length === 1, `host joins before ${expiredBy} expires`);
+    if (expiredBy === "notes") { $("notes-control").click(); await sleep(15); }
+    else { env.sources[0].push({ type: "participants", participants: { "person-host": { name: "Hana", recording: false } } }); await sleep(1600); }
+    check(text($("transcript-status")).includes("Leave this call") && !$("transcript-status").classList.contains("hidden")
+      && $("notes-control").disabled && $("notes-button").disabled,
+    `${expiredBy} session loss explains expiry and disables notes`);
+    check(!text($("toast-text")).includes("Join the meeting first"), `${expiredBy} failure hides raw backend auth error`);
+    $("leave-button").click(); await sleep(10);
+    check(text($("end-without-email")) === "Leave this call", `${expiredBy} expiry offers local exit`);
+    $("end-without-email").click(); await sleep(10);
+    check(env.rooms[0].disconnected && env.sandbox.location.href === "/", `${expiredBy} expiry exits without server session`);
+  }
+}
+
 // ------------------------------------------------------------------ scenario 2: guest waits, then is admitted
 async function consentGuest() {
   const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
@@ -638,6 +699,7 @@ async function operatorConsole() {
     await consentHost();
     await consentCreateFailure();
     await consentHostExpired();
+    await consentStaleSession();
     await consentGuest();
     await operatorConsole();
   } catch (e) {

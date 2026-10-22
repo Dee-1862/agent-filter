@@ -54,7 +54,7 @@
     recording: { label: "Recording", cls: "st-rec" },
     off_record: { label: "Off the record", cls: "st-off" },
     paused: { label: "Paused (sensitive topic)", cls: "st-wait" },
-    awaiting: { label: "Needs your OK", cls: "st-wait" },
+    awaiting: { label: "Waiting for your answer", cls: "st-wait" },
     off: { label: "Notes off", cls: "st-idle" }
   };
   var PIPE = { ON: "recording", OFF: "off_record", PENDING_CONFIRM: "awaiting" };
@@ -97,6 +97,51 @@
     return { svg: s, end: end, bands: bands };
   }
 
+  // Recording-state band plus its legend, appended to `box`. Shared by the side panel and the pop-out page.
+  function renderTimeline(box, timeline, now) {
+    var tl = timelineSvg(timeline, now);
+    box.appendChild(tl.svg);
+    var legend = el("div", "iv-legend");
+    ["recording", "off_record", "paused", "off"].forEach(function (k) {
+      var seen = tl.bands.some(function (b) { return b.s === k; });
+      if (!seen && k !== "recording") return;
+      var sp = el("span", null, STATES[k].label);
+      sp.insertBefore(el("i", STATES[k].cls), sp.firstChild);
+      legend.appendChild(sp);
+    });
+    legend.appendChild(el("span", "iv-range", "0:00 to " + fmt(tl.end)));
+    box.appendChild(legend);
+    return tl;
+  }
+
+  // What the system did with a kept-out item, from its rule family only (never from text).
+  // Returns {key, label, text}. Shared by the transcript rows, the explain view and the pop-out table.
+  function actionOf(trail) {
+    var f = String((trail && trail.family) || "");
+    if (f === "retro") return { key: "removed_after_approval", label: "Removed after approval",
+      text: "The line had been released to your notes, then a later retraction removed it." };
+    if (f === "presidio" || f === "regex") return { key: "masked", label: "Masked contact details",
+      text: "Contact or ID details were masked before the line could reach your notes." };
+    return { key: "kept_out", label: "Kept out before approval",
+      text: "The line was held, then kept out. It never reached your notes." };
+  }
+
+  // The facts shown when a kept-out row is opened: [label, value] pairs, plain language, no text.
+  function explainFacts(item, holdSeconds) {
+    var trail = (item && item.trail) || {}, cat = byKey[item && item.category] || byKey.other;
+    var fam = FAMS[trail.family] || FAMS.other || { label: "Rule", text: "" };
+    var act = actionOf(trail);
+    var rows = [
+      ["Why", cat ? cat.rule : ""],
+      ["Rule that fired", fam.label + (fam.engine === "llm" ? " (local language model)" : " (rule based)") + ". " + fam.text],
+      ["State", stateLabel(trail.before) + "  ->  " + stateLabel(trail.after)],
+      ["Held", typeof trail.held_s === "number" ? "Decided " + secs(trail.held_s) + " after the line arrived" +
+        (holdSeconds ? " (hold window " + secs(holdSeconds) + ")." : ".") : "Timing not recorded."],
+      ["What the system did", act.label + ". " + act.text]
+    ];
+    return rows;
+  }
+
   // ---------------------------------------------------------------- INSIGHTS (aggregate only)
   // data: { approved:n, kept_out:{categoryKey:n}, total:n, removed:n?, timeline:[{t,state}], now:seconds,
   //         labels?: {approved:"In the notes"} }
@@ -130,18 +175,7 @@
     box.appendChild(list);
 
     box.appendChild(el("h3", null, "Recording state over time"));
-    var tl = timelineSvg(data.timeline, data.now);
-    box.appendChild(tl.svg);
-    var legend = el("div", "iv-legend");
-    ["recording", "off_record", "paused", "off"].forEach(function (k) {
-      var seen = tl.bands.some(function (b) { return b.s === k; });
-      if (!seen && k !== "recording") return;
-      var sp = el("span", null, STATES[k].label);
-      sp.insertBefore(el("i", STATES[k].cls), sp.firstChild);
-      legend.appendChild(sp);
-    });
-    legend.appendChild(el("span", "iv-range", "0:00 to " + fmt(tl.end)));
-    box.appendChild(legend);
+    renderTimeline(box, data.timeline, data.now);
     box.appendChild(el("p", "iv-note", "Only kinds and counts are shown. The words, the speakers and the individual lines that were kept out are never listed here."));
     return { total: total, text: summaryText(counts) };
   }
@@ -226,7 +260,8 @@
   root.OTRViews = {
     categories: CATS, families: FAMS, categorize: categorize, family: family, label: label, shortLabel: shortLabel,
     stateKey: stateKey, stateLabel: stateLabel, summaryText: summaryText, chip: chip,
-    renderInsights: renderInsights, renderExplain: renderExplain, fmt: fmt, secs: secs
+    renderInsights: renderInsights, renderExplain: renderExplain, renderTimeline: renderTimeline,
+    actionOf: actionOf, explainFacts: explainFacts, states: STATES, fmt: fmt, secs: secs
   };
   if (typeof module !== "undefined" && module.exports) module.exports = root.OTRViews;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -104,7 +104,7 @@ def build_livekit_source(room: str):
         raise RuntimeError("LiveKit mode needs the packages " + ", ".join(missing)
                            + " (pip install -r requirements-ingest.txt)")
     if not os.environ.get("LIVEKIT_URL"):
-        print("[demo] LIVEKIT_URL not set; using ws://localhost:7880 with devkey/secret "
+        print("[demo] LIVEKIT_URL not set; using ws://localhost:7880 with the default dev key "
               "(docker compose -f docker-compose.livekit.yml up -d)", file=sys.stderr)
     try:
         from otr.ingest.livekit_source import LiveKitSource

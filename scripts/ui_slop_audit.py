@@ -243,11 +243,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dir", default=str(DEFAULT_DIR), help="directory holding the css/html/js files")
     ap.add_argument("--fail", action="store_true", help="exit 1 if there is any finding")
+    ap.add_argument("--skip", action="append", default=[], metavar="NAME",
+                    help="file name to leave out (repeatable), e.g. a file whose design is owned by someone else")
     ap.add_argument("--quiet", action="store_true", help="print only the summary")
     args = ap.parse_args(argv)
     base = Path(args.dir)
     a = Audit()
-    files = sorted(p for p in base.iterdir() if p.suffix in EXTS and not p.name.startswith("livekit"))
+    files = sorted(p for p in base.iterdir() if p.suffix in EXTS and not p.name.startswith("livekit")
+                   and p.name not in args.skip)
     if not files:
         print(f"no css/html/js files in {base}", file=sys.stderr)
         return 2

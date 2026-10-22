@@ -631,13 +631,18 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         live_source = LiveKitSource()
     session = LiveSession(cls, kind, live_source, hold_seconds=hold_seconds, llm=llm)
     llm_state = {"warm": False, "reachable": False}
+    # Long-lived service mode (python -m otr.service): the supervisor loads the models when a
+    # meeting is active, so nothing is warmed at start. None outside service mode.
+    gate = getattr(llm, "gate", None)
+    if gate is None and os.environ.get("OTR_SERVICE"):
+        from otr.service import GATE as gate
 
     @asynccontextmanager
     async def lifespan(app):
         if autostart:
             session.start()
             warm_llm(llm, llm_state)
-            if hasattr(live_source, "preload"):
+            if hasattr(live_source, "preload") and gate is None:
                 # Load and warm Whisper now so the first sentence does not pay for it.
                 async def preload():
                     try:
@@ -655,6 +660,17 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     meetings: dict[str, dict] = {}
     app.state.meetings = meetings
     browser_sessions: dict[str, tuple[str, str, str | None]] = {}
+
+    # Edge key, egress ledger and the loopback-only /api/_internal/* endpoints (demo/egress.py).
+    from demo.egress import EdgeContext, install_edge
+    edge = install_edge(app, EdgeContext(meetings=meetings, gate=gate, live_source=live_source,
+                                         on_service_update=lambda u: llm_state.update(
+                                             {"warm": bool(u["model_loaded"]), "reachable": bool(u["model_loaded"])}
+                                             if isinstance(u.get("model_loaded"), bool) else {})))
+
+    @app.get("/api/health")
+    async def health():
+        return {"ok": True}
 
     def meeting_cookie(room_id: str) -> str:
         return "otr_session_" + room_id
@@ -740,8 +756,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         except ValueError:
             return default
 
-    # One page for everyone in consent mode: lobby, admission, video, and the side panel views
-    # (Realtime, Insights, Explainability). `/live` is kept as an alias.
+    # One page for everyone in consent mode: lobby, admission, video and the notes drawer.
+    # `/live` is kept as an alias. `/insights` is the owner-only pop-out window (text-free).
     @app.get("/")
     async def index():
         return FileResponse(STATIC / "live.html", headers={"Cache-Control": "no-store"})
@@ -750,6 +766,18 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     @app.get("/live.html")
     async def classic_page():
         return FileResponse(STATIC / "live.html")
+
+    @app.get("/meet")
+    @app.get("/meet.html")
+    async def meet_page():
+        # The Realtime / Insights / Explainability meeting view. Same strict CSP (meta tag), never cached.
+        return FileResponse(STATIC / "meet.html", headers={"Cache-Control": "no-store"})
+
+    @app.get("/insights")
+    @app.get("/m/{room_id}/insights")
+    async def insights_page(room_id: str | None = None):
+        # Same strict CSP as the meeting page (a meta tag in the file); never cached.
+        return FileResponse(STATIC / "insights.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/m/{room_id}")
     async def meeting_page(room_id: str):
@@ -963,7 +991,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.get("/static/{asset}")
     async def static_asset(asset: str):
-        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css"}:
+        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css",
+                         "insights.js", "insights.css", "meet.js", "meet.css"}:
             raise HTTPException(404)
         return FileResponse(STATIC / asset)
 
@@ -1041,8 +1070,11 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         _, live, identity = room_for(request)
         mine = live.diagnostics_for(identity)
         mine["waiting_lines"] = live.waiting_count(identity)   # a count of lines in the hold buffer, never text
-        return JSONResponse({"models": model_info(), "me": mine,
-                             "hold_seconds": live.hold_seconds}, headers=headers)
+        payload = {"models": model_info(), "me": mine, "hold_seconds": live.hold_seconds}
+        service = edge.service_public()   # only in service mode: state, model_loaded, idle_seconds
+        if service is not None:
+            payload["service"] = service
+        return JSONResponse(payload, headers=headers)
 
     @app.post("/api/consent")
     async def consent(request: Request, body: dict):

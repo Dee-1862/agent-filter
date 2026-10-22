@@ -75,11 +75,20 @@ def test_explicit_start_implicit_end():
     assert p.state == "ON"
 
 
-def test_implicit_end_via_llm():
+def test_llm_topic_change_alone_does_not_end_scope():
+    # Fail closed: a model verdict of "topic changed" may not end an off-the-record stretch by itself.
     llm = MockLLM(lambda pr: '{"topic_changed": true}' if "Has the conversation moved on" in pr else "{}")
     p = Pipeline(llm=llm, hold_seconds=10)
     run(p, [("Between us, the budget is overspent.", 0), ("What about the picnic menu then?", 2)])
-    assert "picnic" in note_text(p) and "budget" not in note_text(p)
+    assert "budget" not in note_text(p) and "picnic" not in note_text(p)
+
+
+def test_llm_topic_change_with_a_pivot_phrase_ends_scope():
+    llm = MockLLM(lambda pr: '{"topic_changed": true}' if "Has the conversation moved on" in pr else "{}")
+    p = Pipeline(llm=llm, hold_seconds=10)
+    run(p, [("Between us, the budget is overspent.", 0), ("Okay, anyway, what about the picnic menu then?", 2),
+            ("Anyway, the picnic menu needs a vegetarian option.", 4)])
+    assert "budget" not in note_text(p)
 
 
 def test_retroactive_on_held_text():
