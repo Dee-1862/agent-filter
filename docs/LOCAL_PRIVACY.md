@@ -27,6 +27,16 @@ that were never transcribed because notes were OFF are not counted. The page
 never exports the final automatically. No audio files or transcript database
 are created by the live path.
 
+After finishing their notes, participants can separately opt in to an email
+copy of the final transcript. Joining with an email address does not opt them
+in. Only the host can retrieve opted-in addresses, and only once the combined
+final transcript is ready. When closing the room, the host can review the
+approved transcript and open a prefilled draft in their mail app. This app
+does not send mail. The host can also end without an email. Opening the draft
+may sync that final transcript through the host's mail provider, which is
+outside this local runtime. Meeting audio, provisional text, withheld lines,
+and other participants' live drafts never go into the mail draft.
+
 The instant-meeting entry flow keeps room IDs, guest requests, unverified email
 labels, and host admission decisions in the local Python process. A guest does
 not receive a LiveKit room token until the host admits them. Ending the room

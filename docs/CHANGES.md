@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-019 · Optional email draft for the final transcript
+- Type: addendum
+- Touches: PRD 2.7 (A-009), LOCAL_PRIVACY.md
+- What changed: Added a separate email opt-in after a person finishes notes. The host can review opted-in recipients and the approved final transcript, then open a mail draft or end without one. Other participants' live drafts remain private.
+- Why: Lance wants an easy way to share the finished transcript while keeping the export choice explicit.
+- Decided by: Lance in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-018 · Video meeting UI and private final report
 - Type: addendum
 - Touches: PRD 2.7 (A-008)

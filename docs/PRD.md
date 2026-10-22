@@ -334,3 +334,24 @@ from a failed audio or transcription connection.
 
 Impact on foundation: clarifies G1, G5, and the hold-buffer behavior; logged in
 C-018. Secondhand disclosure remains deferred.
+
+### A-009 · 2026-10-22 · Optional final transcript email draft · accepted
+
+What: Each participant may opt in to receiving the final transcript after
+finishing their own notes. Their join email is only a suggested address, not
+consent to email. Only the host can see the opted-in recipient list, and only
+after every contributor has finished. When ending the meeting, the host may
+review the approved combined transcript and open a preaddressed draft in their
+own mail app. The app does not send mail. The host can end without drafting an
+email. Long transcripts need a copy-and-paste fallback so a mail link cannot
+silently cut off the text. Opening a draft may sync the final transcript through
+the host's mail provider; the UI must say so before the host opens it. Live
+drafts from other participants stay private.
+
+Why: Email is a useful way to share the finished notes, but a join address
+does not authorize delivery and a mail client is outside the local runtime.
+An explicit choice by each recipient and a final review by the host keep the
+export boundary visible.
+
+Impact on foundation: adds an optional final export path to A-008; logged in
+C-019.
