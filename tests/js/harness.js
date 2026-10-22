@@ -251,9 +251,12 @@ function makeEnv(html, opts) {
     const key = method + " " + url;
     let res = routes[key];
     if (typeof res === "function") res = res(body);
+    if (res instanceof Error) throw res;
     if (res === undefined) res = { status: 404, json: { detail: "not found: " + key } };
-    if (!("json" in res)) res = { status: 200, json: res };   // routes may return {status, json} or a bare body
-    return { ok: res.status < 400, status: res.status, json: async () => res.json, text: async () => JSON.stringify(res.json) };
+    if (!("json" in res) && !("rawHtml" in res)) res = { status: 200, json: res };   // routes may return {status, json} or a bare body
+    return { ok: res.status < 400, status: res.status,
+      json: async () => { if (res.rawHtml) throw new SyntaxError("Unexpected token '<'"); return res.json; },
+      text: async () => res.rawHtml || JSON.stringify(res.json) };
   }
   const store = opts.store || {};
   const sandbox = {
@@ -479,6 +482,30 @@ async function consentHost() {
   return env;
 }
 
+async function consentCreateFailure() {
+  const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  const cases = [
+    ["HTML gateway error", {status: 502, rawHtml: "<h1>Bad Gateway</h1>"}, "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["service unavailable", {status: 503, json: {}}, "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["gateway timeout", {status: 504, json: {}}, "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["network failure", new TypeError("Failed to fetch"), "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["validation error", {status: 400, json: {detail: "Enter your name"}}, "Enter your name"],
+    ["capacity error", {status: 429, json: {detail: "Too many meetings"}}, "Too many meetings"],
+  ];
+  for (const [label, response, expected] of cases) {
+    const env = makeEnv(html, {routes: {"POST /api/meetings": response}});
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana";
+    $("host-email").value = "hana@example.com";
+    $("host-create-button").click();
+    await sleep(5);
+    check(text($("host-error")) === expected, `create meeting ${label} gives useful feedback`);
+    check(!$("host-create-button").disabled, `create meeting ${label} allows retry`);
+  }
+}
+
 // ------------------------------------------------------------------ scenario 1b: server session expired while the host is in LiveKit
 async function consentHostExpired() {
   const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
@@ -609,6 +636,7 @@ async function operatorConsole() {
 (async () => {
   try {
     await consentHost();
+    await consentCreateFailure();
     await consentHostExpired();
     await consentGuest();
     await operatorConsole();

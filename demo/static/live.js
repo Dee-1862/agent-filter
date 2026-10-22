@@ -169,7 +169,13 @@
   const tileEls = {};
 
   async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: "same-origin", ...options });
+    let response;
+    try { response = await fetch(path, { credentials: "same-origin", ...options }); }
+    catch (_) {
+      const error = new Error("Could not reach the meeting host");
+      error.network = true;
+      throw error;
+    }
     let body = null;
     try { body = await response.json(); } catch (_) { body = {}; }
     if (!response.ok) {
@@ -1608,7 +1614,11 @@
       history.replaceState(null, "", `/m/${encodeURIComponent(roomId)}`);
       $("share-link").value = access.join_url;
       showEntry("share-screen");
-    } catch (error) { setText($("host-error"), error.message); }
+    } catch (error) {
+      setText($("host-error"), error.network || [502, 503, 504].includes(error.status)
+        ? "Meeting host is temporarily unavailable. Try again in a moment."
+        : error.message);
+    }
     finally { button.disabled = false; setText(button, "Start meeting"); }
   };
   $("copy-link-button").onclick = async () => {
