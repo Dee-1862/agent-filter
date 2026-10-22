@@ -1,6 +1,6 @@
 """Consent-gated LiveKit demo mode (from the per-person-consent branch).
 
-Each speaker has their own policy pipeline; a participant sees only their own
+Each speaker has their own policy pipeline; admitted participants see shared
 approved lines. Once every contributor has explicitly finalized, any
 participant may request the combined final transcript. Used by
 `python -m demo.server --source livekit`. The shared-view StreamRunner mode is
@@ -205,13 +205,14 @@ class Session:
 
 
 class LiveSession:
-    """Consent-gated LiveKit input, per-viewer approved lines, explicit finalize.
+    """Consent-gated LiveKit input, shared approved lines, explicit finalize.
 
     Each speaker has their own policy pipeline. The temporary text and full
     audit trail stay in process memory and are never placed in ``messages``.
-    Viewers receive only their own approved lines; the combined final
-    transcript is returned only on explicit request after every contributor
-    whose lines remain has finalized.
+    Admitted participants can see current approved room lines. Each speaker
+    alone controls capture and removal of their lines. The combined
+    final transcript is returned only on explicit request after every
+    contributor whose lines remain has finalized.
     """
 
     def __init__(self, pipeline_cls, kind, source, hold_seconds=10.0, llm=None):
@@ -270,6 +271,10 @@ class LiveSession:
 
     def own_lines(self, identity: str) -> list[dict]:
         return [self.approved[lid] for lid, owner in self.line_owner.items() if owner == identity]
+
+    def shared_lines_for(self, viewer: str) -> list[dict]:
+        """Return the approved room text for an authenticated participant."""
+        return list(self.approved.values())
 
     def redaction_counts(self, identity: str | None = None) -> dict[str, int]:
         groups = ([(identity, self.redactions.get(identity, {}))] if identity is not None
@@ -402,9 +407,10 @@ class LiveSession:
             return {"type": "participants", "participants": self.public_participants(viewer)}
         if message.get("type") == "transcript":
             changes = [change for change in message["changes"]
-                       if change.get("owner") == viewer
-                       and (change["kind"] != "committed"
-                            or change["line"]["id"] in self.approved)]
+                       if (change["kind"] == "kept_out" and change.get("owner") == viewer)
+                       or change["kind"] == "removed"
+                       or (change["kind"] == "committed"
+                           and change["line"]["id"] in self.approved)]
             return {"type": "transcript", "changes": changes} if changes else None
         if message.get("type") == "redaction_counts":
             if message.get("owner") != viewer:
@@ -797,8 +803,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         live.set_consent(identity, False)
         meetings[room_id] = {"session": live, "host": identity, "requests": {}, "email": email}
         browser_sessions[sid] = (room_id, "host", None)
-        if autostart:
-            live.start()
+        # A fresh room has no consenting speaker. Keep its bot off the transport
+        # until someone opts in, avoiding unnecessary native connections on
+        # meetings that are immediately ended or never enable notes.
         public_origin = (os.environ.get("MEETING_PUBLIC_ORIGIN")
                          or os.environ.get("OTR_PUBLIC_ORIGIN")
                          or str(request.base_url).rstrip("/"))
@@ -1034,7 +1041,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
                 "contributor_count": len(owners)}
         payload.update(live.detail_for(identity))   # text-free: kept_out_events, line_times, waiting
         if not summary:
-            payload["lines"] = live.own_lines(identity)
+            payload["lines"] = live.shared_lines_for(identity)
         return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
     def model_info() -> dict:
@@ -1078,6 +1085,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
             raise HTTPException(409, "Notes already finalized")
         validate_origin(request)
         live.set_consent(identity, body["recording"])
+        if autostart and body["recording"] and not live.tasks:
+            live.start()
         return {"identity": identity, "recording": body["recording"]}
 
     @app.post("/api/notes/remove")
@@ -1165,14 +1174,14 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         async def gen():
             # Do not replay earlier approved text after retroactive deletion.
             # A fresh connection gets only the current approved snapshot.
-            # Everything is filtered by the authenticated viewer: only their
-            # own line text, line ids, and their own sensitive status leave
-            # this process.
+            # Admitted participants receive approved room text even with their
+            # own capture off. Speaker consent still gates what gets approved.
+            # Kept-out detail and sensitive status remain owner-only.
             if live.closed:
                 return
             i = len(live.messages)
             yield f"data: {json.dumps({'type': 'participants', 'participants': live.public_participants(identity)})}\n\n"
-            yield f"data: {json.dumps({'type': 'snapshot', 'lines': live.own_lines(identity), 'kept_out': live.own_kept_out(identity)})}\n\n"
+            yield f"data: {json.dumps({'type': 'snapshot', 'lines': live.shared_lines_for(identity), 'kept_out': live.own_kept_out(identity)})}\n\n"
             yield f"data: {json.dumps({'type': 'redaction_counts', 'redaction_counts': live.redaction_counts(identity)})}\n\n"
             yield f"data: {json.dumps({'type': 'status', **live.insights_for(identity)})}\n\n"
             while True:

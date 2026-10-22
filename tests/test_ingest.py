@@ -123,6 +123,8 @@ def test_livekit_consent_subscribes_only_opted_in_identity(monkeypatch):
         await asyncio.sleep(0)
         room = Room.latest
         await room.connected.wait()
+        while src.state != "connected":
+            await asyncio.sleep(0)
         alice = room.remote_participants["alice"]
         bob = room.remote_participants["bob"]
         assert room.options.auto_subscribe is False
@@ -158,6 +160,55 @@ def test_livekit_consent_subscribes_only_opted_in_identity(monkeypatch):
         assert src.consent_snapshot()["bob"] is False
         assert departed == ["bob"]
         await stream.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_livekit_cancel_during_connect_waits_for_sdk_handshake(monkeypatch):
+    """Ending a new room must not interrupt the native ReadyForRoomEvent handshake."""
+    from otr.ingest.livekit_source import LiveKitSource
+
+    started = asyncio.Event()
+    finish_handshake = asyncio.Event()
+
+    class Room:
+        def __init__(self):
+            self.handlers = {}
+            self.remote_participants = {}
+            self.ready = False
+            self.disconnects = 0
+
+        def on(self, name):
+            def register(callback):
+                self.handlers[name] = callback
+                return callback
+            return register
+
+        async def connect(self, url, token, options):
+            started.set()
+            await finish_handshake.wait()
+            self.ready = True
+
+        async def disconnect(self):
+            assert self.ready, "disconnect raced with SDK connect handshake"
+            self.disconnects += 1
+
+    room = Room()
+    rtc = types.SimpleNamespace(Room=lambda: room, RoomOptions=lambda **kwargs: object())
+    monkeypatch.setitem(sys.modules, "livekit", types.SimpleNamespace(rtc=rtc))
+    source = LiveKitSource(transcribe=lambda audio: "")
+    monkeypatch.setattr(source, "_token", lambda: "local-token")
+
+    async def scenario():
+        task = asyncio.create_task(anext(source.segments()))
+        await started.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()  # cancellation waits for the SDK to signal ready
+        finish_handshake.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert room.ready and room.disconnects == 1
 
     asyncio.run(scenario())
 

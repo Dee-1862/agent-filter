@@ -3,19 +3,29 @@
   const $ = id => document.getElementById(id);
   const setText = (node, value) => { node.textContent = value; };
   const LiveKit = window.LivekitClient;
+  const Views = window.OTRViews;
   const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
+  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
+  const MIC_ON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3m5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>';
 
   let room = null, me = null, eventSource = null;
   let participants = {};
+  let lines = new Map();
   let finalized = false, readyForFinal = false, finalizedCount = null, contributorCount = null;
+  let redactionCounts = null;
+  // Text-free aggregates and placeholders from the server; see demo/live_session.py insights_for().
+  let insights = { approved: 0, kept_out: {}, total: 0, removed: 0, timeline: [], now: 0, hold_seconds: null };
+  const chips = new Map();   // segment id -> {id, category, seq, trail}; never any text
+  let panelView = null, panelLastFocus = null, captionsOn = false, explainSel = null, explainItem = null;
+  let capFollow = true, newCount = 0, pendingSeen = 0;
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
+  let transcriptUnavailable = false;
   let speaking = new Set(), muted = new Map();
   const connectedPeople = new Set();
-  const videoTracks = new Map(), videoMuted = new Set();
-  let toastTimer = null, meRefreshTimer = null, drawerLastFocus = null;
+  const videoTracks = new Map(), videoMuted = new Set(), videoEls = new Map();
+  let toastTimer = null, meRefreshTimer = null, clockTimer = null;
   let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
-  let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
+  let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false, endSessionExpired = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
   let admissionCheckInProgress = false, admissionFailures = 0, joinInProgress = false;
   const ENTRY_SCREENS = ["home-screen", "host-setup", "guest-setup", "share-screen", "waiting-screen", "join"];
@@ -39,6 +49,11 @@
     list.replaceChildren();
     $("lobby-count").textContent = String(pending.length);
     $("lobby-empty").classList.toggle("hidden", pending.length > 0);
+    const badge = $("people-badge");
+    badge.classList.toggle("hidden", pending.length === 0);
+    setText(badge, String(pending.length));
+    if (pending.length > pendingSeen && panelView !== "people") showPanel("people");
+    pendingSeen = pending.length;
     for (const request of pending) {
       const item = document.createElement("li");
       const label = document.createElement("span");
@@ -71,7 +86,7 @@
   function startLobby() {
     if (role !== "host") return;
     $("host-lobby").classList.remove("hidden");
-    $("share-meeting-link-button").classList.remove("hidden");
+    $("info-link").value = `${location.origin}/m/${encodeURIComponent(roomId)}`;
     pollLobby();
     clearInterval(lobbyTimer);
     lobbyTimer = setInterval(pollLobby, 1500);
@@ -154,7 +169,13 @@
   const tileEls = {};
 
   async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: "same-origin", ...options });
+    let response;
+    try { response = await fetch(path, { credentials: "same-origin", ...options }); }
+    catch (_) {
+      const error = new Error("Could not reach the meeting host");
+      error.network = true;
+      throw error;
+    }
     let body = null;
     try { body = await response.json(); } catch (_) { body = {}; }
     if (!response.ok) {
@@ -167,6 +188,29 @@
   const post = (path, body) => api(path, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
+  const DETAILS_KEY = "otr-person-details-v1";
+  function rememberDetails(name, email) {
+    name = String(name || "").trim();
+    email = String(email || "").trim();
+    if (!email) {
+      try { email = JSON.parse(localStorage.getItem(DETAILS_KEY) || "null")?.email || ""; } catch (_) { email = ""; }
+    }
+    if (!name || name.length > 60 || (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))) return;
+    try { localStorage.setItem(DETAILS_KEY, JSON.stringify({name, email})); } catch (_) { }
+  }
+  function restoreDetails() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(DETAILS_KEY) || "null"); } catch (_) { return; }
+    if (!saved || typeof saved !== "object") return;
+    const name = typeof saved.name === "string" ? saved.name.slice(0, 60) : "";
+    const email = typeof saved.email === "string" ? saved.email.slice(0, 254) : "";
+    for (const id of ["host-name", "guest-name", "name"]) if (name) $(id).value = name;
+    for (const id of ["host-email", "guest-email"]) if (email) $(id).value = email;
+  }
+  function forgetDetails() {
+    try { localStorage.removeItem(DETAILS_KEY); } catch (_) { }
+    for (const id of ["host-name", "guest-name", "name", "host-email", "guest-email"]) $(id).value = "";
+  }
 
   function element(tag, className, value) {
     const node = document.createElement(tag);
@@ -184,6 +228,17 @@
     const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
     return ((parts[0] || "?")[0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
   }
+  function isMyLine(line) {
+    if (!me) return true;
+    const owner = line.speaker ?? line.identity ?? "";
+    return !owner || owner === me;
+  }
+  function indexLines(arr) {
+    const map = new Map();
+    for (const line of arr || []) if (line && line.id != null) map.set(line.id, line);
+    return map;
+  }
+
   function announce(message) { setText($("note-state-live"), message); }
   function setConnection(label, cls) {
     setText($("connection"), label);
@@ -207,8 +262,11 @@
       const isMuted = identity === me
         ? (room ? !room.localParticipant.isMicrophoneEnabled : false)
         : muted.get(identity) === true;
-      tile.querySelector(".muted-badge").classList.toggle("hidden", !connected || !isMuted);
-      setText(tile.querySelector(".tile-mic"), !connected ? "Not connected yet" : isMuted ? "Muted" : "");
+      const state = tile.querySelector(".mic-state");
+      state.classList.toggle("hidden", !connected);
+      state.classList.toggle("muted", isMuted);
+      state.setAttribute("aria-label", isMuted ? "Microphone off" : "Microphone on");
+      tile.querySelector(".tile-presence").classList.toggle("hidden", connected);
     }
   }
 
@@ -217,31 +275,32 @@
     if (!tile) return;
     const track = videoMuted.has(identity) ? null : videoTracks.get(identity);
     const avatar = tile.querySelector(".avatar");
-    const current = avatar.querySelector(".tile-video");
-    if (current && current._livekitTrack !== track) {
-      current._livekitTrack.detach(current);
-      current.remove();
+    let video = videoEls.get(identity);
+    if (video && video._livekitTrack !== track) {
+      video._livekitTrack.detach(video);
+      video.remove();
+      videoEls.delete(identity);
+      video = null;
     }
-    if (track && !avatar.querySelector(".tile-video")) {
-      const video = document.createElement("video");
+    if (track && !video) {
+      video = document.createElement("video");
       video.className = "tile-video";
       video.autoplay = true;
       video.playsInline = true;
-      video.muted = identity === me;
+      video.setAttribute("playsinline", "");
+      video.muted = identity === me;   // a video track carries no sound; remote voices play from their audio element
       video._livekitTrack = track;
       track.attach(video);
+      videoEls.set(identity, video);
+    }
+    if (video && video.parentNode !== avatar) {
       avatar.prepend(video);
+      if (video.play) { try { const played = video.play(); if (played && played.catch) played.catch(() => {}); } catch (_) { } }
     }
     tile.classList.toggle("has-video", !!track);
   }
 
   function setVideoTrack(identity, track) {
-    const old = videoTracks.get(identity);
-    if (old && old !== track) {
-      const tile = tileEls[identity];
-      const video = tile && tile.querySelector(".tile-video");
-      if (video) { old.detach(video); video.remove(); }
-    }
     if (track) videoTracks.set(identity, track);
     else videoTracks.delete(identity);
     updateVideoTile(identity);
@@ -261,55 +320,240 @@
 
   function renderTiles() {
     const grid = $("tile-grid");
-    for (const tile of Object.values(tileEls)) {
-      const video = tile.querySelector(".tile-video");
-      if (video) video._livekitTrack.detach(video);
-    }
     grid.replaceChildren();
     for (const key of Object.keys(tileEls)) delete tileEls[key];
     const members = Object.entries(participants);
     members.sort((a, b) => (a[0] === me ? -1 : b[0] === me ? 1 : 0));
     if (!members.length) {
-      grid.append(element("p", "grid-empty", "Waiting for people to join…"));
+      grid.append(element("p", "grid-empty", "Waiting for people to join..."));
       return;
     }
     for (const [identity, p] of members) {
       const on = notesOn(p);
       const tile = element("div", "tile" + (identity === me ? " self" : ""));
+      const avatar = element("div", "avatar", initials(p.name || identity));
+      const mic = element("span", "mic-state");
+      mic.setAttribute("role", "img");
+      const micOn = element("span", "m-on");
+      micOn.innerHTML = MIC_ON_SVG;
+      const micOff = element("span", "m-off");
+      micOff.innerHTML = MIC_OFF_SVG;
+      mic.append(micOn, micOff);
+      const label = element("div", "tile-label");
+      label.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
+      label.append(element("span", "tile-presence hidden", "Not connected yet"));
       const notes = element("span", "tile-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
       notes.prepend(element("span", "dot"));
-      const avatar = element("div", "avatar", initials(p.name || identity));
-      const badge = element("span", "muted-badge hidden");
-      badge.innerHTML = MIC_OFF_SVG;
-      avatar.append(badge);
-      const info = element("div", "tile-info");
-      info.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
-      info.append(element("span", "tile-mic", ""));
-      tile.append(notes, avatar, info);
+      label.append(notes);
+      tile.append(avatar, mic, label);
+      if (identity === me) {
+        const level = element("canvas", "tile-level");
+        level.width = 36; level.height = 16;
+        level.setAttribute("role", "img");
+        level.setAttribute("aria-label", "Your microphone level");
+        tile.append(level);
+      }
       grid.append(tile);
       tileEls[identity] = tile;
     }
     updateTileFlags();
+    for (const [identity, video] of [...videoEls]) {
+      if (tileEls[identity]) continue;
+      video._livekitTrack.detach(video);
+      video.remove();
+      videoEls.delete(identity);
+    }
     for (const identity of Object.keys(tileEls)) updateVideoTile(identity);
+  }
+
+  function renderLines() {
+    renderCaptions();
+  }
+
+  // ------------------------------------------------------------ Realtime approved transcript + text-free kept-out markers
+  function captionItems() {
+    const items = [];
+    let order = 0;
+    for (const line of lines.values()) {
+      if (!line.removed) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
+    }
+    for (const chip of chips.values()) items.push({ type: "chip", seq: chip.seq || 0, order: order++, chip });
+    items.sort((a, b) => (a.seq - b.seq) || (a.order - b.order));
+    return items;
+  }
+  let shownCaptions = 0;
+  function renderCaptions() {
+    const box = $("captions");
+    const items = captionItems();
+    box.replaceChildren();
+    if (!items.length) {
+      box.append(element("p", "cap-empty", "Waiting for approved lines. When someone turns on notes, their lines appear here after about 10 seconds of safety review."));
+    }
+    for (const item of items) {
+      const row = element("div", "cap" + (item.type === "chip" ? " out" : ""));
+      if (item.type === "line") {
+        row.append(element("span", "who", item.line.name || participants[item.line.speaker]?.name || "Participant"), element("span", "words", item.line.text));
+        if (isMyLine(item.line)) {
+          const remove = element("button", "remove", "Remove");
+          remove.type = "button";
+          remove.setAttribute("aria-label", `Remove line: ${item.line.text}`);
+          remove.disabled = finalized;
+          remove.onclick = () => removeLine(item.line.id, remove);
+          row.append(remove);
+        }
+      } else {
+        row.append(Views.chip(item.chip.category, () => openMarker(item.chip)));
+      }
+      box.append(row);
+    }
+    if (items.length > shownCaptions && !capFollow) newCount += items.length - shownCaptions;
+    shownCaptions = items.length;
+    if (capFollow) box.scrollTop = box.scrollHeight;
+    renderStageCaptions(items);
+    renderLive();
+  }
+  function renderStageCaptions(items) {
+    const stage = $("stage-captions");
+    stage.classList.toggle("hidden", !captionsOn);
+    if (!captionsOn) return;
+    stage.replaceChildren();
+    for (const item of items.filter(entry => entry.type === "line").slice(-2)) {
+      const row = element("p", "stage-cap");
+      row.append(element("span", "who", item.line.name || participants[item.line.speaker]?.name || "Participant"), element("span", "words", item.line.text));
+      stage.append(row);
+    }
+    if (!stage.children.length) stage.append(element("p", "stage-cap", "Approved lines from the meeting appear here."));
+  }
+  function renderLive() {
+    const button = $("live-button");
+    const behind = !capFollow;
+    button.classList.toggle("hidden", !behind);
+    $("live-count").classList.toggle("hidden", !behind || newCount === 0);
+    setText($("live-count"), newCount > 99 ? "99+ new" : `${newCount} new`);
+    button.setAttribute("aria-label", behind ? `Jump to latest, ${newCount} new` : "Jump to latest");
+  }
+  function goLive() {
+    if (panelView !== "agent") showPanel("agent");
+    capFollow = true; newCount = 0;
+    const box = $("captions");
+    box.scrollTop = box.scrollHeight;
+    renderLive();
+  }
+
+  // ------------------------------------------------------------ the side panel (one at a time)
+  const PANEL_TITLES = { agent: "Off The Record", insights: "What was kept out", explain: "How it decides", people: "People", info: "Meeting details" };
+  const PANEL_VIEWS = { agent: "panel-agent", insights: "view-insights", explain: "view-explain", people: "panel-people", info: "panel-info" };
+  const PANEL_ROOT = { agent: "agent", insights: "agent", explain: "agent", people: "people", info: "info" };
+  const PANEL_BUTTONS = { agent: "agent-button", people: "people-button", info: "info-button" };
+  function openMarker(chip) {
+    explainSel = chip.category;
+    explainItem = chip;
+    showPanel("explain");
+  }
+  function renderInsightsView() {
+    Views.renderInsights($("view-insights"), Object.assign({}, insights, {
+      labels: { approved: "In your notes" },
+    }));
+  }
+  function renderExplainView() {
+    Views.renderExplain($("view-explain"), {
+      selected: explainSel,
+      item: explainItem,
+      counts: insights.kept_out,
+      holdSeconds: insights.hold_seconds,
+    }, {
+      onSelect: key => { explainSel = key; explainItem = null; renderViews(true); },
+      // No `reveal` here: in consent mode the server never sends text that was kept out.
+    });
+  }
+  let viewSignature = "";
+  function renderViews(force) {
+    if (panelView !== "insights" && panelView !== "explain") { viewSignature = ""; return; }
+    // The server repeats unchanged status often; skip identical renders so focus and selection are not lost.
+    const signature = JSON.stringify([panelView, insights, explainSel, explainItem && explainItem.id]);
+    if (!force && signature === viewSignature) return;
+    viewSignature = signature;
+    if (panelView === "insights") renderInsightsView();
+    else renderExplainView();
+  }
+  function renderPanelButtons() {
+    for (const [name, id] of Object.entries(PANEL_BUTTONS)) {
+      const open = !!panelView && PANEL_ROOT[panelView] === name;
+      const button = $(id);
+      button.setAttribute("aria-expanded", String(open));
+      button.classList.toggle("on", open);
+    }
+  }
+  function showPanel(name) {
+    if (!panelView) panelLastFocus = document.activeElement;
+    panelView = name;
+    $("side-panel").classList.remove("hidden");
+    for (const [key, id] of Object.entries(PANEL_VIEWS)) $(id).classList.toggle("hidden", key !== name);
+    setText($("panel-title"), PANEL_TITLES[name]);
+    $("panel-back").classList.toggle("hidden", PANEL_ROOT[name] === name);
+    renderPanelButtons();
+    renderViews(true);
+    if (name === "agent" && capFollow) { const box = $("captions"); box.scrollTop = box.scrollHeight; }
+    $("panel-title").focus();
+  }
+  function closePanel() {
+    if (!panelView) return;
+    panelView = null;
+    $("side-panel").classList.add("hidden");
+    renderPanelButtons();
+    if (panelLastFocus && panelLastFocus.isConnected) panelLastFocus.focus();
+    panelLastFocus = null;
+  }
+  function togglePanel(name) {
+    if (panelView && PANEL_ROOT[panelView] === name) closePanel();
+    else showPanel(name);
+  }
+  function setCaptions(on) {
+    captionsOn = on;
+    const button = $("captions-button");
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+    const label = on ? "Turn off captions" : "Turn on captions";
+    button.setAttribute("aria-label", label);
+    button.title = label + " (c)";
+    renderCaptions();
+  }
+  function tickClock() {
+    setText($("meeting-clock"), new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
   }
 
   function renderNotesControl() {
     const button = $("notes-button");
+    const control = $("notes-control");
     const paused = sensitivePaused && !finalized;
-    button.classList.toggle("on", myNotesOn);
-    button.classList.toggle("paused", paused);
     button.disabled = finalized;
-    button.setAttribute("aria-pressed", String(myNotesOn));
-    const label = finalized ? "Notes finished" : myNotesOn ? "Turn off notes" : "Turn on notes";
-    setText($("notes-label"), label);
-    button.setAttribute("aria-label", label);
-    button.title = label;
-    const shortStatus = $("capture-status");
-    shortStatus.className = "capture-status" + (paused ? " paused" : myNotesOn ? " on" : "");
-    if (finalized) setText(shortStatus, "Your notes are finished.");
-    else if (paused) setText(shortStatus, "Your notes paused. Pending text was discarded.");
-    else if (myNotesOn) setText(shortStatus, "Your audio is being transcribed locally for notes.");
-    else setText(shortStatus, "Your notes are off. Others can still hear you.");
+    button.setAttribute("aria-checked", String(myNotesOn));
+    let action, line;
+    if (finalized) { action = "Notes finished"; line = "Notes are finished"; }
+    else if (paused) { action = "Turn on notes"; line = "Notes are paused for you"; }
+    else if (myNotesOn) { action = "Turn off notes"; line = "Notes are on for you"; }
+    else { action = "Turn on notes"; line = "Notes are off"; }
+    setText($("notes-label"), action);
+    setText($("capture-status"), line);
+    control.disabled = finalized;
+    control.classList.toggle("notes-on", myNotesOn);
+    control.classList.toggle("notes-off", !myNotesOn);
+    control.setAttribute("aria-pressed", String(myNotesOn));
+    control.setAttribute("aria-label", action + " for me");
+    control.title = action + " for me";
+    $("agent-dot").classList.toggle("hidden", !myNotesOn);
+    const agent = $("agent-button");
+    agent.setAttribute("aria-label", `Off The Record. ${line}.`);
+    agent.title = `Off The Record: ${line.toLowerCase()}`;
+  }
+
+  function renderRedactionCounts() {
+    const node = $("my-redaction-counts");
+    if (!redactionCounts) { node.classList.add("hidden"); return; }
+    const suppressed = Number(redactionCounts.suppressed) || 0;
+    const removed = Number(redactionCounts.removed) || 0;
+    setText(node, `For you: ${suppressed} kept out before the draft · ${removed} removed from the draft. No withheld words are shown.`);
+    node.classList.remove("hidden");
   }
 
   function renderFinalReport(data) {
@@ -326,18 +570,18 @@
     node.classList.remove("hidden");
   }
 
-  function renderDrawer() {
-    const paused = sensitivePaused && !finalized;
-    const subtitle = $("drawer-subtitle");
-    if (finalized) setText(subtitle, "Your notes are finished.");
-    else if (paused) setText(subtitle, "Notes are paused for you after a sensitive pause.");
-    else if (myNotesOn) setText(subtitle, "Notes are on — capture runs only for you.");
-    else setText(subtitle, "Notes are off.");
-    const explanation = $("note-state-explainer");
-    if (finalized) setText(explanation, "Your notes are finished. Your speech can no longer be added to the transcript.");
-    else if (paused) setText(explanation, "The local filter paused your notes and discarded the pending text. Nothing new is added until you restart notes yourself.");
-    else if (myNotesOn) setText(explanation, "The meeting host is transcribing your audio for notes.");
-    else setText(explanation, "Notes are off for you. The call still sends your audio to other people when your microphone is on.");
+  function renderPanelState() {
+    const list = $("people-list");
+    list.replaceChildren();
+    for (const [identity, p] of Object.entries(participants)) {
+      const on = notesOn(p);
+      const li = element("li");
+      li.append(element("span", "person-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
+      const status = element("span", "person-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
+      status.prepend(element("span", "dot"));
+      li.append(status);
+      list.append(li);
+    }
 
     const status = $("finalize-status");
     $("finalize-button").classList.toggle("hidden", finalized);
@@ -348,23 +592,23 @@
       $("delivery-email").value = deliveryEmail;
       $("email-opt-in").checked = emailOptedIn;
     }
+    renderRedactionCounts();
     if (!readyForFinal) {
       $("copy-result").className = "waiting";
       setText($("copy-result"), "");
     }
     if (readyForFinal) setText(status, "The final transcript is ready to copy.");
     else if (finalized) setText(status, finalizedCount != null && contributorCount != null
-      ? `Waiting for other contributors — ${finalizedCount} of ${contributorCount} finished.`
+      ? `Waiting for other contributors: ${finalizedCount} of ${contributorCount} finished.`
       : "Waiting for other contributors to finish their notes.");
-    else setText(status, "Finish your notes when you are ready. Finishing keeps notes off.");
+    else setText(status, "Review or remove lines above, then finish your notes. Finishing keeps notes off.");
   }
 
   function renderAll() {
     renderTiles();
+    renderLines();
     renderNotesControl();
-    renderDrawer();
-    renderKept();
-    renderViews(false);
+    renderPanelState();
   }
 
   function applyMe(data) {
@@ -375,17 +619,12 @@
     if (typeof data.ready_for_final === "boolean") readyForFinal = data.ready_for_final;
     if (typeof data.finalized_count === "number") finalizedCount = data.finalized_count;
     if (typeof data.contributor_count === "number") contributorCount = data.contributor_count;
+    if (Array.isArray(data.lines)) lines = indexLines(data.lines);
+    if (data.redaction_counts) redactionCounts = data.redaction_counts;
+    if (data.insights) insights = data.insights;
+    if (Array.isArray(data.kept_out)) setChips(data.kept_out);
     if (typeof data.delivery_email === "string") deliveryEmail = data.delivery_email;
     if (typeof data.email_opted_in === "boolean") emailOptedIn = data.email_opted_in;
-    if (Array.isArray(data.kept_out_events)) keptEvents = data.kept_out_events;
-    else if (Array.isArray(data.kept_out)) {
-      keptEvents = data.kept_out.map(item => ({ id: item.id, seq: item.seq, category: item.category,
-        family: item.trail && item.trail.family, before: item.trail && item.trail.before,
-        after: item.trail && item.trail.after, held_s: item.trail && item.trail.held_s,
-        action: item.trail && item.trail.family === "retro" ? "removed_after_approval" : "kept_out" }));
-    }
-    if (data.insights && typeof data.insights.hold_seconds === "number") holdSeconds = data.insights.hold_seconds;
-    if (data.insights) insightsData = data.insights;
     const mine = participants[me] || {};
     const nowPaused = mine.sensitive_paused === true;
     if (nowPaused && !sensitiveSeen) {
@@ -395,7 +634,9 @@
     if (!nowPaused) sensitiveSeen = false;
     sensitivePaused = nowPaused;
     myNotesOn = !finalized && !sensitivePaused && notesOn(mine);
+    $("transcript-status").classList.toggle("hidden", !transcriptUnavailable);
     renderAll();
+    renderViews();
   }
 
   async function refreshMe(immediate) {
@@ -405,7 +646,20 @@
       return;
     }
     meRefreshTimer = null;
-    try { applyMe(await api("/api/me?summary=1")); } catch (_) { }
+    try {
+      const data = await api("/api/me");
+      transcriptUnavailable = false;
+      applyMe(data);
+    } catch (_) {
+      transcriptUnavailable = true;
+      $("transcript-status").classList.remove("hidden");
+    }
+  }
+
+  function setChips(list) {
+    chips.clear();
+    for (const chip of list || []) if (chip && chip.id != null) chips.set(chip.id, chip);
+    renderCaptions();
   }
 
   function mergeProgress(message) {
@@ -414,7 +668,7 @@
     if (typeof message.ready_for_final === "boolean") { readyForFinal = message.ready_for_final; changed = true; }
     if (typeof message.finalized_count === "number") { finalizedCount = message.finalized_count; changed = true; }
     if (typeof message.contributor_count === "number") { contributorCount = message.contributor_count; changed = true; }
-    if (changed) { renderNotesControl(); renderDrawer(); }
+    if (changed) { renderNotesControl(); renderPanelState(); }
   }
 
   function connectStream() {
@@ -425,23 +679,34 @@
       if (message.type === "participants") applyMe({ participants: message.participants });
       else if (message.type === "service") setConnection(message.status, "warn");
       else if (message.type === "snapshot") {
-        myLines.clear();
-        for (const line of message.lines || []) myLines.set(line.id, line);
-        renderViews(false);
-      } else if (message.type === "transcript") {
-        for (const change of message.changes || []) {
-          if (change.kind === "committed" && change.line) myLines.set(change.line.id, change.line);
-          else if (change.kind === "removed") myLines.delete(change.id);
-        }
-        renderViews(false);
+        if (Array.isArray(message.lines)) lines = indexLines(message.lines);
+        if (Array.isArray(message.kept_out)) chips.clear(), message.kept_out.forEach(c => chips.set(c.id, c));
+        renderLines();
       } else if (message.type === "status") {
-        const { type: _t, ...fresh } = message;
-        insightsData = fresh;
-        renderViews(false);
+        const { type, ...rest } = message;
+        insights = rest;
+        renderViews();
+      } else if (message.type === "transcript") {
+        let changed = false;
+        for (const change of message.changes || []) {
+          if (change.kind === "committed" && change.line) {
+            lines.set(change.line.id, change.line);
+            changed = true;
+          }
+          if (change.kind === "removed" && lines.delete(change.id)) changed = true;
+          if (change.kind === "kept_out" && change.id != null) {
+            // Category key and generic trail only. The server never sends the text that was kept out.
+            chips.set(change.id, { id: change.id, category: change.category, seq: change.seq, trail: change.trail });
+            changed = true;
+          }
+        }
+        if (changed) renderLines();
+      } else if (message.type === "redaction_counts" && message.redaction_counts) {
+        redactionCounts = message.redaction_counts;
+        renderRedactionCounts();
       }
-      // The compact meeting view does not render interim transcript events.
       mergeProgress(message);
-      refreshMe(message.type === "status" || message.type === "transcript");
+      refreshMe(false);
     };
     eventSource.onerror = () => setConnection("Reconnecting…", "warn");
     eventSource.onopen = () => setConnection("Live · local room", "online");
@@ -452,12 +717,13 @@
     const button = $("mic-button");
     button.classList.toggle("muted-on", isMuted);
     button.setAttribute("aria-pressed", String(!isMuted));
-    button.querySelector(".icon-mic").classList.toggle("hidden", isMuted);
-    button.querySelector(".icon-mic-off").classList.toggle("hidden", !isMuted);
+    const label = isMuted ? "Turn on microphone" : "Turn off microphone";
+    button.setAttribute("aria-label", label);
+    button.title = label;
     setText($("mic-label"), isMuted ? "Unmute" : "Mute");
   }
 
-  // ------------------------------------------------------------ devices, level meter, notes-engine status
+  // ------------------------------------------------------------ devices, level meters, notes-engine status
   // Camera and microphone belong to the call. They are separate from notes: the camera is never transcribed or
   // sent to the notes pipeline, and turning notes off does not mute the microphone or switch the camera off.
   const DEV_STORE = "otr.devices";
@@ -473,6 +739,7 @@
     unsupported: "The level meter is not available in this browser",
     idle: "",
   };
+  const PALETTES = { light: ["--blue", "--line"], call: ["--call-active", "--call-ink-2"], panel: ["--p-blue", "--p-line"] };
   function loadDevPrefs() {
     try { const v = JSON.parse(sessionStorage.getItem(DEV_STORE) || "{}"); return v && typeof v === "object" ? v : {}; }
     catch (_) { return {}; }
@@ -509,10 +776,10 @@
   function ctx2d(canvas) {
     try { return canvas && canvas.getContext ? canvas.getContext("2d") : null; } catch (_) { return null; }
   }
-  function drawWave(canvas, values) {
+  function drawWave(canvas, values, palette) {
     const c = ctx2d(canvas);
     if (!c) return;
-    const on = cssVar("--blue", "#1a73e8"), off = cssVar("--outline", "#dadce0");
+    const on = cssVar(PALETTES[palette][0], "#1a73e8"), off = cssVar(PALETTES[palette][1], "#9aa0a6");
     const w = canvas.width, h = canvas.height, n = values.length, gap = 2;
     const bw = Math.max(1, Math.floor((w - gap * (n - 1)) / n));
     c.clearRect(0, 0, w, h);
@@ -522,7 +789,18 @@
       c.fillRect(i * (bw + gap), Math.round((h - bh) / 2), bw, bh);
     });
   }
-  // Web Audio level meter over a MediaStream. targets() returns the canvases to draw into.
+  function drawStrip(canvas, level, palette) {
+    const c = ctx2d(canvas);
+    if (!c) return;
+    const on = cssVar(PALETTES[palette][0], "#1a73e8"), off = cssVar(PALETTES[palette][1], "#9aa0a6");
+    const w = canvas.width, h = canvas.height, gap = 2, bw = Math.max(1, Math.floor((w - gap * (BARS - 1)) / BARS));
+    const clamped = Math.max(0, Math.min(1, level));
+    const lit = Math.round(clamped * BARS);
+    c.clearRect(0, 0, w, h);
+    for (let i = 0; i < BARS; i++) { c.fillStyle = i < lit ? on : off; c.fillRect(i * (bw + gap), 0, bw, h); }
+    canvas.dataset.level = clamped.toFixed(2);
+  }
+  // Web Audio level meter over a MediaStream. targets() returns [[canvas, palette], ...] to draw into.
   function createMeter(targets, onState) {
     let audio = null, analyser = null, samples = null, timer = null, track = null, lastSound = 0;
     const m = { state: "idle", rms: 0, soundSince: 0 };
@@ -549,7 +827,7 @@
         else if (m.state === "sound" && now - lastSound > HOLD_MS) set("listening");
       }
       m.rms = rms;
-      for (const canvas of targets()) { drawWave(canvas, values); canvas.dataset.level = rms.toFixed(3); }
+      for (const [canvas, palette] of targets()) { drawWave(canvas, values, palette); canvas.dataset.level = rms.toFixed(3); }
     }
     m.attach = stream => {
       m.stop();
@@ -573,7 +851,7 @@
       audio = analyser = track = null;
       m.soundSince = 0; m.rms = 0;
       set("idle");
-      for (const canvas of targets()) drawWave(canvas, new Array(BARS).fill(0));
+      for (const [canvas, palette] of targets()) drawWave(canvas, new Array(BARS).fill(0), palette);
     };
     return m;
   }
@@ -596,7 +874,7 @@
   }
   function stopTracks(stream) { if (stream) for (const t of stream.getTracks()) t.stop(); }
 
-  // ---- device check before joining (create-meeting and ask-to-join screens)
+  // ---- lobby device check
   const check = { audio: null, video: null, meter: null, busy: false };
   function renderCheckStatus(state) {
     const node = $("check-mic-status");
@@ -663,7 +941,7 @@
       if (!check.video) { $("check-camera-on").checked = false; devPrefs.cameraOn = false; }
       $("device-check-live").classList.remove("hidden");
       if (check.audio) {
-        if (!check.meter) check.meter = createMeter(() => [$("check-meter")], renderCheckStatus);
+        if (!check.meter) check.meter = createMeter(() => [[$("check-meter"), "light"]], renderCheckStatus);
         check.meter.attach(check.audio);
       } else renderCheckStatus("idle");
       await refreshCheckLists();
@@ -688,8 +966,15 @@
     if (mediaSupport() && !check.audio) setText($("check-error"), mediaProblem(null, "microphone"));
   }
 
-  // ---- in-call device menu (opened from the Devices button in the control bar)
-  const localMeter = createMeter(() => (deviceMenuOpen() ? [$("menu-meter")] : []), state => {
+  // ---- in-call device menu (Meet-style chevrons beside the mic and camera buttons)
+  const localMeter = createMeter(() => {
+    const out = [];
+    const tile = me && tileEls[me] && tileEls[me].querySelector(".tile-level");
+    if (tile) out.push([tile, "call"]);
+    if (deviceMenuOpen()) out.push([$("menu-meter"), "panel"]);
+    if (panelView === "agent" && !$("engine").classList.contains("hidden")) out.push([$("engine-browser-meter"), "panel"]);
+    return out;
+  }, state => {
     setText($("menu-mic-status"), METER_TEXT[state] || "");
     $("menu-mic-status").setAttribute("data-state", state);
     renderDiagnostics();
@@ -700,7 +985,7 @@
     return t && typeof MediaStream !== "undefined" ? new MediaStream([t]) : null;
   }
   function rebindLocalMeter() {
-    const stream = room ? localMicStream() : null;
+    const stream = localMicStream();
     if (stream && room.localParticipant.isMicrophoneEnabled) localMeter.attach(stream);
     else localMeter.stop();
   }
@@ -745,21 +1030,22 @@
     } catch (error) { setText($("menu-error"), mediaProblem(error, WHAT[kind])); }
     await renderDeviceMenu();
   }
-  function openDeviceMenu() {
+  function openDeviceMenu(group) {
     $("device-menu").classList.remove("hidden");
-    $("devices-button").setAttribute("aria-expanded", "true");
+    for (const id of ["mic-chevron", "camera-chevron"]) $(id).setAttribute("aria-expanded", "true");
     setText($("menu-error"), "");
     rebindLocalMeter();
     renderDeviceMenu().then(() => {
-      const first = $("menu-mic").querySelector("button");
+      const first = $(group || "menu-mic").querySelector("button");
       if (first) first.focus();
     });
   }
   function closeDeviceMenu() {
     if (!deviceMenuOpen()) return;
     $("device-menu").classList.add("hidden");
-    $("devices-button").setAttribute("aria-expanded", "false");
+    for (const id of ["mic-chevron", "camera-chevron"]) $(id).setAttribute("aria-expanded", "false");
   }
+  function toggleDeviceMenu(group) { if (deviceMenuOpen()) closeDeviceMenu(); else openDeviceMenu(group); }
   async function testSpeaker(statusId) {
     const AC = window.AudioContext || window.webkitAudioContext;
     const out = $(statusId);
@@ -816,7 +1102,7 @@
     navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
   }
 
-  // ---- notes engine status (text-free, from GET /api/diagnostics; hidden when the server has no such endpoint)
+  // ---- notes engine status (text-free, from GET /api/diagnostics)
   let diagTimer = null, diagBusy = false, diagGone = false, diag = null;
   function engineModelRows(models) {
     const rows = [];
@@ -851,6 +1137,7 @@
     const mine = diag.me || {};
     setIfChanged($("engine-input"), engineInputText(mine));
     $("engine-input").setAttribute("data-state", mine.state || "");
+    drawStrip($("engine-server-meter"), typeof mine.audio_level === "number" ? mine.audio_level : 0, "panel");
     // The browser hears sound but the notes engine does not: say so in plain words.
     const hearsSound = localMeter.state === "sound" && localMeter.soundSince && performance.now() - localMeter.soundSince > SILENCE_MS;
     const stale = mine.state === "waiting_for_audio" || mine.last_frame_age_s == null || mine.last_frame_age_s > 5;
@@ -872,122 +1159,20 @@
   function startDiagnostics() {
     stopDiagnostics();
     diagGone = false;
-    diagTimer = setInterval(pollDiagnostics, 1000);
+    diagTimer = setInterval(pollDiagnostics, 500);
     pollDiagnostics();
   }
   function stopDiagnostics() { clearInterval(diagTimer); diagTimer = null; }
-
-  // ---- kept-out placeholders: the owner's own kept-out or removed lines, never their words
-  let keptEvents = [], holdSeconds = 0;
-  const keptOpen = new Set();
-  function clock(t) {
-    const total = Math.max(0, Math.round(Number(t) || 0)), pad = n => (n < 10 ? "0" : "") + n;
-    return pad(Math.floor(total / 60)) + ":" + pad(total % 60);
+  function renderAudioButton() {
+    $("audio-button").classList.toggle("hidden", !(room && room.canPlaybackAudio === false));
   }
-  function keptLabel(category) {
-    const views = window.OTRViews;
-    return views ? views.shortLabel(category) : String(category || "Other");
-  }
-  function keptFacts(item) {
-    const views = window.OTRViews;
-    if (views) return views.explainFacts({ category: item.category, trail: { family: item.family, before: item.before, after: item.after, held_s: item.held_s } }, holdSeconds);
-    return [["Why", "This line was kept out of your notes."]];
-  }
-  function keptItem(item, index, prefix) {
-    const key = String(item.id || index);
-    const open = keptOpen.has(key);
-    const li = element("li", "kept-item");
-    li.setAttribute("data-category", item.category);
-    const toggle = element("button", "kept-toggle");
-    toggle.type = "button";
-    toggle.setAttribute("data-key", key);
-    toggle.setAttribute("aria-expanded", String(open));
-    const detailId = `${prefix}-detail-${index}`;
-    if (open) toggle.setAttribute("aria-controls", detailId);
-    toggle.append(element("span", null, `${item.action === "removed_after_approval" ? "Removed" : "Kept out"}, ${keptLabel(item.category)}`),
-      element("span", "kept-when", typeof item.t === "number" ? clock(item.t) : ""));
-    toggle.onclick = () => {
-      if (keptOpen.has(key)) keptOpen.delete(key); else keptOpen.add(key);
-      renderKept();
-      renderRealtime();
-      const again = $(prefix === "rt" ? "rt-list" : "kept-out-list").querySelector(`button[data-key="${key}"]`);
-      if (again) again.focus();
-    };
-    li.append(toggle);
-    if (open) {
-      const dl = element("dl", "kept-detail");
-      dl.id = detailId;
-      for (const [name, value] of keptFacts(item)) {
-        const group = element("div");
-        group.append(element("dt", null, name), element("dd", null, value));
-        dl.append(group);
-      }
-      li.append(dl);
-    }
-    return li;
-  }
-  function renderKept() {
-    const list = $("kept-out-list");
-    $("kept-out-empty").classList.toggle("hidden", keptEvents.length > 0);
-    list.replaceChildren();
-    keptEvents.forEach((item, index) => list.append(keptItem(item, index, "kept")));
-  }
-
-  // ---- the Realtime, Insights and How it decides views (shared views.js; only the owner's own data, never kept-out text)
-  const myLines = new Map();
-  let insightsData = null, viewsTab = "realtime", explainSel = null, viewSignature = "";
-  function viewsOpen() { return !$("views-panel").classList.contains("hidden"); }
-  function renderRealtime() {
-    if (!viewsOpen()) return;
-    const rows = [...myLines.values()].map(line => ({ type: "line", seq: line.seq || 0, line }))
-      .concat(keptEvents.map(item => ({ type: "kept", seq: item.seq || 0, item })));
-    rows.sort((x, y) => x.seq - y.seq);
-    $("rt-empty").classList.toggle("hidden", rows.length > 0);
-    const list = $("rt-list");
-    list.replaceChildren();
-    rows.forEach((row, index) => {
-      if (row.type === "kept") { list.append(keptItem(row.item, index, "rt")); return; }
-      const li = element("li", "rt-line");
-      li.append(element("b", null, row.line.name || "You"), document.createTextNode(row.line.text || ""));
-      list.append(li);
-    });
-  }
-  function renderViews(force) {
-    if (!viewsOpen()) return;
-    const views = window.OTRViews;
-    for (const name of ["realtime", "insights", "explain"]) {
-      const on = viewsTab === name;
-      $("vp-" + name).classList.toggle("hidden", !on);
-      $("vtab-" + name).classList.toggle("on", on);
-      $("vtab-" + name).setAttribute("aria-selected", String(on));
-    }
-    if (viewsTab === "realtime") { renderRealtime(); return; }
-    if (!views || !insightsData) return;
-    const signature = JSON.stringify([viewsTab, insightsData, explainSel]);
-    if (!force && signature === viewSignature) return;
-    viewSignature = signature;
-    if (viewsTab === "insights") views.renderInsights($("vp-insights"), Object.assign({}, insightsData, { labels: { approved: "In your notes" } }));
-    else views.renderExplain($("vp-explain"), { selected: explainSel, item: null, counts: insightsData.kept_out, holdSeconds: insightsData.hold_seconds },
-      { onSelect: key => { explainSel = key; renderViews(true); } });
-  }
-  function openViews() {
-    $("views-panel").classList.remove("hidden");
-    $("views-button").setAttribute("aria-expanded", "true");
-    renderViews(true);
-    $("views-close").focus();
-  }
-  function closeViews() {
-    $("views-panel").classList.add("hidden");
-    $("views-button").setAttribute("aria-expanded", "false");
-    $("views-button").focus();
-  }
-
 
   async function join(accessOverride = null, configOverride = null) {
     if (joinInProgress) return false;
     joinInProgress = true;
     const button = $("join-button");
     setText($("join-error"), "");
+    setText($("share-error"), "");
     const name = $("name").value.trim();
     if (!accessOverride && !name) {
       setText($("join-error"), "Enter a display name");
@@ -1000,12 +1185,11 @@
     try {
       const config = configOverride || await api("/api/config");
       const access = accessOverride || await post("/api/join", { name });
+      if (!accessOverride) rememberDetails(name, $("host-email").value.trim() || $("guest-email").value.trim());
       me = access.identity;
       stopDeviceCheck();
-      // Close-talk capture: no automatic gain (it lifts room noise), keep noise suppression and echo cancellation.
-      const roomOptions = { adaptiveStream: true, dynacast: true,
-        audioCaptureDefaults: { autoGainControl: false, noiseSuppression: true, echoCancellation: true } };
-      if (devPrefs.audioinput) roomOptions.audioCaptureDefaults = Object.assign({}, roomOptions.audioCaptureDefaults, { deviceId: devPrefs.audioinput });
+      const roomOptions = { adaptiveStream: true, dynacast: true };
+      if (devPrefs.audioinput) roomOptions.audioCaptureDefaults = { deviceId: devPrefs.audioinput };
       if (devPrefs.videoinput) roomOptions.videoCaptureDefaults = { deviceId: devPrefs.videoinput };
       if (devPrefs.audiooutput && supportsSinkId()) roomOptions.audioOutput = { deviceId: devPrefs.audiooutput };
       room = new LiveKit.Room(roomOptions);
@@ -1018,7 +1202,10 @@
         if (track.kind === LiveKit.Track.Kind.Audio) {
           const media = track.attach();
           media.dataset.livekitAudio = "true";
+          media.muted = false;
+          if (participant) media.dataset.participant = participant.identity;
           document.body.append(media);
+          renderAudioButton();
           if (participant) muted.set(participant.identity, publication.isMuted);
           updateTileFlags();
         } else if (participant && publication.source === LiveKit.Track.Source.Camera) {
@@ -1087,26 +1274,36 @@
         updateTileFlags();
       });
       room.on(LiveKit.RoomEvent.Disconnected, () => { setConnection("Disconnected", "off"); stopDiagnostics(); localMeter.stop(); });
+      room.on(LiveKit.RoomEvent.AudioPlaybackStatusChanged, renderAudioButton);
       room.on(LiveKit.RoomEvent.ActiveDeviceChanged, kind => { if (kind === "audioinput") rebindLocalMeter(); });
       room.on(LiveKit.RoomEvent.MediaDevicesError, error =>
         showToast(escapeHtml(mediaProblem(error, "microphone or camera")), "warn"));
-      await room.connect(config.url, access.token);
-      for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
+      try { await room.connect(config.url, access.token); }
+      catch (_) {
+        throw new Error("Could not connect to the call server. Check that LiveKit is running and reachable from this browser, then try again.");
+      }
+      if (room.remoteParticipants) {
+        for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
+      }
       setText($("room-chip"), `Room ${config.room}`);
       $("room-chip").classList.remove("hidden");
       for (const screen of ENTRY_SCREENS) $(screen).classList.add("hidden");
       $("meeting").classList.remove("hidden");
       $("control-bar").classList.remove("hidden");
-      setText($("meeting-room-name"), `Meeting ${config.room}`);
+      setText($("meeting-room-name"), roomId || config.room);
+      tickClock();
+      clearInterval(clockTimer);
+      clockTimer = setInterval(tickClock, 30000);
       startLobby();
+      bindDeviceChange();
+      renderAudioButton();
+      startDiagnostics();
       startRoomStatus();
       renderMicButton();
       renderCameraButton();
       setConnection("Live · local room", "online");
-      api("/api/me?summary=1").then(applyMe).catch(() => {});
+      refreshMe(true);
       connectStream();
-      bindDeviceChange();
-      startDiagnostics();
       room.localParticipant.setMicrophoneEnabled(true).then(() => {
         renderMicButton();
         updateTileFlags();
@@ -1117,7 +1314,7 @@
         showToast(`Microphone is off. ${escapeHtml(mediaProblem(error, "microphone"))}`, "warn");
       });
       if (devPrefs.cameraOn) {
-        room.localParticipant.setCameraEnabled(true).then(() => renderCameraButton()).catch(error => {
+        room.localParticipant.setCameraEnabled(true).then(renderCameraButton).catch(error => {
           renderCameraButton();
           showToast(`Camera is off. ${escapeHtml(mediaProblem(error, "camera"))}`, "warn");
         });
@@ -1125,6 +1322,7 @@
       return true;
     } catch (error) {
       setText($("join-error"), accessOverride ? "Could not connect to the call." : (error.message || "Could not connect to the meeting."));
+      setText($("share-error"), error.message || "Could not connect to the meeting.");
       if (accessOverride) showToast("Could not join the meeting. Try again or ask the host to check the connection.", "err");
       setConnection("Not connected", "off");
       if (room) { try { await room.disconnect(); } catch (_) { } room = null; }
@@ -1142,15 +1340,33 @@
     if (finalized) return;
     const button = $("notes-button");
     button.disabled = true;
+    $("notes-control").disabled = true;
     try {
       const target = sensitivePaused ? true : !myNotesOn;
       await post("/api/consent", { recording: target });
+      myNotesOn = target;
+      renderAll();
       announce(target ? "Notes on." : "Notes stopped.");
       await refreshMe(true);
+      showPanel("agent");
     } catch (error) {
       showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
     } finally {
       button.disabled = false;
+      $("notes-control").disabled = finalized;
+    }
+  }
+
+  async function removeLine(id, removeButton) {
+    removeButton.disabled = true;
+    try {
+      await post("/api/notes/remove", { id });
+      lines.delete(id);
+      renderLines();
+      announce("Line removed.");
+    } catch (error) {
+      showToast(`<strong>Couldn't remove the line.</strong> ${escapeHtml(error.message)}`, "err");
+      removeButton.disabled = false;
     }
   }
 
@@ -1259,7 +1475,7 @@
       deliveryEmail = saved.email;
       emailOptedIn = saved.enabled;
       emailChoiceDirty = false;
-      renderDrawer();
+      renderPanelState();
       result.classList.add("ok");
       setText(result, enabled ? "Saved. The host can include this address in the final email draft." : "Saved. Your address will not be in the host's draft.");
     } catch (error) {
@@ -1276,12 +1492,14 @@
   }
 
   async function showEndDialog() {
-    if (!$("notes-drawer").hidden) closeDrawer();
+    closePanel();
+    endSessionExpired = false;
     endDialogLastFocus = document.activeElement;
     $("end-dialog").classList.remove("hidden");
     $("end-backdrop").classList.remove("hidden");
     $("end-email-review").classList.add("hidden");
     $("end-without-email").classList.remove("hidden");
+    setText($("end-without-email"), "End without email");
     $("end-confirm").classList.add("hidden");
     setText($("end-summary"), "Checking whether the final transcript is ready…");
     setText($("end-error"), "");
@@ -1324,6 +1542,11 @@
       $("end-confirm").classList.remove("hidden");
     } catch (error) {
       if (error.status === 409) setText($("end-summary"), "The final transcript is still waiting for contributors to finish. You can keep the meeting open or end without email.");
+      else if (error.status === 401 || error.status === 404) {
+        endSessionExpired = true;
+        setText($("end-summary"), "This meeting's server session expired, so the email draft is unavailable. You can leave this call, but we can't end it for everyone from here.");
+        setText($("end-without-email"), "Leave this call");
+      }
       else {
         setText($("end-summary"), "Could not prepare an email draft.");
         setText($("end-error"), error.message);
@@ -1333,48 +1556,38 @@
 
   async function endMeeting() {
     try {
-      if (role === "host" && roomId) await post(`/api/meetings/${encodeURIComponent(roomId)}/end`, {});
-      else await post("/api/leave", {});
+      if (!endSessionExpired) {
+        if (role === "host" && roomId) await post(`/api/meetings/${encodeURIComponent(roomId)}/end`, {});
+        else await post("/api/leave", {});
+      }
+    } catch (error) {
+      if (error.status === 401 || error.status === 404) {
+        endSessionExpired = true;
+      } else {
+        if (role === "host") setText($("end-error"), `Could not end meeting: ${error.message}`);
+        else showToast(`Could not leave: ${escapeHtml(error.message)}`, "err");
+        return;
+      }
+    }
+    try {
       clearInterval(lobbyTimer);
       clearInterval(waitingTimer);
       clearInterval(roomTimer);
       stopDiagnostics();
+      clearTimeout(meRefreshTimer);
+      clearInterval(clockTimer);
       localMeter.stop();
       closeDeviceMenu();
       if (eventSource) eventSource.close();
       if (room) await room.disconnect();
+    } finally {
       location.href = "/";
-    } catch (error) {
-      if (role === "host") setText($("end-error"), `Could not end meeting: ${error.message}`);
-      else showToast(`Could not leave: ${escapeHtml(error.message)}`, "err");
     }
   }
 
-  function openDrawer() {
-    const drawer = $("notes-drawer");
-    drawer.hidden = false;
-    document.body.classList.add("drawer-open");
-    $("drawer-backdrop").classList.remove("hidden");
-    requestAnimationFrame(() => drawer.classList.add("open"));
-    $("drawer-button").setAttribute("aria-expanded", "true");
-    drawerLastFocus = document.activeElement;
-    $("drawer-close").focus();
-  }
-
-  function closeDrawer() {
-    const drawer = $("notes-drawer");
-    drawer.classList.remove("open");
-    $("drawer-button").setAttribute("aria-expanded", "false");
-    document.body.classList.remove("drawer-open");
-    setTimeout(() => {
-      drawer.hidden = true;
-      $("drawer-backdrop").classList.add("hidden");
-    }, 240);
-    if (drawerLastFocus && drawerLastFocus.isConnected) drawerLastFocus.focus();
-    drawerLastFocus = null;
-  }
-
   $("join-button").onclick = () => join();
+  restoreDetails();
+  for (const button of document.querySelectorAll(".forget-details")) button.onclick = forgetDetails;
   $("name").onkeydown = event => { if (event.key === "Enter") join(); };
   $("create-button").onclick = () => showEntry("host-setup");
   for (const back of document.querySelectorAll("[data-back-home]")) {
@@ -1390,18 +1603,23 @@
   $("host-create-button").onclick = async () => {
     const button = $("host-create-button");
     button.disabled = true;
-    setText(button, "Creating…");
+    setText(button, "Starting...");
     setText($("host-error"), "");
     try {
       const access = await post("/api/meetings", {name: $("host-name").value.trim(), email: $("host-email").value.trim()});
+      rememberDetails($("host-name").value.trim(), $("host-email").value.trim());
       roomId = access.room_id;
       role = "host";
       joinAccess = access;
       history.replaceState(null, "", `/m/${encodeURIComponent(roomId)}`);
       $("share-link").value = access.join_url;
       showEntry("share-screen");
-    } catch (error) { setText($("host-error"), error.message); }
-    finally { button.disabled = false; setText(button, "Create meeting"); }
+    } catch (error) {
+      setText($("host-error"), error.network || [502, 503, 504].includes(error.status)
+        ? "Meeting host is temporarily unavailable. Try again in a moment."
+        : error.message);
+    }
+    finally { button.disabled = false; setText(button, "Start meeting"); }
   };
   $("copy-link-button").onclick = async () => {
     try { await navigator.clipboard.writeText($("share-link").value); setText($("copy-link-button"), "Copied"); }
@@ -1418,6 +1636,7 @@
     try {
       await post(`/api/meetings/${encodeURIComponent(roomId)}/request`,
         {name: $("guest-name").value.trim(), email: $("guest-email").value.trim()});
+      rememberDetails($("guest-name").value.trim(), $("guest-email").value.trim());
       setText($("waiting-room-label"), `Meeting ${roomId}`);
       showEntry("waiting-screen");
       setWaitingState("waiting");
@@ -1443,10 +1662,11 @@
   $("mic-button").onclick = async () => {
     if (!room) return;
     const enabled = room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(!enabled);
+    try { await room.localParticipant.setMicrophoneEnabled(!enabled); }
+    catch (error) { showToast(`Microphone is off. ${escapeHtml(mediaProblem(error, "microphone"))}`, "warn"); }
+    rebindLocalMeter();
     renderMicButton();
     updateTileFlags();
-    rebindLocalMeter();
     announce(enabled ? "Microphone muted." : "Microphone on.");
   };
   $("camera-button").onclick = async () => {
@@ -1459,8 +1679,6 @@
       const publication = room.localParticipant.getTrackPublication(LiveKit.Track.Source.Camera);
       setVideoTrack(me, publication && (publication.videoTrack || publication.track));
       renderCameraButton();
-      devPrefs.cameraOn = !enabled;
-      saveDevPrefs();
       announce(enabled ? "Camera off." : "Camera on.");
     } catch (error) {
       renderCameraButton();
@@ -1472,25 +1690,33 @@
   $("check-cam").onchange = () => { devPrefs.videoinput = $("check-cam").value; saveDevPrefs(); startDeviceCheck("videoinput"); };
   $("check-spk").onchange = () => { devPrefs.audiooutput = $("check-spk").value; saveDevPrefs(); };
   $("check-camera-on").onchange = () => { devPrefs.cameraOn = $("check-camera-on").checked; saveDevPrefs(); };
-  $("check-test-speaker").onclick = () => testSpeaker("check-speaker-status");
-  $("menu-test-speaker").onclick = () => testSpeaker("menu-speaker-status");
-  $("devices-button").onclick = () => { if (deviceMenuOpen()) closeDeviceMenu(); else openDeviceMenu(); };
+  $("check-test-speaker").onclick = () => testSpeaker("check-error");
+  $("mic-chevron").onclick = () => toggleDeviceMenu("menu-mic");
+  $("camera-chevron").onclick = () => toggleDeviceMenu("menu-cam");
+  $("test-speaker-button").onclick = () => testSpeaker("menu-error");
+  $("audio-button").onclick = async () => { try { await room.startAudio(); } catch (_) { } renderAudioButton(); };
   document.addEventListener("click", event => {
     if (!deviceMenuOpen()) return;
-    if ($("device-menu").contains(event.target) || $("devices-button").contains(event.target)) return;
-    closeDeviceMenu();
+    const inside = n => n && (n === event.target || n.contains(event.target));
+    if (!inside($("device-menu")) && !inside($("mic-chevron")) && !inside($("camera-chevron"))) closeDeviceMenu();
   });
-  $("popout-button").onclick = () => window.open("/insights", "otr-insights", "popup=yes,width=520,height=760");
-  $("views-button").onclick = () => { if (viewsOpen()) closeViews(); else openViews(); };
-  $("views-close").onclick = closeViews;
-  for (const name of ["realtime", "insights", "explain"]) $("vtab-" + name).onclick = () => { viewsTab = name; renderViews(true); };
   $("notes-button").onclick = toggleNotes;
-  $("drawer-button").onclick = () => {
-    if ($("notes-drawer").hidden) openDrawer();
-    else closeDrawer();
-  };
-  $("drawer-close").onclick = closeDrawer;
-  $("drawer-backdrop").onclick = closeDrawer;
+  $("notes-control").onclick = toggleNotes;
+  $("live-button").onclick = goLive;
+  $("captions-button").onclick = () => setCaptions(!captionsOn);
+  $("captions").addEventListener("scroll", () => {
+    const box = $("captions");
+    capFollow = box.scrollHeight - box.scrollTop - box.clientHeight < 12;
+    if (capFollow) newCount = 0;
+    renderLive();
+  });
+  $("agent-button").onclick = () => togglePanel("agent");
+  $("people-button").onclick = () => togglePanel("people");
+  $("info-button").onclick = () => togglePanel("info");
+  $("panel-close").onclick = closePanel;
+  $("panel-back").onclick = () => showPanel("agent");
+  $("link-insights").onclick = () => showPanel("insights");
+  $("link-explain").onclick = () => showPanel("explain");
   $("finalize-button").onclick = finalize;
   $("copy-button").onclick = copyFinal;
   $("report-button").onclick = viewFinalReport;
@@ -1523,8 +1749,6 @@
     else await endMeeting();
   };
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && deviceMenuOpen()) { closeDeviceMenu(); $("devices-button").focus(); return; }
-    if (event.key === "Escape" && viewsOpen() && $("notes-drawer").hidden && $("end-dialog").classList.contains("hidden")) { closeViews(); return; }
     if (!$("end-dialog").classList.contains("hidden")) {
       if (event.key === "Escape") { closeEndDialog(); return; }
       if (event.key === "Tab") {
@@ -1538,17 +1762,15 @@
       }
       return;
     }
-    const drawer = $("notes-drawer");
-    if (event.key === "Escape" && !drawer.hidden) { closeDrawer(); return; }
-    if (!drawer.hidden && event.key === "Tab") {
-      const nodes = [...drawer.querySelectorAll(FOCUSABLE)]
-        .filter(node => node.offsetParent !== null || node === document.activeElement);
-      if (!nodes.length) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    const tag = event.target && event.target.tagName;
+    if (!["INPUT", "TEXTAREA", "SELECT"].includes(tag) && !event.ctrlKey && !event.metaKey && !event.altKey
+        && !$("meeting").classList.contains("hidden")) {
+      const key = String(event.key).toLowerCase();
+      if (key === "l") goLive();
+      else if (key === "c") setCaptions(!captionsOn);
     }
+    if (event.key === "Escape" && deviceMenuOpen()) { const from = $("mic-chevron"); closeDeviceMenu(); from.focus(); return; }
+    if (event.key === "Escape" && panelView) closePanel();
   });
   const initialRoom = location.pathname.match(/^\/m\/([^/]+)\/?$/);
   if (initialRoom) {

@@ -325,16 +325,42 @@ class LiveKitSource:
                 raise
         start = time.monotonic()
         room = None
+        room_connected = False
         attempt = 0
         try:
             while True:
                 room = rtc.Room()
+                room_connected = False
                 self._room = room
                 self._closed = False
                 self._attach(room, rtc, start)
                 self.state = "connecting" if attempt == 0 else "reconnecting"
                 try:
-                    await room.connect(self.url, self._token(), options=rtc.RoomOptions(auto_subscribe=False))
+                    # LiveKit's native connect callback must be followed by the SDK's
+                    # ReadyForRoomEventRequest. Cancelling Room.connect() between those
+                    # steps leaves the FFI server waiting and can panic the process.
+                    # Let the SDK finish its handshake before a cancelled session
+                    # disconnects the room.
+                    connect_task = asyncio.create_task(
+                        room.connect(self.url, self._token(), options=rtc.RoomOptions(auto_subscribe=False)))
+                    try:
+                        await asyncio.shield(connect_task)
+                    except asyncio.CancelledError:
+                        while not connect_task.done():
+                            try:
+                                await asyncio.shield(connect_task)
+                            except asyncio.CancelledError:
+                                continue
+                            except Exception:
+                                break
+                        try:
+                            connect_task.result()
+                        except Exception:
+                            pass
+                        else:
+                            room_connected = True
+                        raise
+                    room_connected = True
                 except Exception as e:  # noqa: BLE001
                     self.error = f"connect: {type(e).__name__}"
                     print(f"[livekit] connect failed ({type(e).__name__}); retrying", flush=True)
@@ -381,7 +407,7 @@ class LiveKitSource:
             self._stats.clear()
             self._queue = asyncio.Queue()
             self._room = None
-            if room is not None:
+            if room is not None and room_connected:
                 await room.disconnect()
 
 

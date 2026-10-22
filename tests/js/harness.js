@@ -236,7 +236,7 @@ function makeEnv(html, opts) {
     async switchActiveDevice(kind, id) { this.switched = [kind, id]; return true; }
     on(ev, fn) { this.handlers[ev] = fn; return this; }
     async connect(url, token) { this.url = url; this.token = token; }
-    async disconnect() {}
+    async disconnect() { this.disconnected = true; }
     async startAudio() {}
   }
   const LivekitClient = {
@@ -253,11 +253,14 @@ function makeEnv(html, opts) {
     const key = method + " " + url;
     let res = routes[key];
     if (typeof res === "function") res = res(body);
+    if (res instanceof Error) throw res;
     if (res === undefined) res = { status: 404, json: { detail: "not found: " + key } };
-    if (!("json" in res)) res = { status: 200, json: res };   // routes may return {status, json} or a bare body
-    return { ok: res.status < 400, status: res.status, json: async () => res.json, text: async () => JSON.stringify(res.json) };
+    if (!("json" in res) && !("rawHtml" in res)) res = { status: 200, json: res };   // routes may return {status, json} or a bare body
+    return { ok: res.status < 400, status: res.status,
+      json: async () => { if (res.rawHtml) throw new SyntaxError("Unexpected token '<'"); return res.json; },
+      text: async () => res.rawHtml || JSON.stringify(res.json) };
   }
-  const store = {};
+  const store = opts.store || {};
   const sandbox = {
     document: doc, console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, JSON, Math, Date, Object, Array,
     Map, Set, String, Number, Boolean, Error, RegExp, Symbol, Proxy, parseInt, parseFloat, isNaN, URL, URLSearchParams,
@@ -283,7 +286,7 @@ function makeEnv(html, opts) {
   sandbox.open = (...args) => { sandbox._opened.push(args); return {}; };
   sandbox.window.isSecureContext = true;
   const ctx = vm.createContext(sandbox);
-  return { doc, ctx, calls, sources, rooms, sandbox, run(code, name) { vm.runInContext(code, ctx, { filename: name }); } };
+  return { doc, ctx, calls, sources, rooms, store, sandbox, run(code, name) { vm.runInContext(code, ctx, { filename: name }); } };
 }
 function loadScripts(env, html, only) {
   for (const m of html.matchAll(/<script(?: src="([^"]+)")?[^>]*>([\s\S]*?)<\/script>/g)) {
@@ -492,14 +495,17 @@ async function meetPage() {
       "POST /api/meetings": { room_id: "room1", join_url: "http://127.0.0.1:8000/m/room1", identity: "person-host", name: "Hana",
         role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "room1" },
       "GET /api/config": { mode: "livekit", url: "ws://127.0.0.1:7880", room: "room1", categories: [] },
-      "GET /api/me": { identity: "person-host", participants: { "person-host": { name: "Hana", recording: false } },
-        lines: [], kept_out: [], insights, redaction_counts: { suppressed: 0, removed: 0, total: 0 }, finalized: false,
-        ready_for_final: false, finalized_count: 0, contributor_count: 1 },
+      "GET /api/me": () => ({ identity: "person-host", participants: { "person-host": { name: "Hana", recording: recordingOn } },
+        lines: approvedLines, kept_out: [], insights, redaction_counts: { suppressed: 0, removed: 0, total: 0 }, finalized: false,
+        ready_for_final: false, finalized_count: 0, contributor_count: 1 }),
       "GET /api/meetings/room1/status": { status: "admitted", role: "host", identity: "person-host", name: "Hana", token: "tok",
         url: "ws://127.0.0.1:7880", room: "room1",
         pending: [{ request_id: "r1", name: "Guest Gail", email: "gail@example.com" }] },
       "POST /api/meetings/room1/admit": { ok: true },
-      "POST /api/consent": { identity: "person-host", recording: true },
+      "POST /api/consent": body => { recordingOn = body.recording; return { identity: "person-host", recording: recordingOn }; },
+      "GET /api/notes/final": { text: "Hana: Plan the launch", redaction_counts: { suppressed: 0, removed: 0 } },
+      "GET /api/meetings/room1/mail-recipients": { recipients: [] },
+      "POST /api/meetings/room1/end": { ok: true },
     },
   });
   loadScripts(env, html);
@@ -512,10 +518,22 @@ async function meetPage() {
   await sleep(30);
   check(visible($("share-screen")) && $("share-link").value.endsWith("/m/room1"), "share screen shows the meeting link");
   check(env.calls.some(c => c.url === "/api/meetings" && c.body.name === "Hana"), "host created the meeting");
+  check(JSON.parse(env.store["otr-person-details-v1"]).email === "hana@example.com", "successful host setup remembers name and email locally");
+  const returnVisit = makeEnv(html, { store: env.store });
+  loadScripts(returnVisit, html);
+  const savedField = id => returnVisit.doc.getElementById(id);
+  check(savedField("host-name").value === "Hana" && savedField("guest-name").value === "Hana"
+    && savedField("host-email").value === "hana@example.com" && savedField("guest-email").value === "hana@example.com",
+    "name and email prefill both forms on a return visit");
+  savedField("host-setup").all().find(e => e.classList.contains("forget-details")).click();
+  check(!env.store["otr-person-details-v1"] && !savedField("host-name").value && !savedField("guest-email").value,
+    "Forget them removes saved details and clears the forms");
   $("share-join-button").click();
   await sleep(60);
   check(visible($("meeting")) && visible($("control-bar")), "meeting and control bar shown after entering");
   check(text($("notes-label")) === "Turn on notes", "notes switch labels the action while notes are off");
+  check($("notes-control").getAttribute("aria-pressed") === "false" && $("notes-control").classList.contains("notes-off")
+    && $("notes-control").getAttribute("aria-label") === "Turn on notes for me", "control-bar notes button starts visibly off");
   check(env.rooms.length === 1 && env.rooms[0].token === "tok", "joined the LiveKit room with the server-issued token");
   check(visible($("host-lobby")), "host sees the lobby");
   await sleep(10);
@@ -532,11 +550,18 @@ async function meetPage() {
   check(!$("people-badge").classList.contains("hidden") && text($("people-badge")) === "1", "people button shows the waiting count");
   const es = env.sources[0];
   check(es && es.url === "/stream", "stream opened");
+  es.push({ type: "snapshot", lines: [{ id: "approved-before-opt-in", speaker: "person-g", name: "Gail", text: "Approved before my opt in", seq: 0 }], kept_out: [] });
+  check(text($("captions")).includes("Approved before my opt in"), "an off viewer sees another speaker's approved transcript");
   es.push({ type: "participants", participants: { "person-host": { name: "Hana", recording: true } } });
+  recordingOn = true;
   es.push({ type: "snapshot", lines: [], kept_out: [] });
   es.push({ type: "status", ...insights });
   es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-host",
     line: { id: "l1", speaker: "person-host", name: "Hana", text: "Plan the launch", seq: 1 } }] });
+  es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-g",
+    line: { id: "l2", speaker: "person-g", name: "Gail", text: "I will send the agenda", seq: 3 } }] });
+  approvedLines = [{ id: "l1", speaker: "person-host", name: "Hana", text: "Plan the launch", seq: 1 },
+    { id: "l2", speaker: "person-g", name: "Gail", text: "I will send the agenda", seq: 3 }];
   // A hostile / buggy server message that tries to smuggle text into the kept-out marker and status.
   es.push({ type: "transcript", changes: [{ kind: "kept_out", id: "k1", owner: "person-host", category: "pay_hr", seq: 2,
     text: SECRET, trail: { family: "kw", before: "ON", after: "PENDING_CONFIRM", held_s: 2.4, text: SECRET } }] });
@@ -552,8 +577,12 @@ async function meetPage() {
   check(text($("capture-status")) === "Notes are on for you" && $("notes-button").getAttribute("aria-checked") === "true",
     "one-line status and switch show notes on");
   check(text($("notes-label")) === "Turn off notes", "notes switch labels the action while notes are on");
+  check($("notes-control").getAttribute("aria-pressed") === "true" && $("notes-control").classList.contains("notes-on")
+    && $("notes-control").getAttribute("aria-label") === "Turn off notes for me", "call control mirrors the on state");
   const caps = text($("captions"));
-  check(caps.includes("Plan the launch"), "caption shows the approved line");
+  check(caps.includes("Plan the launch") && caps.includes("I will send the agenda") && caps.includes("Gail"),
+    "shared live transcript shows approved lines from both speakers");
+  check($("captions").all().filter(e => e.className === "remove").length === 1, "only the viewer's own line has Remove");
   const chip = $("captions").all().find(e => e.tagName === "BUTTON" && e.getAttribute("data-category") === "pay_hr");
   check(!!chip && text(chip).includes("Pay and HR"), "kept-out marker chip shows the kind only");
   check(!text(env.doc.body).includes(SECRET), "the planted secret never reaches the page (realtime)");
@@ -624,10 +653,87 @@ async function meetPage() {
   check(visible($("panel-agent")), "l opens the panel at the latest lines");
 
   // consent / mic / camera controls
-  $("notes-button").click(); await sleep(20);
+  $("notes-control").click(); await sleep(20);
   check(env.calls.some(c => c.url === "/api/consent" && c.body.recording === false), "Notes button posts the opposite consent choice");
+  check($("notes-control").getAttribute("aria-pressed") === "false" && text($("captions")).includes("Plan the launch")
+    && text($("captions")).includes("I will send the agenda") && visible($("panel-agent")),
+    "turning notes off keeps the shared transcript open");
   check(!env.calls.some(c => c.url === "/api/confirm"), "consent page never calls /api/confirm");
+  $("leave-button").click(); await sleep(20);
+  check(visible($("end-dialog")) && text($("end-summary")).includes("final transcript is ready"),
+    "host can review the final transcript before ending normally");
+  $("end-without-email").click(); await sleep(20);
+  check(env.calls.some(c => c.method === "POST" && c.url === "/api/meetings/room1/end")
+    && env.rooms[0].disconnected && env.sandbox.location.href === "/",
+    "normal end closes the server meeting and disconnects the local call");
   return env;
+}
+
+async function consentCreateFailure() {
+  const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  const cases = [
+    ["HTML gateway error", {status: 502, rawHtml: "<h1>Bad Gateway</h1>"}, "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["service unavailable", {status: 503, json: {}}, "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["gateway timeout", {status: 504, json: {}}, "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["network failure", new TypeError("Failed to fetch"), "Meeting host is temporarily unavailable. Try again in a moment."],
+    ["validation error", {status: 400, json: {detail: "Enter your name"}}, "Enter your name"],
+    ["capacity error", {status: 429, json: {detail: "Too many meetings"}}, "Too many meetings"],
+  ];
+  for (const [label, response, expected] of cases) {
+    const env = makeEnv(html, {routes: {"POST /api/meetings": response}});
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana";
+    $("host-email").value = "hana@example.com";
+    $("host-create-button").click();
+    await sleep(5);
+    check(text($("host-error")) === expected, `create meeting ${label} gives useful feedback`);
+    check(!$("host-create-button").disabled, `create meeting ${label} allows retry`);
+  }
+}
+
+// ------------------------------------------------------------------ scenario 1b: server session expired while the host is in LiveKit
+async function consentHostExpired() {
+  const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  const baseRoutes = {
+    "POST /api/meetings": { room_id: "expired-room", join_url: "http://127.0.0.1:8000/m/expired-room", identity: "person-host",
+      name: "Hana", role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "expired-room" },
+    "GET /api/config": { mode: "livekit", url: "ws://127.0.0.1:7880", room: "expired-room" },
+    "GET /api/me": { identity: "person-host", participants: { "person-host": { name: "Hana", recording: false } },
+      lines: [], kept_out: [], insights: {}, redaction_counts: {}, finalized: false },
+    "GET /api/meetings/expired-room/status": { status: "admitted", role: "host", identity: "person-host",
+      name: "Hana", token: "tok", url: "ws://127.0.0.1:7880", room: "expired-room", pending: [] },
+  };
+  for (const failedStep of ["draft", "end"]) {
+    const routes = { ...baseRoutes,
+      "GET /api/notes/final": failedStep === "draft" ? { status: 401, json: { detail: "Join the meeting first" } }
+        : { text: "Hana: Plan the launch", redaction_counts: {} },
+      "GET /api/meetings/expired-room/mail-recipients": { recipients: [] },
+      "POST /api/meetings/expired-room/end": { status: 401, json: { detail: "Join the meeting first" } },
+    };
+    const env = makeEnv(html, { routes });
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana";
+    $("host-email").value = "hana@example.com";
+    $("host-create-button").click(); await sleep(20);
+    $("share-join-button").click(); await sleep(40);
+    $("leave-button").click(); await sleep(20);
+    if (failedStep === "draft") {
+      check(text($("end-summary")).includes("server session expired")
+        && text($("end-without-email")) === "Leave this call"
+        && !text($("end-error")),
+      "expired session explains why no draft is available and offers local leave");
+    }
+    $("end-without-email").click(); await sleep(20);
+    check(env.rooms[0].disconnected && env.sandbox.location.href === "/"
+      && !text($("end-error")).includes("Could not end meeting"),
+      `expired session at ${failedStep} still disconnects local call without a misleading end error`);
+    check(env.calls.filter(c => c.method === "POST" && c.url === "/api/meetings/expired-room/end").length === (failedStep === "draft" ? 0 : 1),
+      `server end ${failedStep === "draft" ? "is skipped after known expiry" : "is attempted before handling expiry"}`);
+  }
 }
 
 // ------------------------------------------------------------------ scenario 2: guest waits, then is admitted
@@ -718,6 +824,8 @@ async function operatorConsole() {
   try {
     await consentHost();
     await meetPage();
+    await consentCreateFailure();
+    await consentHostExpired();
     await consentGuest();
     await operatorConsole();
   } catch (e) {

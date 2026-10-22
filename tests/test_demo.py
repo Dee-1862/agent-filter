@@ -300,6 +300,22 @@ def test_meeting_waiting_room_requires_host_admission_and_scopes_access():
         assert host.get("/api/me").json()["participants"][status["identity"]]["recording"] is True
 
 
+def test_new_meeting_defers_capture_until_a_speaker_consents(monkeypatch):
+    started = []
+    monkeypatch.setattr(LiveSession, "start", lambda self: started.append(self))
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=True)
+    with TestClient(app) as host:
+        assert started == [app.state.session]  # legacy single-room session
+        created = host.post("/api/meetings", json={"name": "Host", "email": "host@example.test"})
+        assert created.status_code == 200
+        assert started == [app.state.session]
+        assert host.post("/api/meetings/" + created.json()["room_id"] + "/end").status_code == 200
+        assert started == [app.state.session]
+        host.post("/api/meetings", json={"name": "Host", "email": "host@example.test"})
+        assert host.post("/api/consent", json={"recording": True}).status_code == 200
+        assert len(started) == 2
+
+
 def test_meeting_denial_never_issues_room_access():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as host, TestClient(app) as guest:
@@ -399,6 +415,7 @@ def test_me_summary_omits_approved_text_without_changing_full_view():
         live = app.state.meetings[created["room_id"]]["session"]
         live.approved["line-1"] = {"id": "line-1", "name": "Host", "text": "Approved private line"}
         live.line_owner["line-1"] = created["identity"]
+        host.post("/api/consent", json={"recording": True})
         full = host.get("/api/me").json()
         summary = host.get("/api/me?summary=1").json()
         assert full["lines"][0]["text"] == "Approved private line"
@@ -662,7 +679,7 @@ def approve_line(session, identity, line_id, text, now=1.0):
 def live_stream_messages(session, viewer, since=None):
     """Exercise the same visibility filter used by SSE without opening its endless HTTP stream."""
     msgs = [{"type": "participants", "participants": session.public_participants(viewer)},
-            {"type": "snapshot", "lines": session.own_lines(viewer)}]
+            {"type": "snapshot", "lines": session.shared_lines_for(viewer)}]
     for message in session.messages[since if since is not None else len(session.messages):]:
         visible = session.visible_message(viewer, message)
         if visible is not None:
@@ -670,7 +687,7 @@ def live_stream_messages(session, viewer, since=None):
     return msgs
 
 
-def test_live_two_clients_see_only_own_lines_and_statuses():
+def test_live_two_clients_share_approved_lines_but_keep_statuses_private():
     app, _ = live_app()
     session = app.state.session
     with TestClient(app) as alice_c, TestClient(app) as bob_c:
@@ -683,10 +700,10 @@ def test_live_two_clients_see_only_own_lines_and_statuses():
 
         me_a = alice_c.get("/api/me").json()
         me_b = bob_c.get("/api/me").json()
-        assert [l["id"] for l in me_a["lines"]] == ["a1"]
-        assert [l["id"] for l in me_b["lines"]] == ["b1"]
-        assert me_a["lines"][0]["text"] == "Alice launch plan"
-        assert me_b["lines"][0]["text"] == "Bob budget notes"
+        assert [l["id"] for l in me_a["lines"]] == ["a1", "b1"]  # sensitive pause turns off capture, not viewing
+        assert [l["id"] for l in me_b["lines"]] == ["a1", "b1"]
+        assert "Alice launch plan" in json.dumps(me_a)
+        assert me_b["lines"][1]["text"] == "Bob budget notes"
         # others expose only name + notes on/off; own status may expose the pause flag
         assert "sensitive_paused" not in me_b["participants"][alice]
         assert me_a["participants"][alice]["sensitive_paused"] is True
@@ -694,7 +711,7 @@ def test_live_two_clients_see_only_own_lines_and_statuses():
         assert me_b["participants"][alice] == {"name": "Alice", "recording": False}
 
 
-def test_live_stream_filters_other_speaker_text_and_ids():
+def test_live_stream_shares_approved_lines_but_not_withheld_text():
     app, _ = live_app()
     session = app.state.session
     with TestClient(app) as alice_c:
@@ -703,25 +720,25 @@ def test_live_stream_filters_other_speaker_text_and_ids():
         session.names["bob"] = "Bob"
         session.set_consent("bob", True)
         approve_line(session, alice, "a1", "Alice line one")
-        approve_line(session, "bob", "b1", "Bob secret one")
+        approve_line(session, "bob", "b1", "Bob approved one")
 
         msgs = live_stream_messages(session, alice)
         body = json.dumps(msgs)
         assert "Alice line one" in body
-        assert "Bob secret one" not in body and '"id": "b1"' not in body
+        assert "Bob approved one" in body and '"id": "b1"' in body
         snap = next(m for m in msgs if m["type"] == "snapshot")
-        assert [l["id"] for l in snap["lines"]] == ["a1"]
+        assert [l["id"] for l in snap["lines"]] == ["a1", "b1"]
 
         start = len(session.messages)
-        approve_line(session, "bob", "b2", "Bob secret two")
+        approve_line(session, "bob", "b2", "Bob approved two")
         approve_line(session, alice, "a2", "Alice line two")
         live_msgs = live_stream_messages(session, alice, start)
         body = json.dumps(live_msgs)
         assert "Alice line two" in body
-        assert "Bob secret two" not in body and '"id": "b2"' not in body
+        assert "Bob approved two" in body and '"id": "b2"' in body
 
 
-def test_live_stream_late_join_gets_only_own_lines():
+def test_live_stream_late_join_sees_approved_room_lines_with_notes_off():
     app, _ = live_app()
     session = app.state.session
     with TestClient(app) as alice_c:
@@ -733,9 +750,12 @@ def test_live_stream_late_join_gets_only_own_lines():
         bob = join_as(bob_c, "Bob")
         msgs = live_stream_messages(session, bob)
         body = json.dumps(msgs)
-        assert "Alice early line" not in body and '"id": "a1"' not in body
+        assert "Alice early line" in body and '"id": "a1"' in body
         snap = next(m for m in msgs if m["type"] == "snapshot")
-        assert snap["lines"] == []
+        assert [line["id"] for line in snap["lines"]] == ["a1"]
+        assert [line["id"] for line in bob_c.get("/api/me").json()["lines"]] == ["a1"]
+        assert [line["id"] for line in next(m for m in live_stream_messages(session, bob)
+                                                   if m["type"] == "snapshot")["lines"]] == ["a1"]
 
 
 def test_live_notes_remove_authorization_and_stream_reflection():
@@ -752,12 +772,16 @@ def test_live_notes_remove_authorization_and_stream_reflection():
         assert bob_c.post("/api/notes/remove", json={"id": "a1"}).status_code == 404
         assert alice_c.get("/api/me").json()["lines"][0]["text"] == "Alice line one"
 
+        bob_c.post("/api/consent", json={"recording": False})
         start = len(session.messages)
         assert alice_c.post("/api/notes/remove", json={"id": "a1"}).status_code == 200
         live_msgs = live_stream_messages(session, alice, start)
         removed = [m for m in live_msgs if m["type"] == "transcript"]
         assert any(c["kind"] == "removed" and c["id"] == "a1" for m in removed for c in m["changes"])
-        assert alice_c.get("/api/me").json()["lines"] == []
+        assert [line["id"] for line in alice_c.get("/api/me").json()["lines"]] == ["b1"]
+        bob_msgs = live_stream_messages(session, bob, start)
+        assert any(c["kind"] == "removed" and c["id"] == "a1"
+                   for m in bob_msgs if m["type"] == "transcript" for c in m["changes"])
         assert alice_c.post("/api/notes/remove", json={"id": "a1"}).status_code == 404
         assert bob_c.get("/api/me").json()["lines"][0]["id"] == "b1"
         assert bob_c.post("/api/notes/remove", json={}).status_code == 400
@@ -776,13 +800,13 @@ def test_live_notes_finalize_stops_capture_discards_held_and_blocks_consent():
         assert r.status_code == 200
         me = client.get("/api/me").json()
         assert me["finalized"] is True
-        assert [l["id"] for l in me["lines"]] == ["a1"]
+        assert [line["id"] for line in me["lines"]] == ["a1"]
         assert alice not in session.pipes  # held text discarded
         assert client.post("/api/notes/finalize", json={}).status_code == 200  # idempotent
         assert client.post("/api/consent", json={"recording": True}).status_code == 409
         assert client.post("/api/consent", json={"recording": False}).status_code == 200
         session.push(Segment("late", alice, "Alice late line", 3, 3))
-        assert client.get("/api/me").json()["lines"] == me["lines"]
+        assert [line["id"] for line in client.get("/api/me").json()["lines"]] == ["a1"]
 
 
 def test_live_final_waits_for_present_speaker_without_approved_line():
@@ -870,6 +894,74 @@ def test_live_notes_final_requires_join():
     app, _ = live_app()
     with TestClient(app) as client:
         assert client.get("/api/notes/final").status_code == 401
+
+
+def test_live_shared_text_requires_admission_but_not_viewer_notes():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c, TestClient(app) as outsider:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        approve_line(session, alice, "a1", "Approved agenda")
+        assert outsider.get("/api/me").status_code == 401
+        assert outsider.get("/stream").status_code == 401
+        assert [line["id"] for line in bob_c.get("/api/me").json()["lines"]] == ["a1"]
+        assert "Approved agenda" in json.dumps(live_stream_messages(session, bob))
+
+        bob_c.post("/api/consent", json={"recording": True})
+        assert [line["id"] for line in bob_c.get("/api/me").json()["lines"]] == ["a1"]
+        assert "Approved agenda" in json.dumps(live_stream_messages(session, bob))
+        bob_c.post("/api/consent", json={"recording": False})
+        assert [line["id"] for line in bob_c.get("/api/me").json()["lines"]] == ["a1"]
+        assert "Approved agenda" in json.dumps(live_stream_messages(session, bob))
+        assert session.visible_message(bob, {"type": "transcript", "changes": [
+            {"kind": "committed", "owner": alice, "line": session.approved["a1"]}]})["changes"][0]["line"]["id"] == "a1"
+        # Pausing Alice stops future capture; her earlier approved line remains
+        # available to every admitted viewer until she explicitly removes it.
+        alice_c.post("/api/consent", json={"recording": False})
+        assert [line["id"] for line in bob_c.get("/api/me").json()["lines"]] == ["a1"]
+        session.push(Segment("off", alice, "Alice is off record", 3, 3))
+        assert "Alice is off record" not in json.dumps(bob_c.get("/api/me").json())
+        assert "Alice is off record" not in json.dumps(live_stream_messages(session, bob))
+        assert alice_c.get("/api/me?summary=1").json().get("lines") is None
+
+
+def test_hosted_room_shares_approved_lines_after_admission_with_notes_off():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(),
+                     autostart=False, hold_seconds=0)
+    with TestClient(app) as host, TestClient(app) as guest:
+        created = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()
+        room = created["room_id"]
+        live = app.state.meetings[room]["session"]
+        requested = guest.post(f"/api/meetings/{room}/request",
+                               json={"name": "Guest", "email": "g@example.test"}).json()
+        assert guest.get("/api/me").status_code == 403
+        assert guest.get("/stream").status_code == 403
+        assert host.post(f"/api/meetings/{room}/admit",
+                         json={"request_id": requested["request_id"]}).status_code == 200
+        host.post("/api/consent", json={"recording": True})
+        approve_line(live, created["identity"], "host-1", "Approved project update")
+        assert [line["id"] for line in guest.get("/api/me").json()["lines"]] == ["host-1"]
+        guest_identity = guest.get(f"/api/meetings/{room}/status").json()["identity"]
+        assert "Approved project update" in json.dumps(live_stream_messages(live, guest_identity))
+
+
+def test_live_withheld_and_retracted_text_never_reaches_other_viewer():
+    app, _ = live_app()
+    session = app.state.session
+    with TestClient(app) as alice_c, TestClient(app) as bob_c:
+        alice, bob = join_as(alice_c, "Alice"), join_as(bob_c, "Bob")
+        alice_c.post("/api/consent", json={"recording": True})
+        bob_c.post("/api/consent", json={"recording": True})
+        session.push(Segment("held", alice, "A draft line", 0, 0))
+        assert "A draft line" not in json.dumps(bob_c.get("/api/me").json())
+        assert "A draft line" not in json.dumps(live_stream_messages(session, bob))
+        session.push(Segment("sensitive", alice, "Her salary is 150,000", 0.01, 0.01))
+        for payload in (bob_c.get("/api/me").json(), live_stream_messages(session, bob)):
+            body = json.dumps(payload)
+            assert "A draft line" not in body and "150,000" not in body
+            assert '"id": "sensitive"' not in body and '"id": "held"' not in body
+        assert session.source.consent_snapshot()[bob] is True
 
 
 def test_live_leave_drops_unfinalized_contribution():

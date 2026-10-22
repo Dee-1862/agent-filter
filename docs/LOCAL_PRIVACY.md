@@ -2,11 +2,12 @@
 
 For the current hackathon demo, the static page is served from
 `consentmeeting.vercel.app`. Its API requests pass through a Vercel proxy and a
-Cloudflare Quick Tunnel to FastAPI on the meeting host. LiveKit signaling uses
-a tunneled WSS connection; media still requires the same Wi-Fi until a remote
-call proves otherwise. ASR and policy models run on the host. This temporary
-path allows meeting requests, identities, consent changes, signaling, and API
-transcript responses to cross cloud services. It is not a fully local or
+Cloudflare Quick Tunnel to FastAPI on the meeting host. LiveKit Cloud carries
+the call's audio and video, including participants with notes OFF. ASR and
+policy models run on the host. This temporary path allows meeting requests,
+identities, consent changes, signaling, and approved live transcript responses
+to cross cloud services whenever an admitted viewer requests the shared view,
+whether their own Notes is on or off. It is not a fully local or
 cloud-private deployment. The Quick Tunnel URL may change on restart, and the
 proxy must then be updated. The long-term target remains fully local. GitHub
 holds source code and documentation, not meeting data.
@@ -15,8 +16,8 @@ holds source code and documentation, not meeting data.
 
 | Component | Runs where | Meeting data it handles |
 |---|---|---|
-| LiveKit server | Meeting host (`127.0.0.1:17880` in this demo) | Participant media and room signaling |
-| Meeting page | Static UI on Vercel for the demo; local page at `127.0.0.1:8765` remains available | Room media and API responses; final transcript only after an explicit request |
+| LiveKit server | LiveKit Cloud in the public demo; self-hosted for local mode | Participant media and room signaling, including notes-off participants |
+| Meeting page | Static UI on Vercel for the demo; local page at `127.0.0.1:8765` remains available | Room media and API responses, including approved live text for admitted viewers |
 | Demo API route | Vercel proxy and Cloudflare Quick Tunnel to host FastAPI | Meeting requests and responses, including identity, consent, and approved transcript data |
 | Recorder and ASR | Local Python process | Only opted-in audio; provisional text in memory |
 | Privacy pipeline | Same Python process | Opted-in text; releases approved lines only |
@@ -24,12 +25,16 @@ holds source code and documentation, not meeting data.
 The recorder starts with `auto_subscribe=False`. A participant's own button
 enables subscription to their audio track. Stop revokes that person's consent,
 unsubscribes, and discards pending text. A sensitive policy flag also pauses
-that person's capture. Each browser stream carries only that speaker's approved
-draft lines and removal IDs. Other participants see notes on/off, but receive
-neither that speaker's draft nor a private sensitive-pause reason. Speakers can
-remove draft lines, then explicitly finish their notes. The combined final is
-served only after every admitted participant finishes and someone opens the
-final report or requests a copy. The report shows counts of locally suppressed
+that person's capture. Every admitted participant can read a shared live
+transcript of post-hold approved lines from every opted-in speaker, regardless
+of their own Notes setting. It contains no provisional ASR or withheld text.
+A notes-off participant can read approved lines, but their own speech is not
+transcribed for notes. If no speaker has turned Notes on, no lines appear.
+Each speaker can remove their own approved lines; removal must reach all
+viewers and the final
+report. Other speakers cannot remove them. The combined final is served only
+after every admitted participant finishes and someone opens the final report
+or requests a copy. The report shows counts of locally suppressed
 and removed lines without their text, reasons, or speaker breakdown. Lines
 that were never transcribed because notes were OFF are not counted. The page
 never exports the final automatically. No audio files or transcript database
@@ -43,13 +48,17 @@ approved transcript and open a prefilled draft in their mail app. This app
 does not send mail. The host can also end without an email. Opening the draft
 may sync that final transcript through the host's mail provider, which is
 outside this local runtime. Meeting audio, provisional text, withheld lines,
-and other participants' live drafts never go into the mail draft.
+and unapproved live text never go into the mail draft.
 
 The instant-meeting entry flow keeps room IDs, guest requests, unverified email
 labels, and host admission decisions in the local Python process. A guest does
 not receive a LiveKit room token until the host admits them. Ending the room
-clears that meeting's in-memory state. Creating a room on a loopback address
-produces a link usable only on the host machine. A second device needs a
+clears that meeting's in-memory state. The entry form remembers name and email
+in that browser's local storage for later visits. It does not save room tokens,
+audio, or transcript text there. A remembered email does not verify identity,
+start capture, or opt the person in to a final transcript email. Creating a
+room on a loopback address produces a link usable only on the host machine.
+A second device needs a
 reachable local address, a browser-trusted HTTPS origin for microphone/camera
 access, and production-length LiveKit credentials before this demo can be
 shared on a network. The current localhost preview is not a remote invite.
@@ -110,7 +119,8 @@ HTTPS, access control, and a local network egress check. Other participants
 can still hear a person whose notetaker consent is OFF; OFF means the notetaker
 does not subscribe to that person's track. The ASR and policy process runs on
 the local meeting host, so this prototype does not keep processing on each
-participant's device. The host retains approved draft lines in memory during
-the session; each speaker controls whether their lines enter the combined final.
-The sensitive-content rules are an imperfect filter, not a guarantee that every
-HR detail or number is caught.
+participant's device. The host retains approved lines in memory during the
+session; each speaker controls capture and can remove their own lines. Other
+admitted participants can read approved lines during the call. This is a
+visibility change. The sensitive-content rules are an imperfect filter; they
+may miss HR details, numbers, or other private speech.
