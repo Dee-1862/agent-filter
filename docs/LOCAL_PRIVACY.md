@@ -9,16 +9,34 @@ records, model inputs, or generated notes.
 | Component | Runs where | Meeting data it handles |
 |---|---|---|
 | LiveKit server | `127.0.0.1:7880` | Participant media and room signaling |
-| Meeting page | Locally served at `127.0.0.1:8765` | Each participant's room media and approved transcript |
+| Meeting page | Locally served at `127.0.0.1:8765` by default | Room media, each person's own approved draft, and the final transcript only after an explicit request |
 | Recorder and ASR | Local Python process | Only opted-in audio; provisional text in memory |
 | Privacy pipeline | Same Python process | Opted-in text; releases approved lines only |
 
 The recorder starts with `auto_subscribe=False`. A participant's own button
 enables subscription to their audio track. Stop revokes that person's consent,
 unsubscribes, and discards pending text. A sensitive policy flag also pauses
-that person's capture. The shared browser stream contains only approved lines,
-deletion IDs, and text-free status. No audio files or transcript database are
-created by the live path.
+that person's capture. Each browser stream carries only that speaker's approved
+draft lines and removal IDs. Other participants see notes on/off, but receive
+neither that speaker's draft nor a private sensitive-pause reason. Speakers can
+remove draft lines, then explicitly finish their notes. The combined final is
+served only after every admitted participant finishes and someone opens the
+final report or requests a copy. The report shows counts of locally suppressed
+and removed lines without their text, reasons, or speaker breakdown. Lines
+that were never transcribed because notes were OFF are not counted. The page
+never exports the final automatically. No audio files or transcript database
+are created by the live path.
+
+The instant-meeting entry flow keeps room IDs, guest requests, unverified email
+labels, and host admission decisions in the local Python process. A guest does
+not receive a LiveKit room token until the host admits them. Ending the room
+clears that meeting's in-memory state. Creating a room on a loopback address
+produces a link usable only on the host machine. A second device needs a
+reachable local address, a browser-trusted HTTPS origin for microphone/camera
+access, and production-length LiveKit credentials before this demo can be
+shared on a network. The current localhost preview is not a remote invite.
+See [SECURE_LAN.md](SECURE_LAN.md) for a local HTTPS/WSS launch path and the
+certificate trust step needed on each device.
 
 Model weights are downloaded before a meeting into the ignored `models/`
 directory. At runtime, `load_whisper` requires local weights and refuses to
@@ -54,4 +72,9 @@ The same-machine `--dev` server uses placeholder credentials. Do not expose
 this demo server to a LAN or the internet as-is. LAN use needs its own keys,
 HTTPS, access control, and a local network egress check. Other participants
 can still hear a person whose notetaker consent is OFF; OFF means the notetaker
-does not subscribe to that person's track.
+does not subscribe to that person's track. The ASR and policy process runs on
+the local meeting host, so this prototype does not keep processing on each
+participant's device. The host retains approved draft lines in memory during
+the session; each speaker controls whether their lines enter the combined final.
+The sensitive-content rules are an imperfect filter, not a guarantee that every
+HR detail or number is caught.

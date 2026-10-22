@@ -43,12 +43,14 @@ Prior work reports that prompting alone does not fix this. Figures below are as 
 - G2: Handle participant choice and the three speech/content signal types with measurable leak reduction versus baselines.
 - G3: Remove already-committed content on retroactive request, by meaning, with an audit log.
 - G4: A reproducible benchmark (OTR-Bench) and a three-system comparison.
-- G5: A meeting UI that shows every participant's recording state and per-person transcript state. Live text appears only after a local policy check, grouped by speaker; no raw provisional text is shown to anyone. A declined participant is labeled **Not recorded / Not transcribed**, with no transcript row.
+- G5: A familiar video-call view with a visible notes state for each person. Each speaker can open a private drawer to review and remove their own policy-approved draft lines. Other participants see only that speaker's notes on/off state. The combined transcript becomes available for an explicit copy action after contributors finish their notes.
 - G6: Local-only ASR, content classification, summaries and storage. No meeting content, transcript, identity or consent metadata is sent to hosted APIs.
 - G7: Keep health, salary, HR, employee identifiers and associated sensitive numbers out of the shared or saved transcript, and measure misses using synthetic cases. This is a design goal to test, not a claim of perfect detection.
+- G8: Let someone create an instant meeting, copy its link, and admit each guest from a waiting room. Guests enter an email and display name before requesting entry. The host sees both fields and chooses Admit or Deny. Email is an unverified label in this prototype; it is not proof of identity.
 
 **Non-goals (foundation)**
 - Joining Zoom, Meet or Teams as a bot.
+- Scheduling meetings or sending invitations from the app.
 - Voiceprints or identifying speakers from a mixed recording. Use authenticated LiveKit participant/track identity instead.
 - Cloud processing of meeting content. Everything runs locally.
 - Claiming a final or generalizable result. Results are early evidence.
@@ -57,7 +59,7 @@ Prior work reports that prompting alone does not fix this. Figures below are as 
 ## 1.6 Architecture (frozen)
 
 ```
-participant browsers + visible consent and transcript UI
+participant browsers + visible per-person notes state
    │ separate microphone tracks
 self-hosted local LiveKit room
    │
@@ -71,16 +73,17 @@ PROVISIONAL POLICY BUFFER (short UI delay; longer note commit delay)
    │   └─ local small-model context check for implicit sensitivity
    ▼
 per-participant state: OFF / ON / PENDING_CONFIRM
-   │ approved text only
-shared delayed transcript → local notes / summary with source-entry IDs
+   │ approved text only, routed to the speaker's private draft
+speaker review and removal → explicit finish → combined final transcript on request
 ```
 
 **Core mechanics**
 - **Source-level consent**: every participant starts OFF. The local recorder subscribes to that person's microphone track only after their own opt-in. Stop changes the consent epoch immediately, discards any in-flight frames and pending text, then unsubscribes; do not wait for network acknowledgement to suppress content. Unknown identity, disconnection or policy failure defaults OFF. Consent events log identity, state, time and purpose, never audio or text. A participant's control request must be authenticated as that participant; display names are not authority.
-- **Meeting UI**: each participant sees who is being recorded and their own Start/Stop control. Transcript cards carry the same state. Everyone sees only policy-approved text, grouped by speaker; while an utterance is checked, show a processing indicator. Never show raw provisional HR or other sensitive text to any transcript viewer.
-- **Hold buffer**: opted-in ASR text waits in memory for a fast local policy check before appearing in the live transcript, then a longer configurable delay before durable notes. Target a few seconds for approved live text and start with 30 seconds for note commit, but measure achievable latency on the target laptop. The prior LocalAgreement hook remains a candidate implementation, but the source is now a participant track rather than mixed meeting audio. Audio stays in volatile memory; no raw-audio files by default.
+- **Meeting UI**: use a video-call grid and bottom controls. Each tile shows that person's notes on/off state; the speaker controls only their own state. A side drawer holds that speaker's approved draft and removal controls. Do not send another person's draft text, line IDs or private pause reason to a participant. After a speaker finishes, capture stays off. Serve the combined final only when contributors have finished and a participant explicitly requests it to copy.
+- **Meeting entry**: the home page offers Create a meeting and Join a meeting. Creating produces a random room ID and a link. Guests request admission with email and display name; the host must admit each request before the guest receives a room media token. Room membership, requests, and email labels remain in local memory. A link alone does not grant admission.
+- **Hold buffer**: opted-in ASR text waits in memory for the local policy check and a configurable release delay before reaching that speaker's private draft. Measure latency on the target laptop. The prior LocalAgreement hook remains a candidate implementation, but the source is now a participant track rather than mixed meeting audio. Audio stays in volatile memory; no raw-audio files by default.
 - **Cue detector**: rules for obvious stop/delete cues, then a local model for scope and retroactive targets, returning source-entry IDs. A spoken Stop has detection latency; the button is authoritative.
-- **Sensitive-content gate**: local Presidio and explicit HR patterns catch identifiers and numbers; a local small model checks contextual cases. Sensitive utterances are withheld as a whole unless a safe redacted span can be established. If uncertain, show the speaker a private confirmation and keep the text out of shared/saved output.
+- **Sensitive-content gate**: local Presidio and explicit HR patterns catch identifiers and numbers; a local small model checks contextual cases. Sensitive utterances are withheld as a whole unless a safe redacted span can be established. If uncertain, pause that speaker's capture and keep the text out of draft and final output. A model cannot guarantee that every sensitive disclosure is caught.
 - **State machine**: per person, `ON` (capture), `OFF` (no subscription), `PENDING_CONFIRM` (capture paused and subscription removed after a sensitive flag while the speaker decides). No model may auto-resume someone.
 - **Retroactive removal**: delete matching held/committed source entries and invalidate or regenerate every derived summary that cited them. Audit only sanitized action metadata.
 - **Locality**: run LiveKit, ASR, detectors, model, UI and notes on a controlled machine/LAN. No hosted Ketch SDK, model endpoint, analytics, CDN, external STUN service or remote error reporting in the first version. Remote participants would later require a self-hosted reachable server/TLS/TURN; today's LAN demo avoids that complexity. Audit outbound connections and run an offline LAN check after dependencies are installed.
@@ -105,7 +108,7 @@ shared delayed transcript → local notes / summary with source-entry IDs
 **Metrics**
 - **Leak rate** (primary): private content that reaches the notes.
 - **Consent boundary**: recorder audio frames from an OFF participant (target: zero), Stop-to-last-frame time, and any transcript entry attributable to an OFF period (target: zero).
-- **Shared-transcript leak rate**: private or HR content, including amounts and employee numbers, that reaches another participant's display or saved transcript.
+- **Cross-participant leak rate**: private draft text, line IDs, or sensitive pause reasons that reach another participant's display or network response; sensitive content that reaches the final transcript.
 - **Over-redaction**: public content wrongly removed.
 - Breakdown by case type.
 - **Summary usefulness**: does the summary still contain the public items (ConfAIde-style)?
@@ -309,3 +312,25 @@ logged in C-006. See [WORK_SPLIT.md](WORK_SPLIT.md).
 What: `docs/RESEARCH.md` section 1 recommends these corrections. Part 1 is frozen and is NOT edited here; any change to it needs an explicit decision logged in CHANGES.md. (a) ConfAIde 39% / 57% is the Tier 4 meeting-summary "Leaks Secret" rate (mean of 10 runs, privacy instruction already in the prompt); the action-item figures are 29% / 38%. (b) PrivacyLens 25.68% / 38.69% is the helpfulness-adjusted leak rate; the raw rates are 24.54% / 39.15%. (c) Survey figures in 1.1: 34.7% always asked, 36.5% sometimes, 25.1% never, 3.6% found out afterward; commissioned by a law firm; n=167 exposed respondents. This does not support "most people aren't asked". (d) Novelty wording: "no prior published evaluation" of spoken off-the-record cues, scope end or retroactive requests in streaming meeting transcription; do not claim no prior work (a Zoom patent claims keyword-triggered off-the-record requests). Also: newer-model prompting results (RESEARCH.md bottom line item 2) make a one-pass B a weak baseline, so a B+ is needed (Q10). Note: A-002 is already used by Lance's addendum, so this is A-007.
 Why: the PRD figures came from a pasted plan (L-001); RESEARCH.md checked them against sources. The Docs Keeper has not re-checked the papers itself.
 Impact on foundation: requires decision (see CHANGES.md) before 1.1 / 1.4 text changes
+
+### A-008 · 2026-10-22 · Private live notes and a count-only final report · accepted
+
+What: The meeting remains a normal video call: camera and microphone have their
+own controls, separate from each participant's notes switch. The notes drawer
+shows only that participant's approved lines after the local safety hold, plus
+plain-language status for capture, filtering, and finalization. It must not
+show raw ASR text while policy is still deciding. The final report gives counts
+of suppressed and removed lines, without the withheld words or private reasons.
+It becomes available only when all admitted participants finish their notes.
+The combined transcript is fetched only when someone explicitly opens the
+report or copies it. Report counts describe what the local policy actually
+suppressed or removed; they do not claim to count speech that was never
+captured because a participant left notes off.
+
+Why: Participants need to understand what the local notetaker is doing without
+turning the call into a monitoring dashboard or revealing the material they
+chose to keep out. The UI must also make a delayed transcript distinguishable
+from a failed audio or transcription connection.
+
+Impact on foundation: clarifies G1, G5, and the hold-buffer behavior; logged in
+C-018. Secondhand disclosure remains deferred.

@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-018 · Video meeting UI and private final report
+- Type: addendum
+- Touches: PRD 2.7 (A-008)
+- What changed: Added the instant meeting and host admission flow, independent camera and notes controls, private approved live notes, a count-only redaction report, and a local HTTPS path for people on the same network.
+- Why: Lance wants a familiar video call with consent and filtering visible on demand, while meeting data stays on the local host.
+- Decided by: Lance in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-017 · Docs Keeper pass 2 (STATUS regenerated, PRD 2.1/2.5/2.6/2.7, WORK_SPLIT statuses)
 - Type: process
 - Touches: PRD 2.1, 2.5 (R-003, R-004), 2.6, 2.7 (A-007); WORK_SPLIT Known issues
