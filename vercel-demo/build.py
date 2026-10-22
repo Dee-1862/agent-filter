@@ -47,20 +47,20 @@ def build(origin: str, proxy: bool = False) -> None:
     html = (SOURCE / "live.html").read_text()
     for old, new in (
         ("Calls and notes are processed on the local meeting host.",
-         "Transcription and filtering run on the meeting host. This demo routes the call and approved live transcript through cloud services."),
+         "Transcription and filtering run on the meeting host. The call and approved live transcript travel through cloud services."),
         ("Notes are transcribed on the local meeting host. No cloud service is used.",
-         "Transcription runs on the meeting host. This demo routes audio, video and approved live transcript text through cloud services."),
+         "Transcription runs on the meeting host. Audio, video and approved live transcript text travel through cloud services."),
         ("the local meeting host transcribes your speech", "the meeting host transcribes your speech"),
         ("the local filter checks it", "the meeting host's filter checks it"),
         ("Speech recognition, filtering and the LiveKit room run on the local host serving this page. No cloud service is involved.",
-         "Speech recognition and filtering run on the meeting host. In this public demo, audio and video pass through LiveKit Cloud, and approved live transcript text passes through Vercel and Cloudflare for admitted viewers. Withheld text is never sent to the notes panel."),
+         "Speech recognition and filtering run on the meeting host. In this shared meeting, audio and video pass through LiveKit Cloud, and approved live transcript text passes through Vercel and Cloudflare for admitted viewers. Withheld text is never sent to the notes panel."),
     ):
         html = replace_required(html, old, new)
     (OUTPUT / "index.html").write_text(html)
 
     js = (SOURCE / "live.js").read_text()
     for old, new in (
-        ("Live · local room", "Live · demo room"),
+        ("Live · local room", "Live"),
     ):
         js = replace_required(js, old, new)
     # Vercel's external rewrite buffers SSE responses in this demo. Poll the
