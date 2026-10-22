@@ -49,3 +49,20 @@ svg.tl .st-wait { fill: var(--v-wait); } svg.tl .st-idle { fill: var(--v-idle); 
 
 .qchip { display: inline-block; font: inherit; color: var(--v-dim); background: transparent; border: 1px solid var(--v-line); border-radius: 4px; padding: 0 8px; cursor: pointer; }
 .qchip:hover, .qchip:focus-visible { color: var(--v-text); background: var(--v-panel2); }
+
+/* Insights summary: ring split by kind, counts beside it, small highlights. Colours mark kinds only. */
+.iv-head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+.iv-head .iv-tiles { flex: 1; }
+svg.iv-ring { width: 80px; height: 80px; flex: none; }
+.iv-ring-bg { fill: none; stroke: var(--v-panel2); stroke-width: 10; }
+.iv-ring-seg { fill: none; stroke-width: 10; }
+.iv-ring-num { font-size: 16px; fill: var(--v-text); }
+.iv-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+.iv-facts { margin: 8px 0 16px; }
+.iv-facts p { margin: 4px 0; font-size: 12px; color: var(--v-dim); }
+[data-category="off_record"] { --k: #c5221f; } [data-category="retracted"] { --k: #b06000; }
+[data-category="contact"] { --k: #1a73e8; } [data-category="personal_health"] { --k: #188038; }
+[data-category="pay_hr"] { --k: #9334e6; } [data-category="legal_business"] { --k: #007b83; }
+[data-category="other"] { --k: #80868b; }
+.iv-dot { background: var(--k, #80868b); }
+.iv-ring-seg { stroke: var(--k, #80868b); }

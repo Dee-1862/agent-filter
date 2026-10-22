@@ -148,29 +148,72 @@
     CATS.forEach(function (c) { total += counts[c.key] || 0; });
     box.setAttribute("data-total", String(total));
 
+    var approved = data.approved || 0, all = approved + total;
+    var pct = all ? Math.round(100 * total / all) : 0;
+
+    // Summary: a ring split by kind (share of all your lines), with the two counts beside it.
+    var head = el("div", "iv-head");
+    var R = 30, C = 2 * Math.PI * R, ring = svg("svg", { "class": "iv-ring", viewBox: "0 0 80 80", role: "img",
+      "aria-label": pct + " percent of your lines were kept private" });
+    ring.appendChild(svg("circle", { cx: 40, cy: 40, r: R, "class": "iv-ring-bg" }));
+    var offset = 0;
+    CATS.forEach(function (c) {
+      var n = counts[c.key] || 0;
+      if (!n || !all) return;
+      var len = C * n / all;
+      ring.appendChild(svg("circle", { cx: 40, cy: 40, r: R, "class": "iv-ring-seg", "data-category": c.key,
+        "stroke-dasharray": len.toFixed(2) + " " + (C - len).toFixed(2), "stroke-dashoffset": (-offset).toFixed(2),
+        transform: "rotate(-90 40 40)" }));
+      offset += len;
+    });
+    var num = svg("text", { x: 40, y: 45, "text-anchor": "middle", "class": "iv-ring-num" });
+    num.textContent = pct + "%";
+    ring.appendChild(num);
+    head.appendChild(ring);
+
     var tiles = el("div", "iv-tiles");
     function tile(n, txt) {
       var d = el("div", "iv-tile");
       d.appendChild(el("b", null, String(n))); d.appendChild(el("span", null, txt)); tiles.appendChild(d);
     }
-    tile(data.approved || 0, (data.labels && data.labels.approved) || "In your notes");
+    tile(approved, (data.labels && data.labels.approved) || "In your notes");
     tile(total, "Kept private");
-    box.appendChild(tiles);
+    head.appendChild(tiles);
+    box.appendChild(head);
 
     var list = el("ul", "iv-list");
+    var top = null;
     CATS.forEach(function (c) {
       var n = counts[c.key] || 0;
       if (!n) return;
+      if (!top || n > (counts[top.key] || 0)) top = c;
       var li = el("li", "has");
       li.setAttribute("data-category", c.key);
-      li.appendChild(el("span", "iv-name", c.short));
+      var name = el("span", "iv-name");
+      var dot = el("i", "iv-dot"); dot.setAttribute("data-category", c.key);
+      name.appendChild(dot); name.appendChild(document.createTextNode(c.short));
+      li.appendChild(name);
       li.appendChild(el("b", "iv-n", String(n)));
       list.appendChild(li);
     });
     if (total) box.appendChild(list);
     else box.appendChild(el("p", "dim", "Nothing kept private yet."));
 
-    if (data.timeline && data.timeline.length > 1) renderTimeline(box, data.timeline, data.now);
+    // Highlights: plain facts from the counts and the timeline, never content.
+    var facts = [];
+    if (top) facts.push("Most often kept private: " + top.short.toLowerCase());
+    var tl = data.timeline || [], end = Math.max(data.now || 0, tl.length ? tl[tl.length - 1].t : 0), offFor = 0;
+    tl.forEach(function (step, i) {
+      if (stateKey(step.state) === "off_record") offFor += (i + 1 < tl.length ? tl[i + 1].t : end) - step.t;
+    });
+    if (offFor >= 1) facts.push("Off the record for " + fmt(offFor) + (end ? " of " + fmt(end) : ""));
+    if (facts.length) {
+      var hl = el("div", "iv-facts");
+      facts.forEach(function (f) { hl.appendChild(el("p", null, f)); });
+      box.appendChild(hl);
+    }
+
+    if (tl.length > 1) renderTimeline(box, tl, data.now);
     return { total: total, text: summaryText(counts) };
   }
 
