@@ -68,6 +68,17 @@ A second clip after opt-out added no transcript line. The 42-test suite passed.
 These checks do not prove that the sensitive-content classifier catches every
 HR or numeric disclosure.
 
+In the instant-meeting UI on 2026-10-22, a host in Brave created a room and
+admitted a guest in a separate visible Chrome session. The host saw the guest's
+video tile and notes state. With notes enabled, the guest's private drawer
+displayed approved lines from a looping synthetic voice after the local hold.
+The backend's per-viewer stream tests keep guest lines out of the host stream.
+The same sentence repeated because the
+test audio looped. A separate local LiveKit SDK run returned the expected line
+through Whisper and the policy pipeline. The current demo test suite has 45
+passing tests. The secure LAN launcher served HTTPS successfully from the host
+Mac, but a second physical device has not yet been tested with its certificate.
+
 The same-machine `--dev` server uses placeholder credentials. Do not expose
 this demo server to a LAN or the internet as-is. LAN use needs its own keys,
 HTTPS, access control, and a local network egress check. Other participants
