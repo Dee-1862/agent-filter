@@ -37,6 +37,24 @@ SPOKEN_STOP_RE = re.compile(
     r"|i\s+(?:don't|do\s+not)\s+want\s+(?:this|that|my\s+voice|me)\s+(?:to\s+be\s+)?recorded\b)",
     re.I,
 )
+EMAIL_LOCAL_RE = re.compile(r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*\Z")
+EMAIL_DOMAIN_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
+
+
+def valid_delivery_email(value: object) -> str:
+    """Accept ordinary mailbox addresses without controls or mailto header injection."""
+    if not isinstance(value, str) or len(value) > 254 or value != value.strip():
+        raise HTTPException(400, "Valid email required")
+    parts = value.split("@")
+    if len(parts) != 2:
+        raise HTTPException(400, "Valid email required")
+    local, domain = parts
+    labels = domain.split(".")
+    if (not local or len(local) > 64 or len(domain) > 253 or len(labels) < 2
+            or not EMAIL_LOCAL_RE.fullmatch(local)
+            or any(not EMAIL_DOMAIN_LABEL_RE.fullmatch(label) for label in labels)):
+        raise HTTPException(400, "Valid email required")
+    return value
 
 
 # ---------------------------------------------------------------- helpers
@@ -203,6 +221,9 @@ class LiveSession:
         self.line_owner: dict[str, str] = {}  # approved line id -> owner identity
         self.finalized: set[str] = set()
         self.redactions: dict[str, dict[str, set[str]]] = {}
+        # Unverified address labels and explicit final-report delivery choice.
+        # Kept only in local room memory, never broadcast through SSE.
+        self.delivery: dict[str, dict[str, object]] = {}
         self.closed = False
         self.tasks: list[asyncio.Task] = []
         self.t0 = time.monotonic()
@@ -336,6 +357,7 @@ class LiveSession:
         self.set_consent(identity, False)
         if identity not in self.finalized:
             self._drop_lines_of(identity)
+            self.delivery.pop(identity, None)
         self.names.pop(identity, None)
         for sid, owner in list(self.sessions.items()):
             if owner == identity:
@@ -507,11 +529,9 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     def person(body: dict):
         name = str(body.get("name", "")).strip()[:60]
-        email = str(body.get("email", "")).strip()[:254]
+        email = valid_delivery_email(body.get("email"))
         if not name:
             raise HTTPException(400, "Display name required")
-        if not email or "@" not in email or " " in email:
-            raise HTTPException(400, "Valid email required")
         return name, email
 
     @app.get("/")
@@ -536,6 +556,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         sid = secrets.token_urlsafe(32)
         live.sessions[sid] = identity
         live.names[identity] = name
+        live.delivery[identity] = {"name": name, "email": email, "enabled": False}
         live.set_consent(identity, False)
         meetings[room_id] = {"session": live, "host": identity, "requests": {}, "email": email}
         browser_sessions[sid] = (room_id, "host", None)
@@ -610,6 +631,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         guest["status"] = "admitted"
         live.sessions[guest["sid"]] = guest["identity"]
         live.names[guest["identity"]] = guest["name"]
+        live.delivery[guest["identity"]] = {"name": guest["name"], "email": guest["email"],
+                                            "enabled": False}
         live.set_consent(guest["identity"], False)
         return {"ok": True}
 
@@ -693,6 +716,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         live.sensitive_paused.clear()
         live.finalized.clear()
         live.redactions.clear()
+        live.delivery.clear()
         live.messages.clear()
         room["requests"].clear()
         room.clear()
@@ -740,11 +764,14 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     async def me(request: Request):
         _, live, identity = room_for(request)
         owners = live.finishers()
+        delivery = live.delivery.get(identity, {})
         return JSONResponse({"identity": identity,
                 "participants": live.public_participants(identity),
                 "lines": live.own_lines(identity),
                 "redaction_counts": live.redaction_counts(identity),
                 "finalized": identity in live.finalized,
+                "delivery_email": delivery.get("email", ""),
+                "email_opted_in": bool(delivery.get("enabled", False)),
                 "ready_for_final": live.ready_for_final(),
                 "finalized_count": sum(1 for o in owners if o in live.finalized),
                 "contributor_count": len(owners)}, headers={"Cache-Control": "no-store"})
@@ -774,6 +801,40 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         _, live, identity = room_for(request)
         live.finalize(identity)
         return {"ok": True, "finalized": True}
+
+    @app.post("/api/notes/email-opt-in")
+    async def email_opt_in(request: Request, body: dict):
+        validate_origin(request)
+        _, live, identity = room_for(request)
+        if identity not in live.finalized:
+            raise HTTPException(409, "Finalize your notes first")
+        if type(body.get("enabled")) is not bool:
+            raise HTTPException(400, "enabled must be a boolean")
+        email = valid_delivery_email(body.get("email"))
+        entry = live.delivery.setdefault(identity, {"name": live.names.get(identity, ""),
+                                                    "email": "", "enabled": False})
+        entry["email"] = email
+        entry["enabled"] = body["enabled"]
+        return JSONResponse({"email": email, "enabled": body["enabled"]},
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/meetings/{room_id}/mail-recipients")
+    async def mail_recipients(room_id: str, request: Request):
+        _, live, _ = room_for(request, room_id, host=True)
+        if not live.ready_for_final():
+            raise HTTPException(409, "Final transcript is not ready")
+        seen = set()
+        recipients = []
+        for identity, entry in live.delivery.items():
+            if identity not in live.finalized or not entry.get("enabled"):
+                continue
+            email = str(entry["email"])
+            key = email.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            recipients.append({"name": str(entry["name"]), "email": email})
+        return JSONResponse({"recipients": recipients}, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/notes/final")
     async def notes_final(request: Request):

@@ -373,6 +373,77 @@ def test_host_end_purges_room_and_revokes_guest_access():
         assert live.approved == {}
 
 
+def test_email_signup_requires_own_finalization_and_keeps_addresses_private():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as guest, TestClient(app) as outsider:
+        room = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()["room_id"]
+        waiting = guest.post("/api/meetings/" + room + "/request",
+                             json={"name": "Guest", "email": "g@example.test"}).json()
+        assert guest.post("/api/notes/email-opt-in",
+                          json={"email": "g@example.test", "enabled": True}).status_code == 403
+        host.post("/api/meetings/" + room + "/admit", json={"request_id": waiting["request_id"]})
+        before = guest.get("/api/me").json()
+        assert before["delivery_email"] == "g@example.test"
+        assert before["email_opted_in"] is False
+        assert "h@example.test" not in json.dumps(before)
+        assert guest.post("/api/notes/email-opt-in",
+                          json={"email": "g@example.test", "enabled": True}).status_code == 409
+        assert host.get("/api/meetings/" + room + "/mail-recipients").status_code == 409
+        assert guest.get("/api/meetings/" + room + "/mail-recipients").status_code == 403
+        assert outsider.get("/api/meetings/" + room + "/mail-recipients").status_code == 401
+
+        guest.post("/api/notes/finalize", json={})
+        for invalid in ("person@example.test\r\nBcc:leak@example.test", "bad address@example.test",
+                        "person@example.test?subject=x", "a@localhost", "x" * 255):
+            assert guest.post("/api/notes/email-opt-in",
+                              json={"email": invalid, "enabled": True}).status_code == 400
+        assert guest.post("/api/notes/email-opt-in",
+                          json={"email": "g@example.test", "enabled": "true"}).status_code == 400
+        selected = guest.post("/api/notes/email-opt-in",
+                              json={"email": "guest+final@example.test", "enabled": True})
+        assert selected.json() == {"email": "guest+final@example.test", "enabled": True}
+        assert "no-store" in selected.headers["cache-control"]
+        assert guest.get("/api/me").json()["email_opted_in"] is True
+        assert "guest+final@example.test" not in json.dumps(host.get("/api/me").json())
+
+
+def test_final_email_recipients_dedupe_opt_out_departure_and_end_purge():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as first, TestClient(app) as second:
+        room = host.post("/api/meetings", json={"name": "Host", "email": "host@example.test"}).json()["room_id"]
+        for client, name in ((first, "First"), (second, "Second")):
+            waiting = client.post("/api/meetings/" + room + "/request",
+                                  json={"name": name, "email": name.lower() + "@example.test"}).json()
+            host.post("/api/meetings/" + room + "/admit", json={"request_id": waiting["request_id"]})
+        live = app.state.meetings[room]["session"]
+        host_id = host.get("/api/me").json()["identity"]
+        live.approved["line-1"] = {"id": "line-1", "speaker": host_id, "name": "Host", "text": "Safe notes"}
+        live.line_owner["line-1"] = host_id
+        for client in (host, first, second):
+            assert client.post("/api/notes/finalize", json={}).status_code == 200
+        assert host.get("/api/meetings/" + room + "/mail-recipients").json() == {"recipients": []}
+        host.post("/api/notes/email-opt-in", json={"email": "same@example.test", "enabled": True})
+        first.post("/api/notes/email-opt-in", json={"email": "SAME@example.test", "enabled": True})
+        second.post("/api/notes/email-opt-in", json={"email": "second@example.test", "enabled": True})
+        assert first.post("/api/leave").status_code == 200
+        response = host.get("/api/meetings/" + room + "/mail-recipients")
+        assert response.status_code == 200 and "no-store" in response.headers["cache-control"]
+        assert response.json() == {"recipients": [
+            {"name": "Host", "email": "same@example.test"},
+            {"name": "Second", "email": "second@example.test"}]}
+        assert "Safe notes" not in response.text
+        host.post("/api/notes/email-opt-in", json={"email": "same@example.test", "enabled": False})
+        assert host.get("/api/meetings/" + room + "/mail-recipients").json() == {"recipients": [
+            {"name": "First", "email": "SAME@example.test"},
+            {"name": "Second", "email": "second@example.test"}]}
+        second.post("/api/notes/email-opt-in", json={"email": "second@example.test", "enabled": False})
+        assert host.get("/api/meetings/" + room + "/mail-recipients").json() == {
+            "recipients": [{"name": "First", "email": "SAME@example.test"}]}
+        assert host.post("/api/meetings/" + room + "/end").status_code == 200
+        assert live.delivery == {}
+        assert host.get("/api/meetings/" + room + "/mail-recipients").status_code == 401
+
+
 def test_live_explicit_consent_off_discards_pending_and_blocks_later_segments():
     src = StubLiveSource()
     app = create_app("fake", source="livekit", live_source=src, autostart=False, hold_seconds=10)
