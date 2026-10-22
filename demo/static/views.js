@@ -33,6 +33,7 @@
     t = Math.max(0, Math.round(t || 0));
     return Math.floor(t / 60) + ":" + (t % 60 < 10 ? "0" : "") + (t % 60);
   }
+  function brief(t) { var m = String(t || "").match(/^[^.]*\./); return m ? m[0] : String(t || ""); }
   function secs(x) { return (Math.round((x || 0) * 10) / 10).toFixed(1) + " s"; }
 
   // ---------------------------------------------------------------- taxonomy
@@ -129,17 +130,12 @@
   // The facts shown when a kept-out row is opened: [label, value] pairs, plain language, no text.
   function explainFacts(item, holdSeconds) {
     var trail = (item && item.trail) || {}, cat = byKey[item && item.category] || byKey.other;
-    var fam = FAMS[trail.family] || FAMS.other || { label: "Rule", text: "" };
     var act = actionOf(trail);
-    var rows = [
-      ["Why", cat ? cat.rule : ""],
-      ["Rule that fired", fam.label + (fam.engine === "llm" ? " (local language model)" : " (rule based)") + ". " + fam.text],
-      ["State", stateLabel(trail.before) + "  ->  " + stateLabel(trail.after)],
-      ["Held", typeof trail.held_s === "number" ? "Decided " + secs(trail.held_s) + " after the line arrived" +
-        (holdSeconds ? " (hold window " + secs(holdSeconds) + ")." : ".") : "Timing not recorded."],
-      ["What the system did", act.label + ". " + act.text]
-    ];
-    return rows;
+    return [
+      ["What", act.label],
+      ["Why", brief(cat ? cat.rule : "")],
+      ["When", typeof trail.held_s === "number" ? "Decided " + secs(trail.held_s) + " after it was said" : ""]
+    ].filter(function (r) { return r[1]; });
   }
 
   // ---------------------------------------------------------------- INSIGHTS (aggregate only)
@@ -157,26 +153,24 @@
       var d = el("div", "iv-tile");
       d.appendChild(el("b", null, String(n))); d.appendChild(el("span", null, txt)); tiles.appendChild(d);
     }
-    tile(data.approved || 0, (data.labels && data.labels.approved) || "In the notes");
-    tile(total, "Kept out");
-    if (typeof data.removed === "number") tile(data.removed, "Removed by you");
+    tile(data.approved || 0, (data.labels && data.labels.approved) || "In your notes");
+    tile(total, "Kept private");
     box.appendChild(tiles);
 
-    box.appendChild(el("h3", null, "What was kept out, by kind"));
-    box.appendChild(el("p", "iv-sum", summaryText(counts)));
     var list = el("ul", "iv-list");
     CATS.forEach(function (c) {
-      var n = counts[c.key] || 0, li = el("li", n ? "has" : "none");
+      var n = counts[c.key] || 0;
+      if (!n) return;
+      var li = el("li", "has");
       li.setAttribute("data-category", c.key);
-      li.appendChild(el("span", "iv-name", c.label));
+      li.appendChild(el("span", "iv-name", c.short));
       li.appendChild(el("b", "iv-n", String(n)));
       list.appendChild(li);
     });
-    box.appendChild(list);
+    if (total) box.appendChild(list);
+    else box.appendChild(el("p", "dim", "Nothing kept private yet."));
 
-    box.appendChild(el("h3", null, "Recording state over time"));
-    renderTimeline(box, data.timeline, data.now);
-    box.appendChild(el("p", "iv-note", "Only kinds and counts are shown. The words, the speakers and the individual lines that were kept out are never listed here."));
+    if (data.timeline && data.timeline.length > 1) renderTimeline(box, data.timeline, data.now);
     return { total: total, text: summaryText(counts) };
   }
 
@@ -186,21 +180,18 @@
   // opts:  { onSelect(key), reveal: function(item) -> string|null   (operator replay mode only) }
   function ruleSteps(trail, holdSeconds) {
     var f = FAMS[trail.family] || FAMS.other || { label: "Rule", text: "" };
-    var steps = [
-      ["1. Line arrives", "It is held in a waiting buffer before it can reach the notes" + (holdSeconds ? " (hold window " + secs(holdSeconds) + ")" : "") + "."],
-      ["2. A rule family decides", f.label + (f.engine === "llm" ? " (local language model)" : " (rule based)") + ". " + f.text],
-      ["3. Recording state", stateLabel(trail.before) + "  ->  " + stateLabel(trail.after)],
-      ["4. Hold timing", typeof trail.held_s === "number" ? "Decided " + secs(trail.held_s) + " after the line arrived." : "Timing not recorded."],
-      ["5. Outcome", "The line stays out of the notes. Its words are not kept in this view."]
+    return [
+      ["Heard", "It waited a moment" + (holdSeconds ? " (" + secs(holdSeconds) + ")" : "") + " before reaching the notes."],
+      ["Checked", f.label + (f.engine === "llm" ? " (local model)" : " (rule)") + " flagged it."],
+      ["Result", "It was kept out of the notes."]
     ];
-    return steps;
   }
 
   function renderExplain(box, state, opts) {
     clear(box);
     state = state || {}; opts = opts || {};
-    var counts = state.counts || {}, sel = state.selected, item = state.item;
-    box.appendChild(el("p", "ex-intro", "Pick a kind to see its rule, or open a kept-out marker in the captions to see the trail for that moment. Nothing here shows what was said."));
+    var sel = state.selected, item = state.item;
+    box.appendChild(el("p", "ex-intro", "Every line waits a moment, gets checked, then goes to the notes or stays private."));
 
     var grid = el("div", "ex-grid");
     CATS.forEach(function (c) {
@@ -208,9 +199,7 @@
       b.type = "button";
       b.setAttribute("data-category", c.key);
       b.setAttribute("aria-pressed", sel === c.key ? "true" : "false");
-      b.appendChild(el("b", null, c.label));
-      b.appendChild(el("span", "ex-count", (counts[c.key] || 0) + " so far"));
-      b.appendChild(el("span", "ex-rule", c.rule));
+      b.appendChild(el("b", null, c.short));
       b.onclick = function () { if (opts.onSelect) opts.onSelect(c.key); };
       grid.appendChild(b);
     });
@@ -219,23 +208,10 @@
     var detail = el("section", "ex-detail");
     detail.setAttribute("aria-live", "polite");
     box.appendChild(detail);
-    if (!sel) {
-      detail.appendChild(el("p", "dim", "No kind selected."));
-      return;
-    }
+    if (!sel) return;
     var cat = byKey[sel];
-    detail.appendChild(el("h3", null, item ? "Trail for the marker you opened" : "How \"" + cat.label + "\" is decided"));
     if (!item) {
-      detail.appendChild(el("p", null, cat.rule));
-      detail.appendChild(el("h4", null, "Rule families that can produce this kind"));
-      var fl = el("ul", "ex-trail");
-      (cat.families || []).forEach(function (fk) {
-        var f = FAMS[fk]; if (!f) return;
-        var li = el("li"); li.appendChild(el("b", null, f.label + (f.engine === "llm" ? "  (language model)" : "  (rule based)")));
-        li.appendChild(el("span", null, f.text)); fl.appendChild(li);
-      });
-      detail.appendChild(fl);
-      detail.appendChild(el("p", "dim", "Every line takes the same path: wait in the hold buffer, get checked by these families in order, then either be released to the notes or kept out. The recording state before and after, and how long the line waited, are shown when you open a kept-out marker."));
+      detail.appendChild(el("p", null, brief(cat.rule)));
       return;
     }
     var ol = el("ol", "ex-trail steps");
@@ -244,13 +220,13 @@
     });
     detail.appendChild(ol);
     if (typeof opts.reveal === "function") {
-      var rb = el("button", "ex-reveal", "Reveal text (operator only)");
+      var rb = el("button", "ex-reveal", "Show text");
       rb.type = "button"; rb.setAttribute("aria-expanded", "false");
       var tx = el("div", "ex-text"); tx.hidden = true;
       rb.onclick = function () {
         tx.hidden = !tx.hidden;
         tx.textContent = tx.hidden ? "" : (opts.reveal(item) || "(no text recorded)");
-        rb.textContent = tx.hidden ? "Reveal text (operator only)" : "Hide text";
+        rb.textContent = tx.hidden ? "Show text" : "Hide text";
         rb.setAttribute("aria-expanded", tx.hidden ? "false" : "true");
       };
       detail.appendChild(rb); detail.appendChild(tx);

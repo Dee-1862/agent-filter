@@ -72,7 +72,7 @@ def test_index_has_progressive_disclosure_levels():
             assert marker in r.text, marker
         # the overview renders no private text: only placeholder chips; the shared views are served
         assert c.get("/static/views.js").status_code == 200 and c.get("/static/views.css").status_code == 200
-        assert "Reveal text" in c.get("/static/views.js").text
+        assert "Show text" in c.get("/static/views.js").text
 
 
 def test_index_dom_ids_all_exist():
