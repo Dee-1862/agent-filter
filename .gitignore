@@ -31,3 +31,5 @@ bench/data_v3/work/
 # long-lived service config (tunnel names, tokens): never commit
 .otr-service.json
 .otr-host.log
+docs/showcase/video/
+demo_audio_three/

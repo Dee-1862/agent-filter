@@ -80,6 +80,7 @@ def load_whisper(model: str = "base.en", cpu_threads: Optional[int] = None,
             text = " ".join(s.text.strip() for s in segs
                             if not (getattr(s, "no_speech_prob", 0.0) > 0.6 and getattr(s, "avg_logprob", 0.0) < -0.8)
                             and getattr(s, "avg_logprob", 0.0) > -1.4).strip()
+            text = " ".join(w for w in text.split() if any(ch.isalnum() for ch in w))   # drop stray "//" marks
             n = len(audio_f32)
             if n >= SR:   # real-time factor of the last decode (ignore tiny clips)
                 stats["rtf"] = round((time.perf_counter() - t) / (n / SR), 3)

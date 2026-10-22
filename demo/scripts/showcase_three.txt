@@ -1,0 +1,18 @@
+# Three people, three kinds of privacy signal. Format: Speaker: text. "@pause N" adds N seconds.
+Reddy: Okay, let's start the launch review. The beta goes live on the fourteenth.
+Lance: The meeting page and the call are stable on staging.
+NotTuff: Support docs are done and the help center goes out on Monday.
+@pause 2
+Reddy: Before we go on, this next part is off the record please.
+Lance: Between us, the platform team is being merged with infrastructure next month.
+NotTuff: Wow, I did not know that. Does leadership plan to announce it soon?
+Reddy: Okay, we are back on the record. Let's talk about the customer list.
+@pause 2
+Lance: The first fifty customers come from the waiting list, and we promised Acme the first slot.
+Lance: Strike that, I should not have named a customer.
+Reddy: Fine. Fifty customers from the waiting list.
+@pause 2
+NotTuff: One more thing on staffing. The new hire is asking for one hundred forty thousand dollars in salary.
+Reddy: Let's take that offline with the hiring manager.
+NotTuff: Agreed. Next steps: Lance sends the release checklist and I update the help center.
+Lance: Sounds good. Thanks everyone.

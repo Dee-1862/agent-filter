@@ -1,0 +1,31 @@
+{
+  "models": {
+    "whisper": {
+      "name": "base.en",
+      "loaded": true,
+      "load_seconds": 0.36,
+      "rtf": 0.322
+    },
+    "llm": {
+      "name": "granite4.2:3b",
+      "reachable": true,
+      "warm": true
+    },
+    "presidio": {
+      "model": "en_core_web_lg",
+      "available": true
+    }
+  },
+  "me": {
+    "subscribed": true,
+    "notes_on": true,
+    "audio_rms": 0.1,
+    "audio_level": 0.0,
+    "last_frame_age_s": 0.0,
+    "stt_last_activity_age_s": 45.06,
+    "state": "silent",
+    "error": null,
+    "waiting_lines": 0
+  },
+  "hold_seconds": 5.0
+}

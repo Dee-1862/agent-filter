@@ -1,0 +1,68 @@
+{
+  "person": "Reddy",
+  "approved_lines": [
+    "Okay, let's start the launch review.",
+    "The beta goes live on the 14th.",
+    "The meeting page and the call are stable on staging.",
+    "Support docs are done and the help center goes out on Monday.",
+    "Let's talk about the customer list.",
+    "Fine.",
+    "50 customers from the waiting list.",
+    "Let's take that offline with the hiring manager.",
+    "Agreed. Next steps, LAN sends the release checklist and I update the help center.",
+    "Sounds good.",
+    "Thanks everyone."
+  ],
+  "kept_out": [
+    {
+      "id": "s0005",
+      "category": "off_record",
+      "seq": 5,
+      "trail": {
+        "family": "cue",
+        "before": "ON",
+        "after": "OFF",
+        "held_s": 0.0
+      }
+    },
+    {
+      "id": "s0008",
+      "category": "off_record",
+      "seq": 8,
+      "trail": {
+        "family": "cue",
+        "before": "OFF",
+        "after": "ON",
+        "held_s": 0.0
+      }
+    }
+  ],
+  "insights": {
+    "approved": 6,
+    "kept_out": {
+      "off_record": 2
+    },
+    "total": 2,
+    "removed": 0,
+    "timeline": [
+      {
+        "t": 0.0,
+        "state": "off"
+      },
+      {
+        "t": 1.8,
+        "state": "recording"
+      },
+      {
+        "t": 91.5,
+        "state": "off_record"
+      },
+      {
+        "t": 105.9,
+        "state": "recording"
+      }
+    ],
+    "now": 172.2,
+    "hold_seconds": 5.0
+  }
+}

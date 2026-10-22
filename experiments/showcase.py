@@ -1,8 +1,7 @@
 """Record a three person meeting end to end and save screenshots, videos and proof files.
 
-Alice hosts, Bob and Carol join and are admitted. Each browser's microphone plays that person's
-voice track (text to speech, demo_audio/*.wav; Dan's lines are mixed into Bob's track so the salary
-line is spoken). Everyone turns notes on. The real chain runs: browser microphone, LiveKit, the
+Reddy hosts, Lance and Not Tuff join and are admitted. Each browser's microphone plays that person's
+voice track (text to speech, demo_audio_three/*.wav). Everyone turns notes on. The real chain runs: browser microphone, LiveKit, the
 notes engine on this laptop (Whisper, Presidio, cue detector, hold buffer, local model), and the page.
 
 Saves to docs/images/showcase/ (screenshots, small PNGs) and docs/showcase/ (videos and proof JSON):
@@ -28,12 +27,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
-AUDIO = ROOT / "demo_audio"
+AUDIO = ROOT / "demo_audio_three"   # python scripts/make_demo_audio.py --script demo/scripts/showcase_three.txt --out demo_audio_three
 SHOTS = ROOT / "docs" / "images" / "showcase"
 OUT = ROOT / "docs" / "showcase"
-PEOPLE = [("Alice", "alice@example.com", ["alice"]),
-          ("Bob", "bob@example.com", ["bob", "dan"]),
-          ("Carol", "carol@example.com", ["carol"])]
+PEOPLE = [("Reddy", "reddy@example.com", ["reddy"]),
+          ("Lance", "lance@example.com", ["lance"]),
+          ("Not Tuff", "nottuff@example.com", ["nottuff"])]
+SPEECH_S = 78        # length of the scripted meeting in demo_audio_three
+# (seconds after the first word, screenshot label): one per privacy signal
+MOMENTS = {26: "02-explicit-off-the-record", 35: "03-reaction-kept-out-too", 53: "04-strike-that-retraction",
+           64: "05-unspoken-salary-human-decides"}
 
 
 def read_track(name: str) -> tuple[array.array, int, int, int]:
@@ -59,6 +62,10 @@ def make_clip(names: list[str], lead_s: float, out: Path) -> float:
         o.setnchannels(ch); o.setsampwidth(width); o.setframerate(rate)
         o.writeframes((lead + mix + array.array("h", bytes(2 * rate * 8 * ch))).tobytes())
     return lead_s + n / ch / rate + 8
+
+
+def slug(name: str) -> str:
+    return name.lower().replace(" ", "-")
 
 
 def wait_js(page, expr: str, timeout_s: float = 30.0):
@@ -112,7 +119,7 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
             join_url = None
             for name, email, tracks in PEOPLE:
                 lead = max(3.0, t_speech - time.time() - 6.0)   # about 6 s from launch to the microphone opening
-                clip = tmp / f"{name.lower()}.wav"
+                clip = tmp / f"{slug(name)}.wav"
                 make_clip(tracks, lead, clip)
                 b = p.chromium.launch(channel="msedge", headless=True,
                                       args=flags + [f"--use-file-for-fake-audio-capture={clip}%noloop"])
@@ -139,11 +146,15 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
                     pg.fill("#guest-name", name)
                     pg.fill("#guest-email", email)
                     pg.click("#guest-join-button")
-                    host = pages["Alice"]
-                    if not host.is_visible("#lobby-list"):
-                        host.click("#people-button")
-                    host.wait_for_selector("#lobby-list button:text-is('Admit')", timeout=20000)
-                    host.click("#lobby-list button:text-is('Admit')")
+                    host = pages["Reddy"]
+                    admit = "#lobby-list button:text-is('Admit')"
+                    for _ in range(40):                       # open the People panel until the request shows
+                        if host.is_visible(admit):
+                            break
+                        if not host.is_visible("#lobby-list"):
+                            host.click("#people-button")
+                        time.sleep(0.5)
+                    host.click(admit)
                     pg.wait_for_selector("#meeting:not(.hidden)", timeout=30000)
                     print(f"{name} was admitted", flush=True)
                 pg.click("#agent-button")
@@ -156,13 +167,13 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
 
             for pg in pages.values():
                 open_agent(pg)
-            shot(pages["Alice"], "01-three-people-notes-on")
+            shot(pages["Reddy"], "01-three-people-notes-on")
             left = t_speech - time.time()
             print(f"speech starts in about {left:.0f} s, meeting runs for about 110 s", flush=True)
-            moments = {30: "02-off-the-record-starts", 50: "03-kept-out-markers-live", 70: "04-strike-that",
-                       90: "05-salary-mention"}
+            moments = MOMENTS
             done = set()
-            end = t_speech + 104 + wait_after
+            human_done = False
+            end = t_speech + SPEECH_S + wait_after
             while time.time() < end:
                 t = time.time() - t_speech
                 for at, label in moments.items():
@@ -170,29 +181,39 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
                         done.add(at)
                         for name in pages:
                             open_agent(pages[name])
-                            shot(pages[name], f"{label}-{name.lower()}")
+                            shot(pages[name], f"{label}-{slug(name)}")
+                # Human in the loop: the unspoken salary line pauses Not Tuff's notes. Not Tuff sees why,
+                # then chooses to turn notes back on for the rest of the meeting. The paused line stays out.
+                nt = pages["Not Tuff"]
+                if not human_done and t > 60 and nt.get_attribute("#notes-button", "aria-checked") == "false":
+                    open_agent(nt)
+                    shot(nt, "06-paused-for-a-sensitive-line-not-tuff")
+                    nt.click("#notes-button")
+                    time.sleep(1.0)
+                    shot(nt, "07-not-tuff-chooses-to-resume-notes")
+                    human_done = True
                 time.sleep(0.5)
 
             for name, pg in pages.items():
                 me = contexts[name].request.get(app + "/api/me").json()
                 proof = {"person": name, "approved_lines": [l.get("text") for l in me.get("lines", [])],
                          "kept_out": me.get("kept_out", []), "insights": me.get("insights", {})}
-                (OUT / f"proof_{name.lower()}.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
+                (OUT / f"proof_{slug(name)}.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
                 print(f"{name}: {len(proof['approved_lines'])} approved lines, {len(proof['kept_out'])} kept out", flush=True)
                 open_agent(pg)
-                shot(pg, f"06-final-captions-{name.lower()}")
+                shot(pg, f"08-final-notes-{slug(name)}")
                 open_view(pg, "link-insights")
-                shot(pg, f"07-insights-{name.lower()}")
+                shot(pg, f"09-insights-{slug(name)}")
                 open_view(pg, "link-explain")
-                shot(pg, f"08-how-it-decides-{name.lower()}")
+                shot(pg, f"10-how-it-decides-{slug(name)}")
                 open_agent(pg)
                 chip = pg.query_selector("#captions [data-category]")
                 if chip:
                     chip.click()
                     time.sleep(0.6)
-                    shot(pg, f"09-why-kept-out-{name.lower()}")
-            diag = contexts["Alice"].request.get(app + "/api/diagnostics").json()
-            (OUT / "diagnostics_alice.json").write_text(json.dumps(diag, indent=2), encoding="utf-8")
+                    shot(pg, f"11-why-kept-out-{slug(name)}")
+            diag = contexts["Reddy"].request.get(app + "/api/diagnostics").json()
+            (OUT / "diagnostics_reddy.json").write_text(json.dumps(diag, indent=2), encoding="utf-8")
         finally:
             for ctx in contexts.values():
                 ctx.close()
