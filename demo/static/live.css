@@ -80,6 +80,9 @@ input[type="checkbox"] { width: auto; }
 .setup-card > p, #join .lede { color: var(--ink-2); margin: 0 0 var(--s4); }
 .setup-card label, #join label { display: block; margin: var(--s3) 0 var(--s1); font-weight: 500; }
 .setup-card .field-help { margin: var(--s2) 0 var(--s3); font-size: 12px; }
+.forget-details { border: 0; padding: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.forget-details:hover { color: var(--blue); }
+.transcript-status { margin: 0; padding: 8px 12px; color: #8a5a00; background: #fff6df; font-size: 12px; }
 .setup-card .wide { display: block; width: 100%; margin-top: var(--s3); }
 .back-button { color: var(--blue); padding: 0; background: none; border: 0; font-weight: 500; }
 .share-link-row { display: flex; gap: var(--s2); }

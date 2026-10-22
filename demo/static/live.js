@@ -19,6 +19,7 @@
   let panelView = null, panelLastFocus = null, captionsOn = false, explainSel = null, explainItem = null;
   let capFollow = true, newCount = 0, pendingSeen = 0;
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
+  let transcriptUnavailable = false;
   let speaking = new Set(), muted = new Map();
   const connectedPeople = new Set();
   const videoTracks = new Map(), videoMuted = new Set(), videoEls = new Map();
@@ -181,6 +182,29 @@
   const post = (path, body) => api(path, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
+  const DETAILS_KEY = "otr-person-details-v1";
+  function rememberDetails(name, email) {
+    name = String(name || "").trim();
+    email = String(email || "").trim();
+    if (!email) {
+      try { email = JSON.parse(localStorage.getItem(DETAILS_KEY) || "null")?.email || ""; } catch (_) { email = ""; }
+    }
+    if (!name || name.length > 60 || (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))) return;
+    try { localStorage.setItem(DETAILS_KEY, JSON.stringify({name, email})); } catch (_) { }
+  }
+  function restoreDetails() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(DETAILS_KEY) || "null"); } catch (_) { return; }
+    if (!saved || typeof saved !== "object") return;
+    const name = typeof saved.name === "string" ? saved.name.slice(0, 60) : "";
+    const email = typeof saved.email === "string" ? saved.email.slice(0, 254) : "";
+    for (const id of ["host-name", "guest-name", "name"]) if (name) $(id).value = name;
+    for (const id of ["host-email", "guest-email"]) if (email) $(id).value = email;
+  }
+  function forgetDetails() {
+    try { localStorage.removeItem(DETAILS_KEY); } catch (_) { }
+    for (const id of ["host-name", "guest-name", "name", "host-email", "guest-email"]) $(id).value = "";
+  }
 
   function element(tag, className, value) {
     const node = document.createElement(tag);
@@ -343,7 +367,6 @@
   // ------------------------------------------------------------ Realtime approved transcript + text-free kept-out markers
   function captionItems() {
     const items = [];
-    if (!myNotesOn) return items;
     let order = 0;
     for (const line of lines.values()) {
       if (!line.removed) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
@@ -358,9 +381,7 @@
     const items = captionItems();
     box.replaceChildren();
     if (!items.length) {
-      box.append(element("p", "cap-empty", myNotesOn
-        ? "Approved lines from people with notes on appear here after a short safety hold."
-        : "Turn on notes to see the shared live transcript."));
+      box.append(element("p", "cap-empty", "Waiting for approved lines. When someone turns on notes, their lines appear here after about 10 seconds of safety review."));
     }
     for (const item of items) {
       const row = element("div", "cap" + (item.type === "chip" ? " out" : ""));
@@ -399,7 +420,7 @@
   }
   function renderLive() {
     const button = $("live-button");
-    const behind = myNotesOn && !capFollow;
+    const behind = !capFollow;
     button.classList.toggle("hidden", !behind);
     $("live-count").classList.toggle("hidden", !behind || newCount === 0);
     setText($("live-count"), newCount > 99 ? "99+ new" : `${newCount} new`);
@@ -607,7 +628,7 @@
     if (!nowPaused) sensitiveSeen = false;
     sensitivePaused = nowPaused;
     myNotesOn = !finalized && !sensitivePaused && notesOn(mine);
-    if (!myNotesOn) { lines.clear(); chips.clear(); capFollow = true; newCount = 0; }
+    $("transcript-status").classList.toggle("hidden", !transcriptUnavailable);
     renderAll();
     renderViews();
   }
@@ -619,7 +640,14 @@
       return;
     }
     meRefreshTimer = null;
-    try { applyMe(await api("/api/me")); } catch (_) { }
+    try {
+      const data = await api("/api/me");
+      transcriptUnavailable = false;
+      applyMe(data);
+    } catch (_) {
+      transcriptUnavailable = true;
+      $("transcript-status").classList.remove("hidden");
+    }
   }
 
   function setChips(list) {
@@ -645,7 +673,7 @@
       if (message.type === "participants") applyMe({ participants: message.participants });
       else if (message.type === "service") setConnection(message.status, "warn");
       else if (message.type === "snapshot") {
-        if (Array.isArray(message.lines)) lines = myNotesOn ? indexLines(message.lines) : new Map();
+        if (Array.isArray(message.lines)) lines = indexLines(message.lines);
         if (Array.isArray(message.kept_out)) chips.clear(), message.kept_out.forEach(c => chips.set(c.id, c));
         renderLines();
       } else if (message.type === "status") {
@@ -655,7 +683,7 @@
       } else if (message.type === "transcript") {
         let changed = false;
         for (const change of message.changes || []) {
-          if (change.kind === "committed" && change.line && myNotesOn) {
+          if (change.kind === "committed" && change.line) {
             lines.set(change.line.id, change.line);
             changed = true;
           }
@@ -1151,6 +1179,7 @@
     try {
       const config = configOverride || await api("/api/config");
       const access = accessOverride || await post("/api/join", { name });
+      if (!accessOverride) rememberDetails(name, $("host-email").value.trim() || $("guest-email").value.trim());
       me = access.identity;
       stopDeviceCheck();
       const roomOptions = { adaptiveStream: true, dynacast: true };
@@ -1267,7 +1296,7 @@
       renderMicButton();
       renderCameraButton();
       setConnection("Live · local room", "online");
-      api("/api/me").then(applyMe).catch(() => {});
+      refreshMe(true);
       connectStream();
       room.localParticipant.setMicrophoneEnabled(true).then(() => {
         renderMicButton();
@@ -1310,11 +1339,10 @@
       const target = sensitivePaused ? true : !myNotesOn;
       await post("/api/consent", { recording: target });
       myNotesOn = target;
-      if (!target) { lines.clear(); chips.clear(); capFollow = true; newCount = 0; }
       renderAll();
       announce(target ? "Notes on." : "Notes stopped.");
       await refreshMe(true);
-      if (target) showPanel("agent");
+      showPanel("agent");
     } catch (error) {
       showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
     } finally {
@@ -1533,6 +1561,8 @@
   }
 
   $("join-button").onclick = () => join();
+  restoreDetails();
+  for (const button of document.querySelectorAll(".forget-details")) button.onclick = forgetDetails;
   $("name").onkeydown = event => { if (event.key === "Enter") join(); };
   $("create-button").onclick = () => showEntry("host-setup");
   for (const back of document.querySelectorAll("[data-back-home]")) {
@@ -1552,6 +1582,7 @@
     setText($("host-error"), "");
     try {
       const access = await post("/api/meetings", {name: $("host-name").value.trim(), email: $("host-email").value.trim()});
+      rememberDetails($("host-name").value.trim(), $("host-email").value.trim());
       roomId = access.room_id;
       role = "host";
       joinAccess = access;
@@ -1576,6 +1607,7 @@
     try {
       await post(`/api/meetings/${encodeURIComponent(roomId)}/request`,
         {name: $("guest-name").value.trim(), email: $("guest-email").value.trim()});
+      rememberDetails($("guest-name").value.trim(), $("guest-email").value.trim());
       setText($("waiting-room-label"), `Meeting ${roomId}`);
       showEntry("waiting-screen");
       setWaitingState("waiting");

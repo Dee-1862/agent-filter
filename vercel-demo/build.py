@@ -50,7 +50,7 @@ def build(origin: str) -> None:
         ("the local meeting host transcribes your speech", "the meeting host transcribes your speech"),
         ("the local filter checks it", "the meeting host's filter checks it"),
         ("Speech recognition, filtering and the LiveKit room run on the local host serving this page. No cloud service is involved.",
-         "Speech recognition and filtering run on the meeting host. In this public demo, audio and video pass through LiveKit Cloud, and approved live transcript text passes through Vercel and Cloudflare while your notes are on. Withheld text is never sent to the notes panel."),
+         "Speech recognition and filtering run on the meeting host. In this public demo, audio and video pass through LiveKit Cloud, and approved live transcript text passes through Vercel and Cloudflare for admitted viewers. Withheld text is never sent to the notes panel."),
     ):
         html = replace_required(html, old, new)
     (OUTPUT / "index.html").write_text(html)
@@ -61,8 +61,7 @@ def build(origin: str) -> None:
     ):
         js = replace_required(js, old, new)
     # Vercel's external rewrite buffers SSE responses in this demo. Poll the
-    # viewer-scoped approved transcript; the backend sends no live text to
-    # viewers whose notes are off. Keep local source SSE.
+    # approved shared transcript for admitted viewers. Keep local source SSE.
     start = js.index("  function connectStream() {")
     end = js.index("  function renderMicButton()", start)
     js = js[:start] + js[end:]

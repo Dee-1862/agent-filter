@@ -255,13 +255,13 @@ function makeEnv(html, opts) {
     if (!("json" in res)) res = { status: 200, json: res };   // routes may return {status, json} or a bare body
     return { ok: res.status < 400, status: res.status, json: async () => res.json, text: async () => JSON.stringify(res.json) };
   }
-  const store = {};
+  const store = opts.store || {};
   const sandbox = {
     document: doc, console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, JSON, Math, Date, Object, Array,
     Map, Set, String, Number, Boolean, Error, RegExp, Symbol, Proxy, parseInt, parseFloat, isNaN, URL, URLSearchParams,
     encodeURIComponent, decodeURIComponent, performance, globalThis: undefined,
     fetch: fetchStub, EventSource: FakeES, requestAnimationFrame: fn => setTimeout(fn, 0),
-    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
     navigator: { clipboard: { writeText: async () => {} }, mediaDevices: {}, sendBeacon() {} },
     location: { origin: "http://127.0.0.1:8000", pathname: opts.pathname || "/", search: "", href: "", reload() {} },
     history: { replaceState() {} },
@@ -270,7 +270,7 @@ function makeEnv(html, opts) {
   sandbox.window = sandbox; sandbox.globalThis = sandbox;
   sandbox.window.isSecureContext = true;
   const ctx = vm.createContext(sandbox);
-  return { doc, ctx, calls, sources, rooms, sandbox, run(code, name) { vm.runInContext(code, ctx, { filename: name }); } };
+  return { doc, ctx, calls, sources, rooms, store, sandbox, run(code, name) { vm.runInContext(code, ctx, { filename: name }); } };
 }
 function loadScripts(env, html, only) {
   for (const m of html.matchAll(/<script(?: src="([^"]+)")?[^>]*>([\s\S]*?)<\/script>/g)) {
@@ -299,6 +299,8 @@ const all = (env, pred) => env.doc.body.all().filter(pred);
 // ------------------------------------------------------------------ scenario 1: consent page, host + lobby + three views
 async function consentHost() {
   const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  let recordingOn = false;
+  let approvedLines = [];
   const insights = { approved: 1, kept_out: { pay_hr: 1, off_record: 2 }, total: 3, removed: 0,
     timeline: [{ t: 0, state: "off" }, { t: 1.2, state: "recording" }, { t: 20, state: "off_record" }], now: 40, hold_seconds: 10 };
   const env = makeEnv(html, {
@@ -307,14 +309,14 @@ async function consentHost() {
       "POST /api/meetings": { room_id: "room1", join_url: "http://127.0.0.1:8000/m/room1", identity: "person-host", name: "Hana",
         role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "room1" },
       "GET /api/config": { mode: "livekit", url: "ws://127.0.0.1:7880", room: "room1", categories: [] },
-      "GET /api/me": { identity: "person-host", participants: { "person-host": { name: "Hana", recording: false } },
-        lines: [], kept_out: [], insights, redaction_counts: { suppressed: 0, removed: 0, total: 0 }, finalized: false,
-        ready_for_final: false, finalized_count: 0, contributor_count: 1 },
+      "GET /api/me": () => ({ identity: "person-host", participants: { "person-host": { name: "Hana", recording: recordingOn } },
+        lines: approvedLines, kept_out: [], insights, redaction_counts: { suppressed: 0, removed: 0, total: 0 }, finalized: false,
+        ready_for_final: false, finalized_count: 0, contributor_count: 1 }),
       "GET /api/meetings/room1/status": { status: "admitted", role: "host", identity: "person-host", name: "Hana", token: "tok",
         url: "ws://127.0.0.1:7880", room: "room1",
         pending: [{ request_id: "r1", name: "Guest Gail", email: "gail@example.com" }] },
       "POST /api/meetings/room1/admit": { ok: true },
-      "POST /api/consent": { identity: "person-host", recording: true },
+      "POST /api/consent": body => { recordingOn = body.recording; return { identity: "person-host", recording: recordingOn }; },
     },
   });
   loadScripts(env, html);
@@ -327,6 +329,16 @@ async function consentHost() {
   await sleep(30);
   check(visible($("share-screen")) && $("share-link").value.endsWith("/m/room1"), "share screen shows the meeting link");
   check(env.calls.some(c => c.url === "/api/meetings" && c.body.name === "Hana"), "host created the meeting");
+  check(JSON.parse(env.store["otr-person-details-v1"]).email === "hana@example.com", "successful host setup remembers name and email locally");
+  const returnVisit = makeEnv(html, { store: env.store });
+  loadScripts(returnVisit, html);
+  const savedField = id => returnVisit.doc.getElementById(id);
+  check(savedField("host-name").value === "Hana" && savedField("guest-name").value === "Hana"
+    && savedField("host-email").value === "hana@example.com" && savedField("guest-email").value === "hana@example.com",
+    "name and email prefill both forms on a return visit");
+  savedField("host-setup").all().find(e => e.classList.contains("forget-details")).click();
+  check(!env.store["otr-person-details-v1"] && !savedField("host-name").value && !savedField("guest-email").value,
+    "Forget them removes saved details and clears the forms");
   $("share-join-button").click();
   await sleep(60);
   check(visible($("meeting")) && visible($("control-bar")), "meeting and control bar shown after entering");
@@ -349,15 +361,18 @@ async function consentHost() {
   check(!$("people-badge").classList.contains("hidden") && text($("people-badge")) === "1", "people button shows the waiting count");
   const es = env.sources[0];
   check(es && es.url === "/stream", "stream opened");
-  es.push({ type: "snapshot", lines: [{ id: "hidden-before-opt-in", speaker: "person-g", name: "Gail", text: "Private until I opt in", seq: 0 }], kept_out: [] });
-  check(!text($("captions")).includes("Private until I opt in"), "an off viewer never displays a stale or buggy transcript snapshot");
+  es.push({ type: "snapshot", lines: [{ id: "approved-before-opt-in", speaker: "person-g", name: "Gail", text: "Approved before my opt in", seq: 0 }], kept_out: [] });
+  check(text($("captions")).includes("Approved before my opt in"), "an off viewer sees another speaker's approved transcript");
   es.push({ type: "participants", participants: { "person-host": { name: "Hana", recording: true } } });
+  recordingOn = true;
   es.push({ type: "snapshot", lines: [], kept_out: [] });
   es.push({ type: "status", ...insights });
   es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-host",
     line: { id: "l1", speaker: "person-host", name: "Hana", text: "Plan the launch", seq: 1 } }] });
   es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-g",
     line: { id: "l2", speaker: "person-g", name: "Gail", text: "I will send the agenda", seq: 3 } }] });
+  approvedLines = [{ id: "l1", speaker: "person-host", name: "Hana", text: "Plan the launch", seq: 1 },
+    { id: "l2", speaker: "person-g", name: "Gail", text: "I will send the agenda", seq: 3 }];
   // A hostile / buggy server message that tries to smuggle text into the kept-out marker and status.
   es.push({ type: "transcript", changes: [{ kind: "kept_out", id: "k1", owner: "person-host", category: "pay_hr", seq: 2,
     text: SECRET, trail: { family: "kw", before: "ON", after: "PENDING_CONFIRM", held_s: 2.4, text: SECRET } }] });
@@ -447,8 +462,9 @@ async function consentHost() {
   // consent / mic / camera controls
   $("notes-control").click(); await sleep(20);
   check(env.calls.some(c => c.url === "/api/consent" && c.body.recording === false), "Notes button posts the opposite consent choice");
-  check($("notes-control").getAttribute("aria-pressed") === "false" && !text($("captions")).includes("Plan the launch")
-    && !text($("captions")).includes("I will send the agenda"), "turning notes off promptly clears the shared transcript");
+  check($("notes-control").getAttribute("aria-pressed") === "false" && text($("captions")).includes("Plan the launch")
+    && text($("captions")).includes("I will send the agenda") && visible($("panel-agent")),
+    "turning notes off keeps the shared transcript open");
   check(!env.calls.some(c => c.url === "/api/confirm"), "consent page never calls /api/confirm");
   return env;
 }

@@ -51,6 +51,7 @@
       <label for="host-email">Your email</label>
       <input id="host-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
       <p class="field-help">Shown to you as a label. It is not verified.</p>
+      <p class="field-help saved-details">Your name and email stay in this browser for next time. <button class="forget-details" type="button">Forget them</button></p>
       <button id="host-create-button" class="primary wide" type="button">Start meeting</button>
       <p id="host-error" class="error" role="alert"></p>
     </section>
@@ -64,6 +65,7 @@
       <label for="guest-email">Your email</label>
       <input id="guest-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
       <p class="field-help">Shown to the host so they can recognize you. It is not verified.</p>
+      <p class="field-help saved-details">Your name and email stay in this browser for next time. <button class="forget-details" type="button">Forget them</button></p>
       <button id="guest-join-button" class="primary wide" type="button">Ask to join</button>
       <p id="guest-error" class="error" role="alert"></p>
     </section>
@@ -148,6 +150,7 @@
             </div>
             <div class="captions-wrap">
               <h3 class="transcript-heading">Live transcript</h3>
+              <p id="transcript-status" class="transcript-status hidden" role="status">The live transcript is unavailable right now. Trying again…</p>
               <div id="captions" class="captions" tabindex="0" aria-live="off" aria-label="Live approved transcript from people with notes on"></div>
               <button id="live-button" class="jump-chip hidden" type="button">Jump to latest<span id="live-count" class="live-count hidden">0</span></button>
             </div>
@@ -194,7 +197,7 @@
               <ol>
                 <li>Your microphone controls who hears you in the call. Notes are a separate choice.</li>
                 <li>With your notes on, the local meeting host transcribes your speech and holds each line briefly while the local filter checks it.</li>
-                <li>With notes on, you can see approved lines from everyone who has notes on. Only the speaker can remove their own lines.</li>
+                <li>Everyone in the meeting can see approved lines from people who have notes on. Only the speaker can remove their own lines.</li>
                 <li>After everyone finishes, someone can explicitly copy the combined final transcript. The final report shows counts, never withheld words.</li>
               </ol>
               <p>Speech recognition, filtering and the LiveKit room run on the local host serving this page. No cloud service is involved.</p>

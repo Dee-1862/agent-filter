@@ -1,6 +1,6 @@
 """Consent-gated LiveKit demo mode (from the per-person-consent branch).
 
-Each speaker has their own policy pipeline; a participant sees only their own
+Each speaker has their own policy pipeline; admitted participants see shared
 approved lines. Once every contributor has explicitly finalized, any
 participant may request the combined final transcript. Used by
 `python -m demo.server --source livekit`. The shared-view StreamRunner mode is
@@ -209,8 +209,8 @@ class LiveSession:
 
     Each speaker has their own policy pipeline. The temporary text and full
     audit trail stay in process memory and are never placed in ``messages``.
-    Participants with notes enabled can see current approved room lines. Each
-    speaker alone controls capture and removal of their lines. The combined
+    Admitted participants can see current approved room lines. Each speaker
+    alone controls capture and removal of their lines. The combined
     final transcript is returned only on explicit request after every
     contributor whose lines remain has finalized.
     """
@@ -273,9 +273,7 @@ class LiveSession:
         return [self.approved[lid] for lid, owner in self.line_owner.items() if owner == identity]
 
     def shared_lines_for(self, viewer: str) -> list[dict]:
-        """Only an opted-in participant receives the room's approved text."""
-        if not self.source.consent_snapshot().get(viewer, False):
-            return []
+        """Return the approved room text for an authenticated participant."""
         return list(self.approved.values())
 
     def redaction_counts(self, identity: str | None = None) -> dict[str, int]:
@@ -408,11 +406,10 @@ class LiveSession:
         if message.get("type") == "participants":
             return {"type": "participants", "participants": self.public_participants(viewer)}
         if message.get("type") == "transcript":
-            notes_on = bool(self.source.consent_snapshot().get(viewer, False))
             changes = [change for change in message["changes"]
                        if (change["kind"] == "kept_out" and change.get("owner") == viewer)
-                       or (notes_on and change["kind"] == "removed")
-                       or (notes_on and change["kind"] == "committed"
+                       or change["kind"] == "removed"
+                       or (change["kind"] == "committed"
                            and change["line"]["id"] in self.approved)]
             return {"type": "transcript", "changes": changes} if changes else None
         if message.get("type") == "redaction_counts":
@@ -1142,7 +1139,8 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         async def gen():
             # Do not replay earlier approved text after retroactive deletion.
             # A fresh connection gets only the current approved snapshot.
-            # Only participants with notes on receive approved room text.
+            # Admitted participants receive approved room text even with their
+            # own capture off. Speaker consent still gates what gets approved.
             # Kept-out detail and sensitive status remain owner-only.
             if live.closed:
                 return
