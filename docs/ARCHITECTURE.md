@@ -4,6 +4,43 @@ Mermaid diagrams of the running system, drawn from the code on `master` (`otr/`,
 
 **Status legend** (applies to every diagram): nothing below the browser has been run against real voices yet. The LiveKit path, real speech-to-text and the Ollama language-model calls are untested end to end; the pipeline, runtime and demo server are covered by offline tests (`python -m pytest tests -q`).
 
+## 0. The simple version (start here)
+
+People talk. Everything they say is written down, but **nothing reaches the shared notes until a privacy check has had a chance to stop it.** Everything runs on the laptop; no meeting content goes to a cloud service.
+
+```mermaid
+flowchart LR
+  A["1. YOU SPEAK<br/>Browser microphone"] --> B["2. MEETING ROOM<br/>LiveKit<br/>keeps each person's voice separate"]
+  B --> C["3. VOICE TO TEXT<br/>faster-whisper<br/>turns each voice into sentences,<br/>labelled with who said them"]
+  C --> D["4. WAITING ROOM<br/>Hold buffer<br/>every sentence waits 10 to 30 s"]
+  D --> E["5. PRIVACY CHECKS<br/>Presidio finds phone numbers and emails<br/>Cue detector hears off the record, strike that<br/>State machine remembers if we are off the record<br/>Ollama model spots salary, health, HR"]
+  E -- "safe" --> F["6. NOTES<br/>Committed text only"]
+  E -- "private" --> G["Kept out<br/>or asks: keep that out of the notes?"]
+  F --> H["7. YOUR SCREEN<br/>Meeting view<br/>captions, insights, why was this kept out"]
+  G --> H
+```
+
+What each part does, in plain words:
+
+| Step | Tool | What it does | What can go wrong |
+|---|---|---|---|
+| 1. Speak | Browser microphone | Captures your voice; you choose whether recording is on | Nobody has tested this with real voices yet |
+| 2. Meeting room | **LiveKit** | A local video-call server. Every person gets their own audio track, so we know who is speaking without guessing from the sound | Needs Docker running |
+| 3. Voice to text | **faster-whisper** | Speech-to-text. A sentence is only passed on once two passes agree on the words | Mishears words, including cue phrases like "off the record" |
+| 4. Waiting room | **Hold buffer** | The key idea. Text waits before it can reach the notes, so a "strike that" said a few seconds later can still catch it | Adds delay to the live notes |
+| 5a. Contact details | **Presidio** | Microsoft's open-source tool that spots emails, phone numbers and similar details and masks them. We use a simple pattern-matching version if Presidio isn't installed | Only finds obvious details, not secrets |
+| 5b. Spoken signals | **Cue detector** | Listens for "off the record", "between us", "back on the record", "strike that", "forget what I said about X". Tolerates speech-to-text errors | Can mistake a movie title or a quote for a signal |
+| 5c. Memory | **State machine** | Remembers if we are RECORDING, OFF THE RECORD, or waiting for your OK. Stays off until someone says we are back | Ending the off-the-record section too early leaks text |
+| 5d. Unspoken secrets | **Ollama** (local language model) | Judges whether a sentence is sensitive without any signal, such as salary, health or HR. Falls back to keywords if Ollama isn't running | A small model misses subtle cases |
+| 6. Notes | Committed list | Only text that passed every check. Anything removed later by "strike that" is deleted and logged | |
+| 7. Your screen | Meeting view | Shows captions of approved text only. One click for insights, one more for why something was kept out | Private text is hidden on screen but still sent to the browser |
+
+**What you see as a user:** a normal-looking meeting. Captions appear a few seconds late. If someone says "off the record", the status changes and their words vanish from the captions. If someone mentions a salary, a small card asks "Keep that out of the notes?" Click Insights to see what was kept out and why, and Why? on any item to see the exact rule that fired.
+
+**Why it is built this way:** asking a language model once to "remove anything private" has been shown to leak (see [RESEARCH.md](RESEARCH.md)). So the simple, predictable parts (the waiting room, the cue rules, the state memory) do the heavy lifting, and the language model is used only for the hard judgment calls. Whether that beats a well-prompted model is exactly what the benchmark in `bench/` is meant to test, and the evidence so far is early and synthetic.
+
+The rest of this file has the detailed diagrams.
+
 ## 1. End to end: voice in the browser to text on screen
 
 Two demo modes share the same engine. They differ in who captures the voice and who sees the output.
