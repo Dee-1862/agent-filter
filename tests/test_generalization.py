@@ -31,7 +31,7 @@ def L(spec):
 CASES = {
     # --- the fresh example from the bug report ---------------------------------------------
     "fresh": L([
-        ("Dee", "K", "Let's lock the launch checklist. Docs are done and QA signs off Friday."),
+        ("Dee", "O", "Let's lock the launch checklist. Docs are done and QA signs off Friday."),
         ("Sam", "P", "Quick thing, can we keep this part out of the notes? Finance told me the Series B term sheet is delayed until January."),
         ("Sam", "P", "So the runway number I gave the board is basically fiction, we have about five months of cash."),
         ("Dee", "P", "Wow. Okay, I won't repeat that to anyone."),
@@ -202,6 +202,8 @@ def test_fresh_example_u1_whole_utterance_redacted_and_scope_off():
 
 
 def test_fresh_example_retraction_policy():
+    # documented cost: the retraction removes the whole earlier segment (u0 also held a public
+    # sentence that did not mention QA); segments are atomic in the notes
     p, ev, kept, kinds, _ = run_case("fresh", "nollm")
     # earlier public statement about QA removed (it was still held: redacted with retro reason)
     assert any(e.segment_id == "u0" and e.reason.startswith("retro:match") for e in ev)
@@ -250,7 +252,10 @@ PUBLIC_MENTIONS = [
 @pytest.mark.parametrize("text", PUBLIC_MENTIONS)
 def test_public_mentions_are_not_cues(text):
     c = cd.detect(text)
-    assert c.kind is None, (text, c)
+    # either no cue, or a weak one that is not acted on without an LLM's confirmation
+    assert c.kind is None or (c.weak and not c.accept_alone), (text, c)
+    p, _ = _ask(None, text)
+    assert p.state == "ON" and p.notes() == [] and len(p.buf) == 1
 
 
 def test_public_mentions_not_leaked_end_to_end():
@@ -301,11 +306,16 @@ def test_llm_failure_timeout_and_garbage_fall_back_to_structured():
     import time
 
     def slow(pr):
-        time.sleep(1.0)
+        if CUE_KEY in pr:
+            time.sleep(1.0)
         return '{"intent":"none","topic":""}'
     t0 = time.time()
     p, ev = _ask(MockLLM(slow), "Skip the notes for this: Priya's visa got denied.", cue_llm_timeout=0.1)
-    assert time.time() - t0 < 0.9 and p.state == "OFF"
+    assert p.state == "OFF"                                    # certain cue: LLM never consulted
+    # uncertain utterance: a hung LLM is abandoned after the timeout and the structured result stands
+    t0 = time.time()
+    p, ev = _ask(MockLLM(slow), "The minutes from last week are in the shared folder.", cue_llm_timeout=0.1)
+    assert time.time() - t0 < 0.9 and p.state == "ON"
     assert p.stats["cue_llm_failures"] == 1
 
 

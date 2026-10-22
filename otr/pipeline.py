@@ -354,7 +354,7 @@ class Pipeline:
         cue = cd.detect(text)
         if cue.false_alarm:
             return cue
-        uncertain = cue.gate if cue.kind is None else cue.weak
+        uncertain = (cue.gate or (self.sm.in_scope and cd.gate_in_scope(text))) if cue.kind is None else cue.weak
         if not uncertain:
             return cue
         res = self._llm_intent(text)
@@ -436,7 +436,7 @@ class Pipeline:
         # The retract line itself is dropped, except when it also carries a correction
         # ("scratch the bit about QA, I misspoke, they sign off Monday"): then the line minus its
         # retract clause is kept as an ordinary public line (the correction is information).
-        keep = bool(cue.keep_text) and len(cd.content_stems(cue.keep_text)) >= 3
+        keep = bool(cue.keep_text) and len(cd.content_stems(cue.keep_text)) >= 2
         if keep:
             item.seg = replace(item.seg, text=redact_pii(cue.keep_text, self.use_presidio)[0])
         else:

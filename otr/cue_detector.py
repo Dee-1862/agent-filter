@@ -257,7 +257,9 @@ def _detect_strict(t: str) -> Cue:
             g = cm.group(1).lower()
             count = _NUMW.get(g) or int(g)
             topic = ""        # "the last two things" is positional, not a topic
-        end = m.end() + (tm.end(1) if tm else 0)
+        if tm and _CORR.search(t) and "," in topic:
+            topic = topic.split(",")[0].strip()          # "about Atlas, I misspoke, ..." -> "Atlas"
+        end = m.end() + (tm.start(1) + len(topic) if tm else 0)
         return Cue("retro", "retro", topic, count=count, span=(m.start(), end))
     m = _START.search(t)
     e = _END.search(t)
@@ -354,8 +356,9 @@ _NEG_STRONG = [
                 re.I), True),
     (re.compile(rf"\bout\s+of\s+(?:the\s+|our\s+|any\s+)?{_OBJ_NOTES}\b", re.I), True),
     (re.compile(r"\boff\s+(?:the\s+)?(?:notes|minutes|transcript|write[\s\-]?up)\b", re.I), True),
-    (re.compile(r"(?:\b(?:not|never|no|dont)|n't)\b(?:\W+\w+){0,2}?\W+(?:write|record|note|minute|jot|log|transcribe|"
-                r"document|capture|type|put|include|mention|list|take|taking|keep|writing|recording)\b", re.I), False),
+    (re.compile(r"(?:\b(?:not|never|no|dont)|n't)\b(?:\W+(?!forget\b|remember\b|hesitate\b|miss\b|neglect\b|fail\b|ever\b|just\b|need\b)\w+){0,2}?\W+"
+                r"(?:write|record|note|minute|jot|log|transcribe|document|capture|type|put|include|mention|list|take|"
+                r"taking|keep|writing|recording)\b", re.I), False),
 ]
 _NEG_GENERIC = [
     (re.compile(rf"(?:\b(?:not|never|no)|n't)\b(?:\W+\w+){{0,2}}?\W+(?:in|into|on|from|for)\s+(?:\w+\s+)?(?:the\s+|our\s+|any\s+)?"
@@ -423,7 +426,7 @@ def _structured_start(t: str) -> Optional[Cue]:
         strong, generic = _neg_hit(s, _NEG_STRONG), _neg_hit(s, _NEG_GENERIC)
         if not (strong or generic):
             continue
-        certain = bool(_FRAME.search(s) or _TARGET.search(s))
+        certain = bool(_FRAME.search(s) or (strong and _TARGET.search(s)))
         return Cue("start", "intent_start", weak=not certain, accept_alone=certain or strong, source="structured")
     return None
 
@@ -505,6 +508,15 @@ _GATE = re.compile(
     r"(?:strike|forget|ignore)\s+(?:that|what|the))\b", re.I)
 
 
+_GATE_SCOPE = re.compile(r"\b(?:again|resume|back|continue|go\s+ahead|private\s+part|sensitive|over|done|finished|"
+                         r"carry\s+on|ok(?:ay)?\s+(?:so|now)|alright|all\s+right)\b", re.I)
+
+
+def gate_in_scope(text: str) -> bool:
+    """Extra gate while note-taking is paused: words that often signal the pause is over."""
+    return bool(_GATE_SCOPE.search(text))
+
+
 def gate_signal(text: str) -> bool:
     """Cheap lexical signal that an utterance might be about the record itself."""
     return bool(_GATE.search(text))
@@ -534,13 +546,9 @@ def detect(text: str) -> Cue:
         if c2.kind is not None:
             c2.fuzzy = True
             return _annotate_correction(c2, fixed) if c2.kind == "retro" else c2
-    c3 = detect_structured(fixed)
-    if c3.kind is None:
-        canon, ch2 = canon_words(fixed)
-        if ch2:
-            c3 = detect_structured(canon)
-            c3.fuzzy = True
-    elif changed:
+    canon, ch2 = canon_words(fixed)
+    c3 = detect_structured(canon if ch2 else fixed)
+    if c3.kind is not None and (changed or ch2):
         c3.fuzzy = True
     if c3.kind is not None:
         return c3
