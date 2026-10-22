@@ -108,28 +108,22 @@
     box.setAttribute("data-total", String(total));
 
     var tiles = el("div", "iv-tiles");
-    function tile(n, txt, cls) {
-      var d = el("div", "iv-tile " + (cls || ""));
+    function tile(n, txt) {
+      var d = el("div", "iv-tile");
       d.appendChild(el("b", null, String(n))); d.appendChild(el("span", null, txt)); tiles.appendChild(d);
     }
-    tile(data.approved || 0, (data.labels && data.labels.approved) || "In the notes", "ok");
-    tile(total, "Kept out", "out");
-    if (typeof data.removed === "number") tile(data.removed, "Removed by you", "");
+    tile(data.approved || 0, (data.labels && data.labels.approved) || "In the notes");
+    tile(total, "Kept out");
+    if (typeof data.removed === "number") tile(data.removed, "Removed by you");
     box.appendChild(tiles);
 
-    box.appendChild(el("h3", null, "What kind of things were kept out"));
+    box.appendChild(el("h3", null, "What was kept out, by kind"));
     box.appendChild(el("p", "iv-sum", summaryText(counts)));
-    var list = el("ul", "iv-bars");
-    var max = 1;
-    CATS.forEach(function (c) { max = Math.max(max, counts[c.key] || 0); });
+    var list = el("ul", "iv-list");
     CATS.forEach(function (c) {
       var n = counts[c.key] || 0, li = el("li", n ? "has" : "none");
       li.setAttribute("data-category", c.key);
       li.appendChild(el("span", "iv-name", c.label));
-      var bar = svg("svg", { "class": "iv-bar", viewBox: "0 0 100 8", preserveAspectRatio: "none", "aria-hidden": "true" });
-      bar.appendChild(svg("rect", { x: 0, y: 0, width: 100, height: 8, "class": "iv-track" }));
-      if (n) bar.appendChild(svg("rect", { x: 0, y: 0, width: (n / max * 100).toFixed(1), height: 8, "class": "iv-fill" }));
-      li.appendChild(bar);
       li.appendChild(el("b", "iv-n", String(n)));
       list.appendChild(li);
     });
@@ -172,7 +166,7 @@
     clear(box);
     state = state || {}; opts = opts || {};
     var counts = state.counts || {}, sel = state.selected, item = state.item;
-    box.appendChild(el("p", "ex-intro", "This is how the system decides what stays out of the notes. Pick a kind below to see its rule, or open a \"kept out\" marker in the live captions to see the trail for that moment. Nothing here shows what was said."));
+    box.appendChild(el("p", "ex-intro", "Pick a kind to see its rule, or open a kept-out marker in the captions to see the trail for that moment. Nothing here shows what was said."));
 
     var grid = el("div", "ex-grid");
     CATS.forEach(function (c) {

@@ -5,7 +5,8 @@
   const LiveKit = window.LivekitClient;
   const Views = window.OTRViews;
   const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
+  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>';
+  const MIC_ON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3m5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>';
 
   let room = null, me = null, eventSource = null;
   let participants = {};
@@ -15,12 +16,12 @@
   // Text-free aggregates and placeholders from the server; see demo/live_session.py insights_for().
   let insights = { approved: 0, kept_out: {}, total: 0, removed: 0, timeline: [], now: 0, hold_seconds: null };
   const chips = new Map();   // segment id -> {id, category, seq, trail}; never any text
-  let activeView = "realtime", explainSel = null, explainItem = null;
-  let capFollow = true, newCount = 0, presenter = false;
+  let panelView = null, panelLastFocus = null, captionsOn = false, explainSel = null, explainItem = null;
+  let capFollow = true, newCount = 0, pendingSeen = 0;
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
   let speaking = new Set(), muted = new Map();
   const videoTracks = new Map(), videoMuted = new Set();
-  let toastTimer = null, meRefreshTimer = null, drawerLastFocus = null;
+  let toastTimer = null, meRefreshTimer = null, clockTimer = null;
   let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
   let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
   let roomId = null, role = null, joinAccess = null, lobbyTimer = null, waitingTimer = null, roomTimer = null;
@@ -44,6 +45,11 @@
     list.replaceChildren();
     $("lobby-count").textContent = String(pending.length);
     $("lobby-empty").classList.toggle("hidden", pending.length > 0);
+    const badge = $("people-badge");
+    badge.classList.toggle("hidden", pending.length === 0);
+    setText(badge, String(pending.length));
+    if (pending.length > pendingSeen && panelView !== "people") showPanel("people");
+    pendingSeen = pending.length;
     for (const request of pending) {
       const item = document.createElement("li");
       const label = document.createElement("span");
@@ -76,7 +82,7 @@
   function startLobby() {
     if (role !== "host") return;
     $("host-lobby").classList.remove("hidden");
-    $("share-meeting-link-button").classList.remove("hidden");
+    $("info-link").value = `${location.origin}/m/${encodeURIComponent(roomId)}`;
     pollLobby();
     clearInterval(lobbyTimer);
     lobbyTimer = setInterval(pollLobby, 1500);
@@ -175,8 +181,9 @@
       const isMuted = identity === me
         ? (room ? !room.localParticipant.isMicrophoneEnabled : false)
         : muted.get(identity) === true;
-      tile.querySelector(".muted-badge").classList.toggle("hidden", !isMuted);
-      setText(tile.querySelector(".tile-mic"), isMuted ? "Muted" : "");
+      const state = tile.querySelector(".mic-state");
+      state.classList.toggle("muted", isMuted);
+      state.setAttribute("aria-label", isMuted ? "Microphone off" : "Microphone on");
     }
   }
 
@@ -238,22 +245,26 @@
     const members = Object.entries(participants);
     members.sort((a, b) => (a[0] === me ? -1 : b[0] === me ? 1 : 0));
     if (!members.length) {
-      grid.append(element("p", "grid-empty", "Waiting for people to join…"));
+      grid.append(element("p", "grid-empty", "Waiting for people to join..."));
       return;
     }
     for (const [identity, p] of members) {
       const on = notesOn(p);
       const tile = element("div", "tile" + (identity === me ? " self" : ""));
+      const avatar = element("div", "avatar", initials(p.name || identity));
+      const mic = element("span", "mic-state");
+      mic.setAttribute("role", "img");
+      const micOn = element("span", "m-on");
+      micOn.innerHTML = MIC_ON_SVG;
+      const micOff = element("span", "m-off");
+      micOff.innerHTML = MIC_OFF_SVG;
+      mic.append(micOn, micOff);
+      const label = element("div", "tile-label");
+      label.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
       const notes = element("span", "tile-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
       notes.prepend(element("span", "dot"));
-      const avatar = element("div", "avatar", initials(p.name || identity));
-      const badge = element("span", "muted-badge hidden");
-      badge.innerHTML = MIC_OFF_SVG;
-      avatar.append(badge);
-      const info = element("div", "tile-info");
-      info.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
-      info.append(element("span", "tile-mic", ""));
-      tile.append(notes, avatar, info);
+      label.append(notes);
+      tile.append(avatar, mic, label);
       grid.append(tile);
       tileEls[identity] = tile;
     }
@@ -263,24 +274,6 @@
 
   function renderLines() {
     renderCaptions();
-    const box = $("my-lines");
-    box.replaceChildren();
-    const mine = [...lines.values()].filter(line => !line.removed && isMyLine(line));
-    $("my-lines-empty").classList.toggle("hidden", mine.length > 0);
-    const badge = $("drawer-badge");
-    badge.classList.toggle("hidden", !mine.length);
-    setText(badge, String(mine.length));
-    for (const line of mine) {
-      const li = element("li", "line");
-      li.append(element("span", "words", line.text));
-      const remove = element("button", null, "✕");
-      remove.type = "button";
-      remove.setAttribute("aria-label", `Remove line: ${line.text}`);
-      remove.disabled = finalized;
-      remove.onclick = () => removeLine(line.id, remove);
-      li.append(remove);
-      box.append(li);
-    }
   }
 
   // ------------------------------------------------------------ Realtime captions (your approved lines + kept-out markers)
@@ -300,12 +293,18 @@
     const items = captionItems();
     box.replaceChildren();
     if (!items.length) {
-      box.append(element("p", "cap-empty", "Captions of your approved lines appear here after a short safety hold. Turn Notes on to start.")); 
+      box.append(element("p", "cap-empty", "Lines you approve appear here after a short safety hold. Turn notes on to start."));
     }
     for (const item of items) {
       const row = element("div", "cap" + (item.type === "chip" ? " out" : ""));
       if (item.type === "line") {
         row.append(element("span", "who", item.line.name || "You"), element("span", "words", item.line.text));
+        const remove = element("button", "remove", "Remove");
+        remove.type = "button";
+        remove.setAttribute("aria-label", `Remove line: ${item.line.text}`);
+        remove.disabled = finalized;
+        remove.onclick = () => removeLine(item.line.id, remove);
+        row.append(remove);
       } else {
         row.append(Views.chip(item.chip.category, () => openMarker(item.chip)));
       }
@@ -314,34 +313,46 @@
     if (items.length > shownCaptions && !capFollow) newCount += items.length - shownCaptions;
     shownCaptions = items.length;
     if (capFollow) box.scrollTop = box.scrollHeight;
+    renderStageCaptions(items);
     renderLive();
+  }
+  function renderStageCaptions(items) {
+    const stage = $("stage-captions");
+    stage.classList.toggle("hidden", !captionsOn);
+    if (!captionsOn) return;
+    stage.replaceChildren();
+    for (const item of items.filter(entry => entry.type === "line").slice(-2)) {
+      const row = element("p", "stage-cap");
+      row.append(element("span", "who", item.line.name || "You"), element("span", "words", item.line.text));
+      stage.append(row);
+    }
+    if (!stage.children.length) stage.append(element("p", "stage-cap", "Captions show the lines you approve."));
   }
   function renderLive() {
     const button = $("live-button");
     const behind = !capFollow;
-    button.classList.toggle("behind", behind);
+    button.classList.toggle("hidden", !behind);
     $("live-count").classList.toggle("hidden", !behind || newCount === 0);
-    setText($("live-count"), newCount > 99 ? "99+" : String(newCount));
-    button.setAttribute("aria-label", behind
-      ? `Live: ${newCount} new, jump back to the real-time meeting`
-      : "Live: you are following the meeting in real time");
+    setText($("live-count"), newCount > 99 ? "99+ new" : `${newCount} new`);
+    button.setAttribute("aria-label", behind ? `Jump to latest, ${newCount} new` : "Jump to latest");
   }
   function goLive() {
-    if (activeView !== "realtime") setView("realtime");
+    if (panelView !== "agent") showPanel("agent");
     capFollow = true; newCount = 0;
     const box = $("captions");
     box.scrollTop = box.scrollHeight;
     renderLive();
-    const button = $("live-button");
-    button.classList.add("flash");
-    setTimeout(() => button.classList.remove("flash"), 500);
   }
 
-  // ------------------------------------------------------------ the three views
+  // ------------------------------------------------------------ the side panel (one at a time)
+  const PANEL_TITLES = { agent: "Off The Record", insights: "What was kept out", explain: "How it decides", people: "People", info: "Meeting details" };
+  const PANEL_VIEWS = { agent: "panel-agent", insights: "view-insights", explain: "view-explain", people: "panel-people", info: "panel-info" };
+  const PANEL_ROOT = { agent: "agent", insights: "agent", explain: "agent", people: "people", info: "info" };
+  const PANEL_BUTTONS = { agent: "agent-button", people: "people-button", info: "info-button" };
   function openMarker(chip) {
     explainSel = chip.category;
     explainItem = chip;
-    setView("explain");
+    showPanel("explain");
   }
   function renderInsightsView() {
     Views.renderInsights($("view-insights"), Object.assign({}, insights, {
@@ -361,65 +372,76 @@
   }
   let viewSignature = "";
   function renderViews(force) {
-    if (activeView === "realtime") { viewSignature = ""; return; }
+    if (panelView !== "insights" && panelView !== "explain") { viewSignature = ""; return; }
     // The server repeats unchanged status often; skip identical renders so focus and selection are not lost.
-    const signature = JSON.stringify([activeView, insights, explainSel, explainItem && explainItem.id]);
+    const signature = JSON.stringify([panelView, insights, explainSel, explainItem && explainItem.id]);
     if (!force && signature === viewSignature) return;
     viewSignature = signature;
-    if (activeView === "insights") renderInsightsView();
+    if (panelView === "insights") renderInsightsView();
     else renderExplainView();
   }
-  function setView(name) {
-    activeView = name;
-    for (const button of document.querySelectorAll("#view-tabs .view-tab")) {
-      const on = button.dataset.view === name;
-      button.setAttribute("aria-selected", String(on));
-      button.tabIndex = on ? 0 : -1;
+  function renderPanelButtons() {
+    for (const [name, id] of Object.entries(PANEL_BUTTONS)) {
+      const open = !!panelView && PANEL_ROOT[panelView] === name;
+      const button = $(id);
+      button.setAttribute("aria-expanded", String(open));
+      button.classList.toggle("on", open);
     }
-    $("view-realtime").classList.toggle("hidden", name !== "realtime");
-    $("view-insights").classList.toggle("hidden", name !== "insights");
-    $("view-explain").classList.toggle("hidden", name !== "explain");
+  }
+  function showPanel(name) {
+    if (!panelView) panelLastFocus = document.activeElement;
+    panelView = name;
+    $("side-panel").classList.remove("hidden");
+    for (const [key, id] of Object.entries(PANEL_VIEWS)) $(id).classList.toggle("hidden", key !== name);
+    setText($("panel-title"), PANEL_TITLES[name]);
+    $("panel-back").classList.toggle("hidden", PANEL_ROOT[name] === name);
+    renderPanelButtons();
     renderViews(true);
-    if (name === "realtime") { const box = $("captions"); if (capFollow) box.scrollTop = box.scrollHeight; }
+    if (name === "agent" && capFollow) { const box = $("captions"); box.scrollTop = box.scrollHeight; }
+    $("panel-title").focus();
   }
-  function setPresenter(on) {
-    presenter = on;
-    document.body.classList.toggle("presenter", on);
-    $("present-button").setAttribute("aria-pressed", String(on));
-    setText($("present-button"), on ? "Exit presenter mode" : "Presenter mode");
-    try { localStorage.setItem("otr-presenter", on ? "1" : "0"); } catch (_) { }
+  function closePanel() {
+    if (!panelView) return;
+    panelView = null;
+    $("side-panel").classList.add("hidden");
+    renderPanelButtons();
+    if (panelLastFocus && panelLastFocus.isConnected) panelLastFocus.focus();
+    panelLastFocus = null;
   }
-  function renderStatusPill() {
-    const pill = $("status-pill");
-    const timeline = insights.timeline || [];
-    const last = timeline.length ? timeline[timeline.length - 1].state : "off";
-    let cls = "off", text = "NOT RECORDING ME";
-    if (finalized) text = "NOTES FINISHED";
-    else if (sensitivePaused) { cls = "paused"; text = "PAUSED"; }
-    else if (myNotesOn) { cls = "on"; text = "RECORDING ME"; }
-    else if (last === "off_record") { cls = "off-record"; text = "OFF THE RECORD"; }
-    pill.className = "status-pill " + cls;
-    setText(pill, text);
+  function togglePanel(name) {
+    if (panelView && PANEL_ROOT[panelView] === name) closePanel();
+    else showPanel(name);
+  }
+  function setCaptions(on) {
+    captionsOn = on;
+    const button = $("captions-button");
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+    const label = on ? "Turn off captions" : "Turn on captions";
+    button.setAttribute("aria-label", label);
+    button.title = label + " (c)";
+    renderCaptions();
+  }
+  function tickClock() {
+    setText($("meeting-clock"), new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
   }
 
   function renderNotesControl() {
     const button = $("notes-button");
     const paused = sensitivePaused && !finalized;
-    button.classList.toggle("on", myNotesOn);
-    button.classList.toggle("paused", paused);
     button.disabled = finalized;
-    button.setAttribute("aria-pressed", String(myNotesOn));
-    if (finalized) setText($("notes-label"), "Notes finished");
-    else if (paused) setText($("notes-label"), "Notes paused — restart");
-    else if (myNotesOn) setText($("notes-label"), "Stop notes for me");
-    else setText($("notes-label"), "Notes off");
-    const shortStatus = $("capture-status");
-    shortStatus.className = "capture-status" + (paused ? " paused" : myNotesOn ? " on" : "");
-    if (finalized) setText(shortStatus, "Your notes are finished.");
-    else if (paused) setText(shortStatus, "Your notes paused. Pending text was discarded.");
-    else if (myNotesOn) setText(shortStatus, "Your audio is being transcribed locally for notes.");
-    else setText(shortStatus, "Your notes are off. Others can still hear you.");
-    renderStatusPill();
+    button.setAttribute("aria-checked", String(myNotesOn));
+    let state, line;
+    if (finalized) { state = "Finished"; line = "Notes are finished"; }
+    else if (paused) { state = "Paused"; line = "Notes are paused for you"; }
+    else if (myNotesOn) { state = "On"; line = "Notes are on for you"; }
+    else { state = "Off"; line = "Notes are off"; }
+    setText($("notes-label"), state);
+    setText($("capture-status"), line);
+    $("agent-dot").classList.toggle("hidden", !myNotesOn);
+    const agent = $("agent-button");
+    agent.setAttribute("aria-label", `Off The Record. ${line}.`);
+    agent.title = `Off The Record: ${line.toLowerCase()}`;
   }
 
   function renderRedactionCounts() {
@@ -445,20 +467,8 @@
     node.classList.remove("hidden");
   }
 
-  function renderDrawer() {
-    const paused = sensitivePaused && !finalized;
-    const subtitle = $("drawer-subtitle");
-    if (finalized) setText(subtitle, "Your notes are finished.");
-    else if (paused) setText(subtitle, "Notes are paused for you after a sensitive pause.");
-    else if (myNotesOn) setText(subtitle, "Notes are on — capture runs only for you.");
-    else setText(subtitle, "Notes are off.");
-    const explanation = $("note-state-explainer");
-    if (finalized) setText(explanation, "Your notes are finished. Your speech can no longer be added to the transcript.");
-    else if (paused) setText(explanation, "The local filter paused your notes and discarded the pending text. Nothing new is added until you restart notes yourself.");
-    else if (myNotesOn) setText(explanation, "The local meeting host is transcribing your audio. Approved lines appear below after a short safety hold.");
-    else setText(explanation, "Notes are off for you. The call still sends your audio to other people when your microphone is on.");
-
-    const list = $("drawer-people");
+  function renderPanelState() {
+    const list = $("people-list");
     list.replaceChildren();
     for (const [identity, p] of Object.entries(participants)) {
       const on = notesOn(p);
@@ -486,7 +496,7 @@
     }
     if (readyForFinal) setText(status, "The final transcript is ready to copy.");
     else if (finalized) setText(status, finalizedCount != null && contributorCount != null
-      ? `Waiting for other contributors — ${finalizedCount} of ${contributorCount} finished.`
+      ? `Waiting for other contributors: ${finalizedCount} of ${contributorCount} finished.`
       : "Waiting for other contributors to finish their notes.");
     else setText(status, "Review or remove lines above, then finish your notes. Finishing keeps notes off.");
   }
@@ -495,7 +505,7 @@
     renderTiles();
     renderLines();
     renderNotesControl();
-    renderDrawer();
+    renderPanelState();
   }
 
   function applyMe(data) {
@@ -547,7 +557,7 @@
     if (typeof message.ready_for_final === "boolean") { readyForFinal = message.ready_for_final; changed = true; }
     if (typeof message.finalized_count === "number") { finalizedCount = message.finalized_count; changed = true; }
     if (typeof message.contributor_count === "number") { contributorCount = message.contributor_count; changed = true; }
-    if (changed) { renderNotesControl(); renderDrawer(); }
+    if (changed) { renderNotesControl(); renderPanelState(); }
   }
 
   function connectStream() {
@@ -564,7 +574,6 @@
       } else if (message.type === "status") {
         const { type, ...rest } = message;
         insights = rest;
-        renderStatusPill();
         renderViews();
       } else if (message.type === "transcript") {
         let changed = false;
@@ -597,8 +606,9 @@
     const button = $("mic-button");
     button.classList.toggle("muted-on", isMuted);
     button.setAttribute("aria-pressed", String(!isMuted));
-    button.querySelector(".icon-mic").classList.toggle("hidden", isMuted);
-    button.querySelector(".icon-mic-off").classList.toggle("hidden", !isMuted);
+    const label = isMuted ? "Turn on microphone" : "Turn off microphone";
+    button.setAttribute("aria-label", label);
+    button.title = label;
     setText($("mic-label"), isMuted ? "Unmute" : "Mute");
   }
 
@@ -694,7 +704,10 @@
       for (const screen of ENTRY_SCREENS) $(screen).classList.add("hidden");
       $("meeting").classList.remove("hidden");
       $("control-bar").classList.remove("hidden");
-      setText($("meeting-room-name"), `Meeting ${config.room}`);
+      setText($("meeting-room-name"), roomId || config.room);
+      tickClock();
+      clearInterval(clockTimer);
+      clockTimer = setInterval(tickClock, 30000);
       startLobby();
       startRoomStatus();
       renderMicButton();
@@ -857,7 +870,7 @@
       deliveryEmail = saved.email;
       emailOptedIn = saved.enabled;
       emailChoiceDirty = false;
-      renderDrawer();
+      renderPanelState();
       result.classList.add("ok");
       setText(result, enabled ? "Saved. The host can include this address in the final email draft." : "Saved. Your address will not be in the host's draft.");
     } catch (error) {
@@ -874,7 +887,7 @@
   }
 
   async function showEndDialog() {
-    if (!$("notes-drawer").hidden) closeDrawer();
+    closePanel();
     endDialogLastFocus = document.activeElement;
     $("end-dialog").classList.remove("hidden");
     $("end-backdrop").classList.remove("hidden");
@@ -942,28 +955,6 @@
     }
   }
 
-  function openDrawer() {
-    const drawer = $("notes-drawer");
-    drawer.hidden = false;
-    $("drawer-backdrop").classList.remove("hidden");
-    requestAnimationFrame(() => drawer.classList.add("open"));
-    $("drawer-button").setAttribute("aria-expanded", "true");
-    drawerLastFocus = document.activeElement;
-    $("drawer-close").focus();
-  }
-
-  function closeDrawer() {
-    const drawer = $("notes-drawer");
-    drawer.classList.remove("open");
-    $("drawer-button").setAttribute("aria-expanded", "false");
-    setTimeout(() => {
-      drawer.hidden = true;
-      $("drawer-backdrop").classList.add("hidden");
-    }, 240);
-    if (drawerLastFocus && drawerLastFocus.isConnected) drawerLastFocus.focus();
-    drawerLastFocus = null;
-  }
-
   $("join-button").onclick = () => join();
   $("name").onkeydown = event => { if (event.key === "Enter") join(); };
   $("create-button").onclick = () => showEntry("host-setup");
@@ -980,7 +971,7 @@
   $("host-create-button").onclick = async () => {
     const button = $("host-create-button");
     button.disabled = true;
-    setText(button, "Creating…");
+    setText(button, "Starting...");
     setText($("host-error"), "");
     try {
       const access = await post("/api/meetings", {name: $("host-name").value.trim(), email: $("host-email").value.trim()});
@@ -991,7 +982,7 @@
       $("share-link").value = access.join_url;
       showEntry("share-screen");
     } catch (error) { setText($("host-error"), error.message); }
-    finally { button.disabled = false; setText(button, "Create meeting"); }
+    finally { button.disabled = false; setText(button, "Start meeting"); }
   };
   $("copy-link-button").onclick = async () => {
     try { await navigator.clipboard.writeText($("share-link").value); setText($("copy-link-button"), "Copied"); }
@@ -1051,37 +1042,21 @@
     } finally { button.disabled = false; }
   };
   $("notes-button").onclick = toggleNotes;
-  const tabButtons = [...document.querySelectorAll("#view-tabs .view-tab")];
-  for (const button of tabButtons) {
-    button.onclick = () => setView(button.dataset.view);
-    button.onkeydown = event => {
-      const i = tabButtons.indexOf(button);
-      let next = -1;
-      if (event.key === "ArrowRight") next = (i + 1) % tabButtons.length;
-      else if (event.key === "ArrowLeft") next = (i + tabButtons.length - 1) % tabButtons.length;
-      else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = tabButtons.length - 1;
-      if (next < 0) return;
-      event.preventDefault();
-      setView(tabButtons[next].dataset.view);
-      tabButtons[next].focus();
-    };
-  }
   $("live-button").onclick = goLive;
-  $("present-button").onclick = () => setPresenter(!presenter);
+  $("captions-button").onclick = () => setCaptions(!captionsOn);
   $("captions").addEventListener("scroll", () => {
     const box = $("captions");
     capFollow = box.scrollHeight - box.scrollTop - box.clientHeight < 12;
     if (capFollow) newCount = 0;
     renderLive();
   });
-  try { if (localStorage.getItem("otr-presenter") === "1") setPresenter(true); } catch (_) { }
-  $("drawer-button").onclick = () => {
-    if ($("notes-drawer").hidden) openDrawer();
-    else closeDrawer();
-  };
-  $("drawer-close").onclick = closeDrawer;
-  $("drawer-backdrop").onclick = closeDrawer;
+  $("agent-button").onclick = () => togglePanel("agent");
+  $("people-button").onclick = () => togglePanel("people");
+  $("info-button").onclick = () => togglePanel("info");
+  $("panel-close").onclick = closePanel;
+  $("panel-back").onclick = () => showPanel("agent");
+  $("link-insights").onclick = () => showPanel("insights");
+  $("link-explain").onclick = () => showPanel("explain");
   $("finalize-button").onclick = finalize;
   $("copy-button").onclick = copyFinal;
   $("report-button").onclick = viewFinalReport;
@@ -1128,20 +1103,10 @@
     if (!["INPUT", "TEXTAREA", "SELECT"].includes(tag) && !event.ctrlKey && !event.metaKey && !event.altKey
         && !$("meeting").classList.contains("hidden")) {
       const key = String(event.key).toLowerCase();
-      if (key === "p") setPresenter(!presenter);
-      else if (key === "l") goLive();
+      if (key === "l") goLive();
+      else if (key === "c") setCaptions(!captionsOn);
     }
-    const drawer = $("notes-drawer");
-    if (event.key === "Escape" && !drawer.hidden) { closeDrawer(); return; }
-    if (!drawer.hidden && event.key === "Tab") {
-      const nodes = [...drawer.querySelectorAll(FOCUSABLE)]
-        .filter(node => node.offsetParent !== null || node === document.activeElement);
-      if (!nodes.length) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    }
+    if (event.key === "Escape" && panelView) closePanel();
   });
   const initialRoom = location.pathname.match(/^\/m\/([^/]+)\/?$/);
   if (initialRoom) {
