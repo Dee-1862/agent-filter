@@ -1176,6 +1176,30 @@
 
   // ---- notes engine status (text-free, from GET /api/diagnostics)
   let diagTimer = null, diagBusy = false, diagGone = false, diag = null;
+  // Model picker: only the host machine is offered the installed list; viewers see the active model in the rows above.
+  let modelPickerState = "idle";
+  async function loadModelPicker() {
+    if (modelPickerState !== "idle") return;
+    modelPickerState = "loading";
+    try {
+      const info = await api("/api/models");
+      const row = $("model-row"), select = $("model-select");
+      if (!info.can_switch || !info.installed.length) { modelPickerState = "done"; return; }
+      select.replaceChildren(...info.installed.map(name => {
+        const o = element("option", null, name); o.value = name; o.selected = name === info.active; return o;
+      }));
+      select.onchange = async () => {
+        select.disabled = true;
+        try { await post("/api/model", { model: select.value }); showToast("Local model changed to " + escapeHtml(select.value) + ".", "ok"); }
+        catch (error) { showToast(escapeHtml(error.message || "Could not change the model."), "err"); }
+        select.disabled = false;
+        const cur = $("engine-models"); if (cur) cur.dataset.signature = "";
+      };
+      row.classList.remove("hidden");
+      modelPickerState = "done";
+    } catch (_) { modelPickerState = "done"; }
+  }
+
   function engineModelRows(models) {
     const rows = [];
     const w = models && models.whisper, l = models && models.llm, p = models && models.presidio;
@@ -1209,6 +1233,7 @@
       list.dataset.signature = signature;
       list.replaceChildren(...rows.map(r => element("li", null, r)));
     }
+    loadModelPicker();
     const mine = diag.me || {};
     setIfChanged($("engine-input"), engineInputText(mine));
     $("engine-input").setAttribute("data-state", mine.state || "");

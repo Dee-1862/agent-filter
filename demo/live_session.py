@@ -1076,6 +1076,52 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
             payload["service"] = service
         return JSONResponse(payload, headers=headers)
 
+    def _real_llm():
+        """The Ollama client under any service gate wrapper, or None when no model is configured."""
+        inner = getattr(llm, "inner", llm)
+        return inner if hasattr(inner, "installed") and hasattr(inner, "model") else None
+
+    def _host_only(request: Request) -> bool:
+        """True only for a request made on this machine itself, not through a tunnel or the network."""
+        from demo.egress import is_direct_loopback
+        return is_direct_loopback(request.scope)
+
+    @app.get("/api/models")
+    async def models_list(request: Request):
+        """Which local model is filtering. Only the host machine sees the installed list and may switch it."""
+        real = _real_llm()
+        active = getattr(real, "model", None)
+        body = {"active": active, "can_switch": False, "installed": []}
+        if real is not None and _host_only(request):
+            try:
+                body["installed"] = [m for m in real.installed() if "embed" not in m.lower()]
+                body["can_switch"] = True
+            except Exception:  # noqa: BLE001 - Ollama not reachable
+                pass
+        return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/model")
+    async def model_select(request: Request, body: dict):
+        real = _real_llm()
+        if real is None or not _host_only(request):
+            raise HTTPException(403, "Only the host machine can change the model")
+        validate_origin(request)
+        name = body.get("model")
+        try:
+            have = real.installed()
+        except Exception:  # noqa: BLE001
+            raise HTTPException(503, "Ollama is not reachable")
+        if not isinstance(name, str) or name not in have:
+            raise HTTPException(400, "Choose one of the installed models")
+        real.model = name
+        try:
+            real._cache.clear()
+        except Exception:  # noqa: BLE001
+            pass
+        llm_state["warm"] = False
+        warm_llm(llm, llm_state)
+        return {"active": name}
+
     @app.post("/api/consent")
     async def consent(request: Request, body: dict):
         _, live, identity = room_for(request)

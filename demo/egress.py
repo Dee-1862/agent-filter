@@ -158,6 +158,7 @@ def _build_allowed() -> frozenset[str]:
           "recipients[].name", "recipients[].email", "version"}
     a |= _under("categories[]", _CATEGORY) | _under("families.*", _FAMILY)
     a |= _under("lines[]", ("id", "name", "text"))
+    a |= {"active", "can_switch", "installed[]"}                # /api/models, /api/model: model names only
     a |= {"detail"}                                       # FastAPI error text (fixed strings)
     a |= _under("redaction_counts", _REDACTION)
     return frozenset(a)
