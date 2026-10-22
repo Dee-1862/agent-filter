@@ -18,6 +18,8 @@ These runs establish that the basic per-person LiveKit path works. They do **not
 
 `experiments/livekit_sim.py` joins one local LiveKit participant per manifest entry, publishes each WAV, applies scheduled consent changes, and reads only the approved `/api/me` view. It rejects non-loopback app and LiveKit URLs and requires `"synthetic": true`. Install the demo and ingest requirements plus `ffmpeg`; run a local LiveKit server and the live demo first. Keep the generated WAVs, manifests, and result JSON outside the repository.
 
+This test used the **per-person consent** mode, `--source livekit`. In Deekshith's `p2-brain` branch, that mode lives in `demo/live_session.py`; `--source livekit-stream` names the separate shared-view mode. Before merging this experiment branch with `p2-brain`, move the spoken-stop fix and its regression tests from `demo/server.py` to `demo/live_session.py` and rerun the synthetic audio case. The document entries on `p2-brain` use C-008 through C-011, L-005 through L-008, and Q9; this report introduces no numbered entry.
+
 I used the [Piper CLI](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/CLI.md) with the 18-speaker `en_US-arctic-medium` voice. To create your own synthetic files in `/tmp`, install `piper-tts` in an isolated environment, then run:
 
 ```bash
