@@ -196,6 +196,39 @@ def test_live_uses_per_person_consent_and_publishes_approved_only():
     assert "stop recording me" not in json.dumps(live.messages)
 
 
+@pytest.mark.parametrize("spoken", [
+    "Please stop recording the...",  # observed local TTS -> Whisper output
+    "Stop recording.",
+    "Hey, please stop recording me.",
+])
+def test_live_spoken_stop_tolerates_misheard_ending_and_discards_text(spoken):
+    src = StubLiveSource()
+    live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
+    live.names.update({"alice": "Alice", "bob": "Bob"})
+    live.set_consent("alice", True)
+    live.set_consent("bob", True)
+    live.push(Segment("request", "alice", spoken, 0, 0))
+    live.push(Segment("after", "alice", "This must stay out", 1, 1))
+    assert src.consent == {"alice": False, "bob": True}
+    assert live.approved == {}
+    assert spoken not in json.dumps(live.messages)
+    assert "This must stay out" not in json.dumps(live.messages)
+
+
+@pytest.mark.parametrize("spoken", [
+    "I said, 'stop recording me' as an example.",
+    "Don't stop recording me.",
+    "We should discuss the stop recording button.",
+])
+def test_live_spoken_stop_ignores_quoted_or_negated_mentions(spoken):
+    src = StubLiveSource()
+    live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
+    live.names["alice"] = "Alice"
+    live.set_consent("alice", True)
+    live.push(Segment("mention", "alice", spoken, 0, 0))
+    assert src.consent["alice"] is True
+
+
 def test_live_endpoints_never_offer_replay_controls_or_raw_state():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
@@ -222,6 +255,24 @@ def test_live_consent_is_bound_to_server_issued_identity():
         assert src.consent[alice] and not src.consent[bob]
         assert second.get("/api/me").json()["identity"] == bob
         assert first.post("/api/consent", json={"recording": "false"}).status_code == 400
+
+
+def test_live_explicit_consent_off_discards_pending_and_blocks_later_segments():
+    src = StubLiveSource()
+    app = create_app("fake", source="livekit", live_source=src, autostart=False, hold_seconds=10)
+    with TestClient(app) as client:
+        identity = client.post("/api/join", json={"name": "Alice"}).json()["identity"]
+        assert client.post("/api/consent", json={"recording": True}).status_code == 200
+        session = app.state.session
+        session.push(Segment("pending", identity, "Private pending line", 0, 0))
+        assert identity in session.pipes
+        assert client.post("/api/consent", json={"recording": False}).status_code == 200
+        assert src.consent[identity] is False
+        assert identity not in session.pipes
+        session.push(Segment("later", identity, "Private later line", 1, 1))
+        assert client.get("/api/me").json()["lines"] == []
+        assert "Private pending line" not in json.dumps(session.messages)
+        assert "Private later line" not in json.dumps(session.messages)
 
 
 def test_live_sensitive_hold_pauses_only_that_speaker_and_never_allows_publication():
