@@ -1,0 +1,20 @@
+# Product sync, three beats. Format: Speaker: text. "@pause N" adds N seconds.
+Alice: Okay, let's kick off the Q3 roadmap sync. Main topics are the mobile redesign and the billing migration.
+Bob: Mobile redesign is on track. Design handed off the new onboarding flow on Monday.
+Carol: Billing migration is the risky one. We still have two legacy plans that don't map cleanly to the new tiers.
+Dan: I can take the plan mapping. I'll have a proposal by Thursday.
+@pause 2
+Alice: Before we go on, this next bit is off the record please.
+Bob: So between us, the reorg rumours are real and the platform team is merging with infra in October.
+Carol: Wow, okay. I did not know that. Does leadership plan to announce it this month?
+Alice: Right, we're back on the record. Let's talk about the launch date.
+Dan: Staging is stable. I'd target the fourteenth for the beta launch.
+@pause 2
+Carol: The beta goes to fifty customers from the waiting list, and I think we promised Acme the first slot.
+Carol: Strike that, I should not have named a customer in the notes.
+Alice: Fine. Fifty customers from the waiting list, and dark mode is out of the beta scope.
+@pause 2
+Dan: One more thing on staffing. We need to talk about the new hire's salary, they asked for one hundred forty thousand dollars.
+Carol: That is above the band for that level. Let's park it until we talk to HR.
+Alice: Agreed. Next steps: Dan sends the plan mapping, Bob confirms the onboarding flow with design, and Carol drafts the beta customer list.
+Bob: Sounds good. Thanks everyone.

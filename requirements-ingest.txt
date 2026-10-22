@@ -1,0 +1,6 @@
+# Optional deps for otr/ingest (replay_source needs none)
+livekit>=1.0          # rtc SDK (room, AudioStream)
+livekit-api>=1.0      # AccessToken / VideoGrants
+faster-whisper>=1.0   # STT (CPU int8)
+numpy
+# pyannote.audio      # optional: diarization of mixed audio (needs HF token)

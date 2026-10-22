@@ -1,0 +1,6 @@
+# Public talk that sounds sensitive but is not; user answers "No" to the prompt.
+Alice: For the keynote, we should mention that our pricing page lists the team plan at forty nine dollars per seat.
+Bob: Right, and the salary calculator we launched last month is public, so we can demo it on stage.
+Carol: Our compensation benchmark report is also public. Linking it in the slides is fine.
+Dan: I'll add a slide with the public email, support at example dot com, and the status page.
+Alice: Great, that covers the demo. Let's rehearse the opening on Thursday.

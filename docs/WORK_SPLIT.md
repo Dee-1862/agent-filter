@@ -1,0 +1,84 @@
+# Work Split: two people, working in parallel
+
+Split along the seam in [otr/types.py](../otr/types.py): **Person 1 owns everything that produces `Segment`s and shows `Event`s. Person 2 owns everything between them and the proof that it works.** If neither side changes `otr/types.py`, you will not collide.
+
+```
+ PERSON 1: "Live side"                    PERSON 2: "Brain + proof"
+ ─────────────────────                    ─────────────────────────
+ LiveKit / replay ──Segment──▶  Pipeline  ──Event──▶ demo UI
+ (otr/ingest/)                 (otr/*.py)           (demo/)
+                                   ▲
+                                   └── bench/ runs the same Pipeline offline
+```
+
+## Person 1: Live side (ingest, diarization, demo)
+
+**Owns:** `otr/ingest/`, `demo/`, `docker-compose.livekit.yml`, `docs/INGEST.md`, `tests/test_ingest.py`, `tests/test_demo.py`.
+
+| # | Task | Done when |
+|---|---|---|
+| 1 | Open the demo page in a real browser, fix layout, colours, countdown bar, Yes/No buttons, slider (never checked visually) | `python -m demo.server --script demo/scripts/demo_main.txt` looks right on a projector |
+| 2 | Bring up LiveKit locally (`docker compose -f docker-compose.livekit.yml up -d`), mint tokens, join from two browser tabs | Two tabs and the bot in one room |
+| 3 | Fix the LiveKit bot against the real SDK. `Room.connect`, `track_subscribed` and `TrackKind` were written from memory | Bot prints Segment JSONL with correct `speaker` per participant |
+| 4 | Tune STT: faster-whisper model, energy threshold (untuned at 500), chunking | Spoken sentences come out readable with sane latency |
+| 5 | Wire `--source livekit` in `demo/server.py` to `otr.ingest.livekit_source` (currently a stub). Remove the duplicate script parser in favour of `otr.ingest.replay_source` | Live speech shows up as grey, then green, in the page |
+| 6 | Diarization for mixed audio: try pyannote (needs an HF token). `energy_turns()` is only a placeholder | A recorded 2-person clip gets SPEAKER_00 / SPEAKER_01 labels |
+| 7 | Run the LLM call off the event loop in `demo/server.py` (a slow Ollama call would freeze the stream) | Stream stays live while the LLM is working |
+| 8 | Stretch: Google Meet / Zoom via Vexa or Attendee bot | Only after 1–7 work. LiveKit cannot join Meet or Zoom itself |
+
+**Demo fallback to keep working at all times:** `ReplaySource` with `demo/scripts/*.txt`. If LiveKit misbehaves on stage, the replay still shows the full story.
+
+## Person 2: Brain + proof (engine, benchmark, eval, slides)
+
+**Owns:** `otr/pipeline.py`, `otr/hold_buffer.py`, `otr/cue_detector.py`, `otr/state_machine.py`, `otr/pii.py`, `otr/llm.py`, `bench/`, `tests/test_pipeline.py`, `tests/test_bench.py`, the results log in `docs/PRD.md` 2.5, slides.
+
+| # | Task | Done when |
+|---|---|---|
+| 1 | Install Ollama and pull `qwen2.5:3b` (or `7b`); check `OllamaLLM` works | `OllamaLLM().complete("hi")` returns text |
+| 2 | Review the engine code and tests. Run `python -m pytest tests -q` | All green; read the cue lists and fix gaps |
+| 3 | Run the three demo scripts through the real pipeline (`--pipeline real`) and fix mismatches with the demo's three beats | Explicit OTR, "strike that" on held text, salary → pending all behave |
+| 4 | Make the pipeline read `hold_seconds` at tick time so the UI slider works on text already held | Slider change affects held segments |
+| 5 | Hand-check about 10 benchmark items in `bench/otr_bench.jsonl`; fix wrong labels | Hand-checked items marked in `bench/README.md` |
+| 6 | Run the eval for A, B and C: `python -m bench.run_eval --systems A,B,C --out bench/results.json`, with and without Ollama | Results table and bar chart |
+| 7 | Improve C where it leaks (read the per-type breakdown). Sweep hold-seconds (30 vs 60) | Leak rate per type recorded |
+| 8 | Log every run in `docs/PRD.md` 2.5; check the cited ConfAIde / PrivacyLens numbers (see L-001); build slides | Numbers on slides trace to a run or a source |
+| 9 | Stretch: import real ConfAIde Tier 4 / QMSum with `bench/import_*.py` | Only if cloned |
+
+## Handoffs and rules
+
+1. **Contract:** `otr/types.py` is the only shared file. Change it only after both of you agree, and log it in `docs/CHANGES.md`.
+2. **Handoff A (Person 2 → Person 1):** the real pipeline passes the three demo scripts. Until then Person 1 uses `demo/fake_pipeline.py`.
+3. **Handoff B (Person 1 → Person 2):** transcripts from real LiveKit sessions (save the Segment JSONL). Person 2 replays them through the pipeline as extra test data.
+4. **Integration checkpoint:** when both finish their tasks 3–5 (Person 1) and 3–4 (Person 2), do one run together: LiveKit speech → real pipeline → demo page.
+5. **Git:** each person works on their own branch (`p1-live`, `p2-brain`) and touches only owned files. Merge to `master` after the checkpoint. Don't edit the other person's files; message them instead.
+6. **Docs:** append to `docs/CHANGES.md` and `docs/LESSONS_LEARNED.md` as you go (append-only, never rewrite).
+7. **Honesty:** the benchmark is small and synthetic, so call it early evidence. The live LiveKit path and the web page are untested until Person 1 finishes tasks 1–3.
+
+## Needed from the machine
+
+- **Both:** `pip install -r requirements-core.txt -r requirements-demo.txt`
+- **Person 1:** Docker Desktop (installed), `requirements-ingest.txt`, optional HF token for pyannote
+- **Person 2:** Ollama, plus `requirements-bench.txt` (matplotlib for the chart)
+
+## Known issues from the first integration run (2026-10-22)
+
+All 33 tests pass (`python -m pytest tests -q`, with `OTR_NO_PRESIDIO=1`). First eval run on the 40 synthetic items, no LLM:
+
+| system | leak rate | item-level leak | over-redaction | summary usefulness |
+|---|---|---|---|---|
+| A (rules + PII) | 14% | 22% | 38% | 68% |
+| B-stub (heuristic, not a real LLM) | 21% | 31% | 18% | 85% |
+| C (ours) | 45% | 72% | 11% | 90% |
+
+**C currently leaks more than A and B-stub, so the hypothesis is not supported yet.** That is expected for a first run with no LLM, but do not put these numbers on a slide as a result.
+
+| # | Issue | Owner | Evidence |
+|---|---|---|---|
+| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28–52% by case type |
+| I2 | Hold-seconds sweep gives identical numbers for 0 and 30. The harness only ticks at each segment's `t_start`, and the pipeline may not honour `hold_seconds` at tick time | Person 2 | `bench/results_sweep.json` |
+| I3 | Salary keyword check flags public text ("salary calculator we launched") and flush then redacts it | Person 2 | `demo/scripts/demo_false_alarm.txt` |
+| I4 | `demo_retro_committed`: "Dana from finance told me in confidence..." was committed; confirm the script intends it as private | Person 2 | script run |
+| I5 | `@pause N` is plain text for `otr.ingest.replay_source.parse_script`, but a directive for the demo's own parser. Make the ingest parser handle it | Person 1 | `otr/ingest/replay_source.py` |
+| I6 | Benchmark labels unchecked; cue lines ("strike that") are unscored; "strike that" used as an ordinary correction removes the previous line | Person 2 | `bench/README.md` |
+
+Fix I1 first: it dominates the leak rate. Re-run `python -m bench.run_eval --systems A,B,C --llm none --out bench/results.json` after each change and log the run in `docs/PRD.md` section 2.5.

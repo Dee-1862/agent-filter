@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Off The Record - live demo</title>
+<style>
+:root {
+  --bg: #0e1116; --panel: #161b22; --panel2: #1c232d; --line: #2d3644; --text: #e8edf3; --dim: #8b97a7;
+  --grey: #8b97a7; --green: #3fb950; --red: #f85149; --amber: #f0b429; --blue: #58a6ff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 18px/1.4 system-ui, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 20px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; font-weight: 650; }
+.badge { font-weight: 800; letter-spacing: .06em; padding: 6px 18px; border-radius: 999px; font-size: 20px; border: 2px solid; }
+.badge.ON { color: var(--green); border-color: var(--green); background: #3fb95022; }
+.badge.OFF { color: var(--red); border-color: var(--red); background: #f8514922; }
+.badge.PENDING_CONFIRM { color: var(--amber); border-color: var(--amber); background: #f0b42922; }
+.ctl { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 16px; }
+.ctl input[type=range] { width: 180px; }
+.ctl b { color: var(--text); min-width: 3.5em; display: inline-block; }
+button { font: inherit; font-size: 15px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+button:hover { border-color: var(--blue); }
+.spacer { flex: 1; }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; padding: 14px 20px; }
+.col { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; }
+section.grow { flex: 1; }
+section > h2 { margin: 0; padding: 10px 16px; font-size: 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line); }
+.list { overflow-y: auto; padding: 10px 14px; flex: 1; min-height: 0; }
+.legend { display: flex; gap: 14px; padding: 8px 16px; font-size: 14px; color: var(--dim); border-top: 1px solid var(--line); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+
+.row { position: relative; border-left: 5px solid var(--grey); background: var(--panel2); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; overflow: hidden; transition: background .3s, border-color .3s; }
+.row .who { font-weight: 700; margin-right: 8px; }
+.row .txt { color: var(--grey); }
+.row .tag { float: right; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-left: 10px; }
+.row.held { border-color: var(--grey); }
+.row.committed { border-color: var(--green); }
+.row.committed .txt { color: var(--text); }
+.row.committed .tag { color: var(--green); }
+.row.redacted, .row.retro_removed { border-color: var(--red); background: #f8514912; }
+.row.redacted .txt, .row.retro_removed .txt { color: var(--red); text-decoration: line-through; }
+.row.redacted .tag, .row.retro_removed .tag { color: var(--red); }
+.row .why { display: block; font-size: 13px; color: var(--red); margin-top: 2px; }
+.row.pending_confirm { border-color: var(--amber); background: #f0b42914; }
+.row.pending_confirm .txt { color: var(--text); }
+.row.pending_confirm .tag { color: var(--amber); }
+.ask { margin-top: 8px; display: flex; align-items: center; gap: 10px; color: var(--amber); font-weight: 650; }
+.ask button { border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.ask button.yes { background: #f0b42933; }
+.bar { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--grey); width: 100%; transform-origin: left; }
+
+.note { padding: 8px 10px; border-left: 4px solid var(--green); background: #3fb95010; border-radius: 6px; margin-bottom: 8px; transition: opacity 1.2s, max-height 1.2s .6s, margin 1.2s .6s, padding 1.2s .6s; max-height: 200px; }
+.note .who { font-weight: 700; margin-right: 6px; }
+.note.gone { border-color: var(--red); background: #f8514918; text-decoration: line-through; color: var(--red); opacity: 0; max-height: 0; margin: 0; padding-top: 0; padding-bottom: 0; }
+.note.gone.show { opacity: 1; max-height: 200px; margin-bottom: 8px; padding: 8px 10px; transition: none; }
+.audit .a { font: 13px/1.35 ui-monospace, Consolas, monospace; padding: 3px 0; border-bottom: 1px solid #ffffff0d; color: var(--dim); }
+.audit .a .k { display: inline-block; min-width: 9.5em; font-weight: 700; }
+.audit .a .k.held { color: var(--grey); } .audit .a .k.committed { color: var(--green); }
+.audit .a .k.redacted, .audit .a .k.retro_removed { color: var(--red); }
+.audit .a .k.pending_confirm, .audit .a .k.state_change { color: var(--amber); }
+.empty { color: var(--dim); font-style: italic; padding: 6px; }
+footer { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--line); }
+footer input { font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+footer input#spk { width: 160px; } footer input#line { flex: 1; }
+.conn { font-size: 14px; color: var(--dim); }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Off The Record</h1>
+  <span id="badge" class="badge ON">ON</span>
+  <span class="spacer"></span>
+  <label class="ctl">Hold <input id="hold" type="range" min="0" max="60" step="1" value="10"><b id="holdv">10 s</b></label>
+  <button id="restart">Restart replay</button>
+  <span class="conn" id="conn">connecting...</span>
+</header>
+<main>
+  <div class="col">
+    <section class="grow">
+      <h2>Live transcript <span id="pl" style="float:right;text-transform:none;letter-spacing:0"></span></h2>
+      <div class="list" id="tr"></div>
+      <div class="legend">
+        <span><i style="background:var(--grey)"></i>held</span>
+        <span><i style="background:var(--green)"></i>committed</span>
+        <span><i style="background:var(--red)"></i>redacted</span>
+        <span><i style="background:var(--amber)"></i>needs confirmation</span>
+      </div>
+    </section>
+  </div>
+  <div class="col">
+    <section class="grow">
+      <h2>Committed notes</h2>
+      <div class="list" id="notes"><div class="empty">Nothing committed yet.</div></div>
+    </section>
+    <section class="grow">
+      <h2>Audit log</h2>
+      <div class="list audit" id="audit"></div>
+    </section>
+  </div>
+</main>
+<footer>
+  <input id="spk" placeholder="Speaker" value="Presenter" autocomplete="off">
+  <input id="line" placeholder="Type a line as this speaker and press Enter" autocomplete="off">
+  <button id="send">Send</button>
+</footer>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var COLORS = ["#58a6ff", "#d2a8ff", "#ffa657", "#7ee787", "#ff7b72", "#79c0ff", "#e3b341", "#f778ba"];
+  var speakerColor = {};
+  function colorOf(s) {
+    if (!(s in speakerColor)) speakerColor[s] = COLORS[Object.keys(speakerColor).length % COLORS.length];
+    return speakerColor[s];
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function post(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  }
+
+  var rows = {};          // segment_id -> {el, txt, tag, why, bar, ask, anim}
+  var holdSeconds = 10;
+  var prevNotes = {};     // id -> element
+  var lastNoteIds = [];
+
+  function reset() {
+    $("tr").textContent = ""; $("audit").textContent = "";
+    $("notes").textContent = ""; $("notes").appendChild(el("div", "empty", "Nothing committed yet."));
+    rows = {}; prevNotes = {}; lastNoteIds = [];
+    setBadge("ON");
+  }
+  function setBadge(s) { var b = $("badge"); b.className = "badge " + s; b.textContent = s === "PENDING_CONFIRM" ? "PENDING" : s; }
+  function scrollDown(node) { node.scrollTop = node.scrollHeight; }
+
+  function ensureRow(seg) {
+    var r = rows[seg.id];
+    if (r) return r;
+    var d = el("div", "row held");
+    var tag = el("span", "tag", "incoming");
+    var who = el("span", "who", seg.speaker || "?");
+    who.style.color = colorOf(seg.speaker);
+    var txt = el("span", "txt", seg.text || "");
+    var why = el("span", "why"); why.style.display = "none";
+    d.appendChild(tag); d.appendChild(who); d.appendChild(txt); d.appendChild(why);
+    $("tr").appendChild(d);
+    r = rows[seg.id] = { el: d, tag: tag, txt: txt, why: why, bar: null, ask: null, anim: null };
+    scrollDown($("tr"));
+    return r;
+  }
+  function clearBar(r) {
+    if (r.bar) { if (r.anim) r.anim.cancel(); r.bar.remove(); r.bar = null; r.anim = null; }
+  }
+  function clearAsk(r) { if (r.ask) { r.ask.remove(); r.ask = null; } }
+
+  function applyEvent(e) {
+    if (e.state) setBadge(e.state);
+    if (e.kind === "state_change" || !e.segment_id) return;
+    var r = ensureRow({ id: e.segment_id, speaker: e.speaker, text: e.text });
+    if (e.kind !== "held" && e.kind !== "pending_confirm") clearBar(r);
+    r.el.className = "row " + e.kind;
+    r.tag.textContent = ({ held: "held", committed: "committed", redacted: "redacted",
+      pending_confirm: "confirm?", retro_removed: "removed from notes" })[e.kind] || e.kind;
+    if (e.kind === "held") {
+      clearBar(r);
+      if (holdSeconds > 0 && !r.el.querySelector(".ask")) {
+        r.bar = el("div", "bar"); r.el.appendChild(r.bar);
+        r.anim = r.bar.animate([{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }],
+                               { duration: holdSeconds * 1000, fill: "forwards", easing: "linear" });
+      }
+    } else if (e.kind === "pending_confirm") {
+      clearBar(r); clearAsk(r);
+      var ask = el("div", "ask");
+      ask.appendChild(el("span", null, "Keep that out of the notes?"));
+      [["Yes", true], ["No", false]].forEach(function (p) {
+        var b = el("button", p[1] ? "yes" : "no", p[0]);
+        b.onclick = function () { b.disabled = true; post("/api/confirm", { segment_id: e.segment_id, keep_out: p[1] }); };
+        ask.appendChild(b);
+      });
+      r.el.appendChild(ask); r.ask = ask;
+    } else {
+      clearAsk(r);
+    }
+    if (e.kind === "redacted" || e.kind === "retro_removed") {
+      r.why.textContent = (e.kind === "retro_removed" ? "removed retroactively" : "redacted") + (e.reason ? " (" + e.reason + ")" : "");
+      r.why.style.display = "block";
+    } else { r.why.style.display = "none"; }
+    if (e.text && !r.txt.textContent) r.txt.textContent = e.text;
+  }
+
+  function renderNotes(notes) {
+    var box = $("notes");
+    var empty = box.querySelector(".empty"); if (empty) empty.remove();
+    var ids = notes.map(function (n) { return n.id; });
+    // dropped lines: animate out
+    lastNoteIds.forEach(function (id) {
+      if (ids.indexOf(id) < 0 && prevNotes[id]) {
+        var n = prevNotes[id]; delete prevNotes[id];
+        n.classList.add("gone", "show");
+        void n.offsetWidth;
+        setTimeout(function () { n.classList.remove("show"); setTimeout(function () { n.remove(); }, 2200); }, 1800);
+      }
+    });
+    notes.forEach(function (s) {
+      if (prevNotes[s.id]) return;
+      var d = el("div", "note");
+      var w = el("span", "who", s.speaker); w.style.color = colorOf(s.speaker);
+      d.appendChild(w); d.appendChild(document.createTextNode(s.text));
+      box.appendChild(d); prevNotes[s.id] = d;
+    });
+    lastNoteIds = ids;
+    scrollDown(box);
+  }
+
+  function renderAudit(list) {
+    var box = $("audit"); box.textContent = "";
+    list.slice().reverse().forEach(function (e) {
+      var d = el("div", "a");
+      d.appendChild(el("span", "k " + e.kind, e.kind + (e.segment_id ? " " + e.segment_id : "")));
+      d.appendChild(document.createTextNode((e.reason ? "[" + e.reason + "] " : "") + (e.speaker ? e.speaker + ": " : "") +
+        (e.text ? e.text.slice(0, 70) : "") + (e.kind === "state_change" ? " -> " + e.state : "")));
+      box.appendChild(d);
+    });
+  }
+
+  function handle(m) {
+    if (m.type === "reset") { reset(); holdSeconds = m.hold_seconds; syncSlider(); $("pl").textContent = "pipeline: " + m.pipeline; }
+    else if (m.type === "config") { holdSeconds = m.hold_seconds; syncSlider(); }
+    else if (m.type === "segment") ensureRow(m.segment);
+    else if (m.type === "events") { m.events.forEach(applyEvent); renderNotes(m.notes); renderAudit(m.audit); }
+    else if (m.type === "done") $("conn").textContent = "session finished";
+  }
+  function syncSlider() { $("hold").value = holdSeconds; $("holdv").textContent = holdSeconds + " s"; }
+
+  var es;
+  function connect() {
+    es = new EventSource("/stream");
+    es.onopen = function () { $("conn").textContent = "live"; };
+    es.onmessage = function (ev) { try { handle(JSON.parse(ev.data)); } catch (err) { console.error(err); } };
+    es.onerror = function () { $("conn").textContent = "reconnecting..."; };
+  }
+
+  $("hold").oninput = function () { $("holdv").textContent = this.value + " s"; };
+  $("hold").onchange = function () { post("/api/hold", { seconds: Number(this.value) }); };
+  $("restart").onclick = function () { post("/api/restart"); };
+  function send() {
+    var t = $("line").value.trim(); if (!t) return;
+    post("/api/say", { speaker: $("spk").value.trim() || "Presenter", text: t });
+    $("line").value = ""; $("line").focus();
+  }
+  $("send").onclick = send;
+  $("line").onkeydown = function (e) { if (e.key === "Enter") send(); };
+  connect();
+})();
+</script>
+</body>
+</html>

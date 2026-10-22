@@ -1,0 +1,10 @@
+# Retroactive removal after text has already been committed to the notes.
+Alice: Let's review the vendor contract for the analytics tool.
+Bob: Legal flagged the auto-renewal clause, we should negotiate it down to thirty days.
+Carol: The renewal price went up twelve percent, which is higher than we budgeted.
+@pause 14
+Dan: Also, Dana from finance told me in confidence that we are cancelling the Phoenix project next quarter.
+@pause 13
+Dan: Sorry, scratch that, please keep what I just said out of the notes. It was not meant to be shared.
+Alice: No problem. Let's get back to the vendor contract. Bob, can you send legal our counter proposal?
+Bob: Yes, I'll send it tomorrow morning.
