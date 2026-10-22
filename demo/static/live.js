@@ -20,7 +20,7 @@
   let capFollow = true, newCount = 0, pendingSeen = 0;
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
   let speaking = new Set(), muted = new Map();
-  const videoTracks = new Map(), videoMuted = new Set();
+  const videoTracks = new Map(), videoMuted = new Set(), videoEls = new Map();
   let toastTimer = null, meRefreshTimer = null, clockTimer = null;
   let deliveryEmail = "", emailOptedIn = false, emailChoiceDirty = false;
   let endDialogLastFocus = null, endEmailBody = "", endNeedsCopy = false, endCopied = false;
@@ -28,6 +28,7 @@
   const ENTRY_SCREENS = ["home-screen", "host-setup", "guest-setup", "share-screen", "waiting-screen", "join"];
   function showEntry(id) {
     for (const screen of ENTRY_SCREENS) $(screen).classList.toggle("hidden", screen !== id);
+    placeDeviceCheck(id);
   }
   function meetingIdFromLink(value) {
     const raw = value.trim();
@@ -192,31 +193,32 @@
     if (!tile) return;
     const track = videoMuted.has(identity) ? null : videoTracks.get(identity);
     const avatar = tile.querySelector(".avatar");
-    const current = avatar.querySelector(".tile-video");
-    if (current && current._livekitTrack !== track) {
-      current._livekitTrack.detach(current);
-      current.remove();
+    let video = videoEls.get(identity);
+    if (video && video._livekitTrack !== track) {
+      video._livekitTrack.detach(video);
+      video.remove();
+      videoEls.delete(identity);
+      video = null;
     }
-    if (track && !avatar.querySelector(".tile-video")) {
-      const video = document.createElement("video");
+    if (track && !video) {
+      video = document.createElement("video");
       video.className = "tile-video";
       video.autoplay = true;
       video.playsInline = true;
-      video.muted = identity === me;
+      video.setAttribute("playsinline", "");
+      video.muted = identity === me;   // a video track carries no sound; remote voices play from their audio element
       video._livekitTrack = track;
       track.attach(video);
+      videoEls.set(identity, video);
+    }
+    if (video && video.parentNode !== avatar) {
       avatar.prepend(video);
+      if (video.play) { try { const played = video.play(); if (played && played.catch) played.catch(() => {}); } catch (_) { } }
     }
     tile.classList.toggle("has-video", !!track);
   }
 
   function setVideoTrack(identity, track) {
-    const old = videoTracks.get(identity);
-    if (old && old !== track) {
-      const tile = tileEls[identity];
-      const video = tile && tile.querySelector(".tile-video");
-      if (video) { old.detach(video); video.remove(); }
-    }
     if (track) videoTracks.set(identity, track);
     else videoTracks.delete(identity);
     updateVideoTile(identity);
@@ -236,10 +238,6 @@
 
   function renderTiles() {
     const grid = $("tile-grid");
-    for (const tile of Object.values(tileEls)) {
-      const video = tile.querySelector(".tile-video");
-      if (video) video._livekitTrack.detach(video);
-    }
     grid.replaceChildren();
     for (const key of Object.keys(tileEls)) delete tileEls[key];
     const members = Object.entries(participants);
@@ -265,10 +263,23 @@
       notes.prepend(element("span", "dot"));
       label.append(notes);
       tile.append(avatar, mic, label);
+      if (identity === me) {
+        const level = element("canvas", "tile-level");
+        level.width = 36; level.height = 16;
+        level.setAttribute("role", "img");
+        level.setAttribute("aria-label", "Your microphone level");
+        tile.append(level);
+      }
       grid.append(tile);
       tileEls[identity] = tile;
     }
     updateTileFlags();
+    for (const [identity, video] of [...videoEls]) {
+      if (tileEls[identity]) continue;
+      video._livekitTrack.detach(video);
+      video.remove();
+      videoEls.delete(identity);
+    }
     for (const identity of Object.keys(tileEls)) updateVideoTile(identity);
   }
 
@@ -612,9 +623,454 @@
     setText($("mic-label"), isMuted ? "Unmute" : "Mute");
   }
 
+  // ------------------------------------------------------------ devices, level meters, notes-engine status
+  // Camera and microphone belong to the call. They are separate from notes: the camera is never transcribed or
+  // sent to the notes pipeline, and turning notes off does not mute the microphone or switch the camera off.
+  const DEV_STORE = "otr.devices";
+  const SOUND_RMS = 0.012, SILENCE_MS = 3000, HOLD_MS = 700, BARS = 12;
+  const WHAT = { audioinput: "microphone", videoinput: "camera", audiooutput: "speaker" };
+  const KINDS = ["audioinput", "audiooutput", "videoinput"];
+  const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+  const METER_TEXT = {
+    listening: "Say something to test your microphone",
+    sound: "Your browser is picking up sound",
+    silent: "No sound detected, check the selected microphone",
+    ended: "The microphone stopped, check the selected microphone",
+    unsupported: "The level meter is not available in this browser",
+    idle: "",
+  };
+  const PALETTES = { light: ["--blue", "--line"], call: ["--call-active", "--call-ink-2"], panel: ["--p-blue", "--p-line"] };
+  function loadDevPrefs() {
+    try { const v = JSON.parse(sessionStorage.getItem(DEV_STORE) || "{}"); return v && typeof v === "object" ? v : {}; }
+    catch (_) { return {}; }
+  }
+  function saveDevPrefs() { try { sessionStorage.setItem(DEV_STORE, JSON.stringify(devPrefs)); } catch (_) { } }
+  let devPrefs = loadDevPrefs();
+  function supportsSinkId() {
+    try { return !!(window.HTMLMediaElement && "setSinkId" in window.HTMLMediaElement.prototype); } catch (_) { return false; }
+  }
+  function mediaSupport() {
+    if (window.isSecureContext === false) return "insecure";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return "unsupported";
+    return "";
+  }
+  function mediaProblem(err, what) {
+    const reason = mediaSupport();
+    if (reason === "insecure") {
+      const port = location.port ? ":" + location.port : "";
+      return `This browser only allows the ${what} on a secure address. Open this page at http://127.0.0.1${port} or http://localhost${port} on this computer, or use https.`;
+    }
+    if (reason === "unsupported") return "This browser cannot reach the microphone or camera.";
+    const name = (err && err.name) || "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError")
+      return `Permission to use the ${what} was denied. Allow it in the browser address bar, then try again.`;
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") return `No ${what} found. Plug one in or choose another device.`;
+    if (name === "OverconstrainedError") return `The ${what} you chose is not available. Choose another one.`;
+    if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError")
+      return `The ${what} is in use by another app or browser tab. Close it there, then try again.`;
+    return `Could not start the ${what}${err && err.message ? ": " + err.message : "."}`;
+  }
+  function cssVar(name, fallback) {
+    try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; } catch (_) { return fallback; }
+  }
+  function ctx2d(canvas) {
+    try { return canvas && canvas.getContext ? canvas.getContext("2d") : null; } catch (_) { return null; }
+  }
+  function drawWave(canvas, values, palette) {
+    const c = ctx2d(canvas);
+    if (!c) return;
+    const on = cssVar(PALETTES[palette][0], "#1a73e8"), off = cssVar(PALETTES[palette][1], "#9aa0a6");
+    const w = canvas.width, h = canvas.height, n = values.length, gap = 2;
+    const bw = Math.max(1, Math.floor((w - gap * (n - 1)) / n));
+    c.clearRect(0, 0, w, h);
+    values.forEach((v, i) => {
+      const bh = Math.max(2, Math.round(h * Math.min(1, v)));
+      c.fillStyle = v > 0.04 ? on : off;
+      c.fillRect(i * (bw + gap), Math.round((h - bh) / 2), bw, bh);
+    });
+  }
+  function drawStrip(canvas, level, palette) {
+    const c = ctx2d(canvas);
+    if (!c) return;
+    const on = cssVar(PALETTES[palette][0], "#1a73e8"), off = cssVar(PALETTES[palette][1], "#9aa0a6");
+    const w = canvas.width, h = canvas.height, gap = 2, bw = Math.max(1, Math.floor((w - gap * (BARS - 1)) / BARS));
+    const clamped = Math.max(0, Math.min(1, level));
+    const lit = Math.round(clamped * BARS);
+    c.clearRect(0, 0, w, h);
+    for (let i = 0; i < BARS; i++) { c.fillStyle = i < lit ? on : off; c.fillRect(i * (bw + gap), 0, bw, h); }
+    canvas.dataset.level = clamped.toFixed(2);
+  }
+  // Web Audio level meter over a MediaStream. targets() returns [[canvas, palette], ...] to draw into.
+  function createMeter(targets, onState) {
+    let audio = null, analyser = null, samples = null, timer = null, track = null, lastSound = 0;
+    const m = { state: "idle", rms: 0, soundSince: 0 };
+    const set = next => { if (next !== m.state) { m.state = next; if (onState) onState(next); } };
+    function tick() {
+      const now = performance.now();
+      const values = new Array(BARS).fill(0);
+      let rms = 0;
+      if (track && track.readyState === "ended") set("ended");
+      else if (analyser) {
+        if (audio.state === "suspended" && audio.resume) { try { audio.resume().catch(() => {}); } catch (_) { } }
+        analyser.getFloatTimeDomainData(samples);
+        const seg = Math.floor(samples.length / BARS);
+        let total = 0;
+        for (let i = 0; i < BARS; i++) {
+          let sum = 0;
+          for (let j = 0; j < seg; j++) { const v = samples[i * seg + j]; sum += v * v; }
+          values[i] = Math.min(1, Math.sqrt(sum / seg) * 6);
+          total += sum;
+        }
+        rms = Math.sqrt(total / (seg * BARS));
+        if (rms > SOUND_RMS) { lastSound = now; if (m.state !== "sound") { if (!m.soundSince) m.soundSince = now; set("sound"); } }
+        else if (now - lastSound > SILENCE_MS) { m.soundSince = 0; set("silent"); }
+        else if (m.state === "sound" && now - lastSound > HOLD_MS) set("listening");
+      }
+      m.rms = rms;
+      for (const [canvas, palette] of targets()) { drawWave(canvas, values, palette); canvas.dataset.level = rms.toFixed(3); }
+    }
+    m.attach = stream => {
+      m.stop();
+      const AC = window.AudioContext || window.webkitAudioContext;
+      track = stream && stream.getAudioTracks ? stream.getAudioTracks()[0] : null;
+      if (!AC || !track) { set(AC ? "ended" : "unsupported"); return; }
+      audio = new AC();
+      const source = audio.createMediaStreamSource(stream);
+      analyser = audio.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);   // never connected to the speakers, so there is no echo
+      samples = new Float32Array(analyser.fftSize);
+      lastSound = performance.now();
+      m.soundSince = 0;
+      set("listening");
+      timer = setInterval(tick, 60);
+    };
+    m.stop = () => {
+      clearInterval(timer); timer = null;
+      if (audio && audio.close) { try { audio.close(); } catch (_) { } }
+      audio = analyser = track = null;
+      m.soundSince = 0; m.rms = 0;
+      set("idle");
+      for (const [canvas, palette] of targets()) drawWave(canvas, new Array(BARS).fill(0), palette);
+    };
+    return m;
+  }
+  async function listDevices() {
+    const out = { audioinput: [], videoinput: [], audiooutput: [] };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return out;
+    try { for (const d of await navigator.mediaDevices.enumerateDevices()) if (out[d.kind]) out[d.kind].push(d); } catch (_) { }
+    return out;
+  }
+  function deviceLabel(d, index, kind) {
+    return d.label || `${{ audioinput: "Microphone", videoinput: "Camera", audiooutput: "Speaker" }[kind]} ${index + 1}`;
+  }
+  function currentDeviceId(list, wanted) {
+    if (wanted && list.some(d => d.deviceId === wanted)) return wanted;
+    const fallback = list.find(d => d.deviceId === "default") || list[0];
+    return fallback ? fallback.deviceId : "";
+  }
+  function activeDeviceId(kind) {
+    return (room && room.getActiveDevice && room.getActiveDevice(kind)) || devPrefs[kind] || "";
+  }
+  function stopTracks(stream) { if (stream) for (const t of stream.getTracks()) t.stop(); }
+
+  // ---- lobby device check
+  const check = { audio: null, video: null, meter: null, busy: false };
+  function renderCheckStatus(state) {
+    const node = $("check-mic-status");
+    setText(node, METER_TEXT[state] || "");
+    node.setAttribute("data-state", state);
+  }
+  async function openStream(kind) {
+    const key = kind === "audioinput" ? "audio" : "video", what = WHAT[kind];
+    if (mediaSupport()) throw new Error(mediaProblem(null, what));
+    const id = devPrefs[kind];
+    try {
+      return { stream: await navigator.mediaDevices.getUserMedia({ [key]: id ? { deviceId: { exact: id } } : true }), fellBack: false };
+    } catch (error) {
+      if (id && (error.name === "OverconstrainedError" || error.name === "NotFoundError")) {
+        delete devPrefs[kind]; saveDevPrefs();
+        try { return { stream: await navigator.mediaDevices.getUserMedia({ [key]: true }), fellBack: true }; }
+        catch (second) { throw new Error(mediaProblem(second, what)); }
+      }
+      throw new Error(mediaProblem(error, what));
+    }
+  }
+  function fillSelect(select, list, kind, wanted) {
+    select.replaceChildren();
+    list.forEach((d, i) => {
+      const option = element("option", null, deviceLabel(d, i, kind));
+      option.value = d.deviceId;
+      select.append(option);
+    });
+    if (!list.length) { const none = element("option", null, `No ${WHAT[kind]} found`); none.value = ""; select.append(none); }
+    select.disabled = !list.length;
+    select.value = currentDeviceId(list, wanted);
+  }
+  async function refreshCheckLists() {
+    const lists = await listDevices();
+    const trackId = stream => { try { return stream.getTracks()[0].getSettings().deviceId; } catch (_) { return ""; } };
+    fillSelect($("check-mic"), lists.audioinput, "audioinput", devPrefs.audioinput || (check.audio && trackId(check.audio)));
+    fillSelect($("check-cam"), lists.videoinput, "videoinput", devPrefs.videoinput || (check.video && trackId(check.video)));
+    const sinks = supportsSinkId() && lists.audiooutput.length > 0;
+    $("check-spk-row").classList.toggle("hidden", !sinks);
+    if (sinks) fillSelect($("check-spk"), lists.audiooutput, "audiooutput", devPrefs.audiooutput);
+  }
+  async function startDeviceCheck(only) {
+    if (check.busy) return;
+    check.busy = true;
+    const problems = new Set();
+    setText($("check-error"), "");
+    try {
+      for (const kind of ["audioinput", "videoinput"]) {
+        if (only && only !== kind) continue;
+        const slot = kind === "audioinput" ? "audio" : "video";
+        stopTracks(check[slot]); check[slot] = null;
+        if (slot === "audio" && check.meter) check.meter.stop();
+        try {
+          const opened = await openStream(kind);
+          check[slot] = opened.stream;
+          if (opened.fellBack) problems.add(`The saved ${WHAT[kind]} is not available any more. Using the default ${WHAT[kind]}.`);
+        } catch (error) { problems.add(error.message); }
+      }
+      const video = $("check-video");
+      video.srcObject = check.video;
+      if (check.video && video.play) { try { const p = video.play(); if (p && p.catch) p.catch(() => {}); } catch (_) { } }
+      $("check-video-off").classList.toggle("hidden", !!check.video);
+      $("check-camera-on").disabled = !check.video;
+      if (!check.video) { $("check-camera-on").checked = false; devPrefs.cameraOn = false; }
+      $("device-check-live").classList.remove("hidden");
+      if (check.audio) {
+        if (!check.meter) check.meter = createMeter(() => [[$("check-meter"), "light"]], renderCheckStatus);
+        check.meter.attach(check.audio);
+      } else renderCheckStatus("idle");
+      await refreshCheckLists();
+    } finally { check.busy = false; }
+    setText($("check-error"), [...problems].join(" "));
+  }
+  function stopDeviceCheck() {
+    stopTracks(check.audio); stopTracks(check.video);
+    check.audio = check.video = null;
+    if (check.meter) check.meter.stop();
+    const video = $("check-video");
+    if (video) video.srcObject = null;
+    $("device-check-live").classList.add("hidden");
+  }
+  function placeDeviceCheck(id) {
+    const block = $("device-check");
+    const anchor = { "share-screen": "share-join-button", "guest-setup": "guest-join-button" }[id];
+    if (!anchor) { block.classList.add("hidden"); stopDeviceCheck(); return; }
+    const before = $(anchor);
+    before.parentNode.insertBefore(block, before);
+    block.classList.remove("hidden");
+    if (mediaSupport() && !check.audio) setText($("check-error"), mediaProblem(null, "microphone"));
+  }
+
+  // ---- in-call device menu (Meet-style chevrons beside the mic and camera buttons)
+  const localMeter = createMeter(() => {
+    const out = [];
+    const tile = me && tileEls[me] && tileEls[me].querySelector(".tile-level");
+    if (tile) out.push([tile, "call"]);
+    if (deviceMenuOpen()) out.push([$("menu-meter"), "panel"]);
+    if (panelView === "agent" && !$("engine").classList.contains("hidden")) out.push([$("engine-browser-meter"), "panel"]);
+    return out;
+  }, state => {
+    setText($("menu-mic-status"), METER_TEXT[state] || "");
+    $("menu-mic-status").setAttribute("data-state", state);
+    renderDiagnostics();
+  });
+  function localMicStream() {
+    const pub = room && room.localParticipant.getTrackPublication(LiveKit.Track.Source.Microphone);
+    const t = pub && pub.track && pub.track.mediaStreamTrack;
+    return t && typeof MediaStream !== "undefined" ? new MediaStream([t]) : null;
+  }
+  function rebindLocalMeter() {
+    const stream = localMicStream();
+    if (stream && room.localParticipant.isMicrophoneEnabled) localMeter.attach(stream);
+    else localMeter.stop();
+  }
+  function deviceMenuOpen() { return !$("device-menu").classList.contains("hidden"); }
+  function fillMenuList(listId, list, kind) {
+    const ul = $(listId);
+    ul.replaceChildren();
+    const active = currentDeviceId(list, activeDeviceId(kind));
+    if (!list.length) { ul.append(element("li", "device-none", `No ${WHAT[kind]} found`)); return; }
+    list.forEach((d, i) => {
+      const li = element("li");
+      const button = element("button", "device-item", deviceLabel(d, i, kind));
+      button.type = "button";
+      button.setAttribute("role", "menuitemradio");
+      button.setAttribute("aria-checked", String(d.deviceId === active));
+      button.setAttribute("data-device-id", d.deviceId);
+      const mark = element("span", "device-check");
+      mark.innerHTML = CHECK_SVG;
+      button.append(mark);
+      button.onclick = () => chooseDevice(kind, d.deviceId);
+      li.append(button);
+      ul.append(li);
+    });
+  }
+  async function renderDeviceMenu() {
+    const lists = await listDevices();
+    fillMenuList("menu-mic", lists.audioinput, "audioinput");
+    fillMenuList("menu-cam", lists.videoinput, "videoinput");
+    const sinks = supportsSinkId();
+    $("menu-spk").classList.toggle("hidden", !sinks);
+    $("menu-spk-note").classList.toggle("hidden", sinks);
+    if (sinks) fillMenuList("menu-spk", lists.audiooutput, "audiooutput");
+  }
+  async function chooseDevice(kind, id) {
+    setText($("menu-error"), "");
+    try {
+      if (room) await room.switchActiveDevice(kind, id, true);
+      devPrefs[kind] = id;
+      saveDevPrefs();
+      if (kind === "audioinput") rebindLocalMeter();
+      announce(`${WHAT[kind][0].toUpperCase()}${WHAT[kind].slice(1)} changed.`);
+    } catch (error) { setText($("menu-error"), mediaProblem(error, WHAT[kind])); }
+    await renderDeviceMenu();
+  }
+  function openDeviceMenu(group) {
+    $("device-menu").classList.remove("hidden");
+    for (const id of ["mic-chevron", "camera-chevron"]) $(id).setAttribute("aria-expanded", "true");
+    setText($("menu-error"), "");
+    rebindLocalMeter();
+    renderDeviceMenu().then(() => {
+      const first = $(group || "menu-mic").querySelector("button");
+      if (first) first.focus();
+    });
+  }
+  function closeDeviceMenu() {
+    if (!deviceMenuOpen()) return;
+    $("device-menu").classList.add("hidden");
+    for (const id of ["mic-chevron", "camera-chevron"]) $(id).setAttribute("aria-expanded", "false");
+  }
+  function toggleDeviceMenu(group) { if (deviceMenuOpen()) closeDeviceMenu(); else openDeviceMenu(group); }
+  async function testSpeaker(statusId) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const out = $(statusId);
+    setText(out, "");
+    if (!AC) { setText(out, "This browser cannot play a test tone."); return; }
+    try {
+      const ctx = new AC();
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.frequency.value = 440;
+      gain.gain.value = 0.15;
+      osc.connect(gain);
+      let sink = null;
+      if (supportsSinkId() && ctx.createMediaStreamDestination) {
+        const dest = ctx.createMediaStreamDestination();
+        gain.connect(dest);
+        sink = document.createElement("audio");
+        sink.srcObject = dest.stream;
+        const id = activeDeviceId("audiooutput");
+        if (id && sink.setSinkId) await sink.setSinkId(id);
+        await sink.play();
+      } else gain.connect(ctx.destination);
+      osc.start();
+      setTimeout(() => {
+        try { osc.stop(); } catch (_) { }
+        if (sink) sink.srcObject = null;
+        try { ctx.close(); } catch (_) { }
+      }, 700);
+    } catch (error) { setText(out, mediaProblem(error, "speaker")); }
+  }
+  let deviceChangeBound = false;
+  async function onDeviceChange() {
+    const lists = await listDevices();
+    for (const kind of KINDS) {
+      const id = (room && room.getActiveDevice && room.getActiveDevice(kind)) || devPrefs[kind];
+      if (!id || id === "default" || lists[kind].some(d => d.deviceId === id)) continue;
+      delete devPrefs[kind];
+      saveDevPrefs();
+      const note = `Your ${WHAT[kind]} was disconnected. Using the default ${WHAT[kind]}.`;
+      if (room) {
+        try { await room.switchActiveDevice(kind, "default"); } catch (_) { }
+        showToast(escapeHtml(note), "warn");
+        if (kind === "audioinput") rebindLocalMeter();
+      } else setText($("check-error"), note);
+    }
+    if (!$("device-check-live").classList.contains("hidden") && !room) {
+      if (!check.audio || check.audio.getTracks().every(t => t.readyState === "ended")) await startDeviceCheck("audioinput");
+      await refreshCheckLists();
+    }
+    if (deviceMenuOpen()) await renderDeviceMenu();
+  }
+  function bindDeviceChange() {
+    if (deviceChangeBound || !navigator.mediaDevices || !navigator.mediaDevices.addEventListener) return;
+    deviceChangeBound = true;
+    navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
+  }
+
+  // ---- notes engine status (text-free, from GET /api/diagnostics)
+  let diagTimer = null, diagBusy = false, diagGone = false, diag = null;
+  function engineModelRows(models) {
+    const rows = [];
+    const w = models && models.whisper, l = models && models.llm, p = models && models.presidio;
+    if (w) rows.push(`Whisper ${w.name || ""}: ${w.loaded ? "ready" : "loading"}${typeof w.rtf === "number" ? `, ${w.rtf.toFixed(2)}x real time` : ""}`);
+    if (l) rows.push(`Local model ${l.name || ""}: ${l.reachable ? (l.warm ? "ready" : "reachable, warming up") : "not reachable"}`);
+    if (p) rows.push(`Presidio ${p.model || ""}: ${p.available ? "ready" : "not available"}`);
+    return rows;
+  }
+  function engineInputText(mine) {
+    const state = mine && mine.state;
+    if (state === "hearing_you") return "The notes engine is hearing you";
+    if (state === "waiting_for_audio") return "Waiting for audio";
+    if (state === "silent") return "Silent";
+    if (state === "not_subscribed") return "Notes are off for you, nothing is being transcribed";
+    if (state === "error") return (mine.error && String(mine.error)) || "The notes engine reported an error";
+    return "";
+  }
+  function setIfChanged(node, value) { if (node.textContent !== value) setText(node, value); }
+  function renderDiagnostics() {
+    const block = $("engine");
+    if (!block) return;
+    if (!diag || diagGone) { block.classList.add("hidden"); return; }
+    block.classList.remove("hidden");
+    const rows = engineModelRows(diag.models);
+    const list = $("engine-models");
+    const signature = rows.join("|");
+    if (list.dataset.signature !== signature) {
+      list.dataset.signature = signature;
+      list.replaceChildren(...rows.map(r => element("li", null, r)));
+    }
+    const mine = diag.me || {};
+    setIfChanged($("engine-input"), engineInputText(mine));
+    $("engine-input").setAttribute("data-state", mine.state || "");
+    drawStrip($("engine-server-meter"), typeof mine.audio_level === "number" ? mine.audio_level : 0, "panel");
+    // The browser hears sound but the notes engine does not: say so in plain words.
+    const hearsSound = localMeter.state === "sound" && localMeter.soundSince && performance.now() - localMeter.soundSince > SILENCE_MS;
+    const stale = mine.state === "waiting_for_audio" || mine.last_frame_age_s == null || mine.last_frame_age_s > 5;
+    const noFrames = !!(hearsSound && mine.subscribed && mine.notes_on && mine.state !== "hearing_you" && mine.state !== "error" && stale);
+    const warn = $("engine-warning");
+    warn.classList.toggle("hidden", !noFrames);
+    setIfChanged(warn, noFrames
+      ? "Your microphone is picking up sound, but no audio is reaching the notes engine. Check that the LiveKit server is running, then leave and join again."
+      : "");
+  }
+  async function pollDiagnostics() {
+    if (diagBusy || diagGone || !room || document.hidden) return;
+    diagBusy = true;
+    try { diag = await api("/api/diagnostics"); renderDiagnostics(); }
+    catch (error) {
+      if (error.status === 404 || error.status === 405) { diagGone = true; diag = null; renderDiagnostics(); stopDiagnostics(); }
+    } finally { diagBusy = false; }
+  }
+  function startDiagnostics() {
+    stopDiagnostics();
+    diagGone = false;
+    diagTimer = setInterval(pollDiagnostics, 500);
+    pollDiagnostics();
+  }
+  function stopDiagnostics() { clearInterval(diagTimer); diagTimer = null; }
+  function renderAudioButton() {
+    $("audio-button").classList.toggle("hidden", !(room && room.canPlaybackAudio === false));
+  }
+
   async function join(accessOverride = null, configOverride = null) {
     const button = $("join-button");
     setText($("join-error"), "");
+    setText($("share-error"), "");
     const name = $("name").value.trim();
     if (!accessOverride && !name) {
       setText($("join-error"), "Enter a display name");
@@ -627,12 +1083,20 @@
       const config = configOverride || await api("/api/config");
       const access = accessOverride || await post("/api/join", { name });
       me = access.identity;
-      room = new LiveKit.Room({ adaptiveStream: true, dynacast: true });
+      stopDeviceCheck();
+      const roomOptions = { adaptiveStream: true, dynacast: true };
+      if (devPrefs.audioinput) roomOptions.audioCaptureDefaults = { deviceId: devPrefs.audioinput };
+      if (devPrefs.videoinput) roomOptions.videoCaptureDefaults = { deviceId: devPrefs.videoinput };
+      if (devPrefs.audiooutput && supportsSinkId()) roomOptions.audioOutput = { deviceId: devPrefs.audiooutput };
+      room = new LiveKit.Room(roomOptions);
       room.on(LiveKit.RoomEvent.TrackSubscribed, (track, publication, participant) => {
         if (track.kind === LiveKit.Track.Kind.Audio) {
           const media = track.attach();
           media.dataset.livekitAudio = "true";
+          media.muted = false;
+          if (participant) media.dataset.participant = participant.identity;
           document.body.append(media);
+          renderAudioButton();
           if (participant) muted.set(participant.identity, publication.isMuted);
           updateTileFlags();
         } else if (participant && publication.source === LiveKit.Track.Source.Camera) {
@@ -670,6 +1134,7 @@
         updateTileFlags();
       });
       room.on(LiveKit.RoomEvent.LocalTrackPublished, publication => {
+        if (publication.source === LiveKit.Track.Source.Microphone) rebindLocalMeter();
         if (publication.source === LiveKit.Track.Source.Camera) {
           videoMuted.delete(me);
           setVideoTrack(me, publication.videoTrack || publication.track);
@@ -677,6 +1142,7 @@
         }
       });
       room.on(LiveKit.RoomEvent.LocalTrackUnpublished, publication => {
+        if (publication.source === LiveKit.Track.Source.Microphone) localMeter.stop();
         if (publication.source === LiveKit.Track.Source.Camera) {
           setVideoTrack(me, null);
           renderCameraButton();
@@ -697,8 +1163,15 @@
         speaking = new Set(speakers.map(p => p.identity));
         updateTileFlags();
       });
-      room.on(LiveKit.RoomEvent.Disconnected, () => setConnection("Disconnected", "off"));
-      await room.connect(config.url, access.token);
+      room.on(LiveKit.RoomEvent.Disconnected, () => { setConnection("Disconnected", "off"); stopDiagnostics(); localMeter.stop(); });
+      room.on(LiveKit.RoomEvent.AudioPlaybackStatusChanged, renderAudioButton);
+      room.on(LiveKit.RoomEvent.ActiveDeviceChanged, kind => { if (kind === "audioinput") rebindLocalMeter(); });
+      room.on(LiveKit.RoomEvent.MediaDevicesError, error =>
+        showToast(escapeHtml(mediaProblem(error, "microphone or camera")), "warn"));
+      try { await room.connect(config.url, access.token); }
+      catch (_) {
+        throw new Error("Could not connect to the call server. Check that LiveKit is running and reachable from this browser, then try again.");
+      }
       setText($("room-chip"), `Room ${config.room}`);
       $("room-chip").classList.remove("hidden");
       for (const screen of ENTRY_SCREENS) $(screen).classList.add("hidden");
@@ -709,6 +1182,9 @@
       clearInterval(clockTimer);
       clockTimer = setInterval(tickClock, 30000);
       startLobby();
+      bindDeviceChange();
+      renderAudioButton();
+      startDiagnostics();
       startRoomStatus();
       renderMicButton();
       renderCameraButton();
@@ -718,13 +1194,22 @@
       room.localParticipant.setMicrophoneEnabled(true).then(() => {
         renderMicButton();
         updateTileFlags();
+        rebindLocalMeter();
       }).catch(error => {
         renderMicButton();
         updateTileFlags();
-        showToast(`Microphone is off. ${escapeHtml(error.message || "Allow microphone access to speak.")}`, "warn");
+        showToast(`Microphone is off. ${escapeHtml(mediaProblem(error, "microphone"))}`, "warn");
       });
+      if (devPrefs.cameraOn) {
+        room.localParticipant.setCameraEnabled(true).then(renderCameraButton).catch(error => {
+          renderCameraButton();
+          showToast(`Camera is off. ${escapeHtml(mediaProblem(error, "camera"))}`, "warn");
+        });
+      }
+
     } catch (error) {
       setText($("join-error"), error.message);
+      setText($("share-error"), error.message);
       if (accessOverride) showToast(`Could not join the meeting: ${escapeHtml(error.message)}`, "err");
       setConnection("Not connected", "off");
       if (room) { room.disconnect(); room = null; }
@@ -946,6 +1431,9 @@
       clearInterval(lobbyTimer);
       clearInterval(waitingTimer);
       clearInterval(roomTimer);
+      stopDiagnostics();
+      localMeter.stop();
+      closeDeviceMenu();
       if (eventSource) eventSource.close();
       if (room) await room.disconnect();
       location.href = "/";
@@ -1020,7 +1508,9 @@
   $("mic-button").onclick = async () => {
     if (!room) return;
     const enabled = room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(!enabled);
+    try { await room.localParticipant.setMicrophoneEnabled(!enabled); }
+    catch (error) { showToast(`Microphone is off. ${escapeHtml(mediaProblem(error, "microphone"))}`, "warn"); }
+    rebindLocalMeter();
     renderMicButton();
     updateTileFlags();
     announce(enabled ? "Microphone muted." : "Microphone on.");
@@ -1038,9 +1528,24 @@
       announce(enabled ? "Camera off." : "Camera on.");
     } catch (error) {
       renderCameraButton();
-      showToast(`Camera is off. ${escapeHtml(error.message || "Allow camera access to show video.")}`, "warn");
+      showToast(`Camera is off. ${escapeHtml(mediaProblem(error, "camera"))}`, "warn");
     } finally { button.disabled = false; }
   };
+  $("check-devices-button").onclick = () => startDeviceCheck();
+  $("check-mic").onchange = () => { devPrefs.audioinput = $("check-mic").value; saveDevPrefs(); startDeviceCheck("audioinput"); };
+  $("check-cam").onchange = () => { devPrefs.videoinput = $("check-cam").value; saveDevPrefs(); startDeviceCheck("videoinput"); };
+  $("check-spk").onchange = () => { devPrefs.audiooutput = $("check-spk").value; saveDevPrefs(); };
+  $("check-camera-on").onchange = () => { devPrefs.cameraOn = $("check-camera-on").checked; saveDevPrefs(); };
+  $("check-test-speaker").onclick = () => testSpeaker("check-error");
+  $("mic-chevron").onclick = () => toggleDeviceMenu("menu-mic");
+  $("camera-chevron").onclick = () => toggleDeviceMenu("menu-cam");
+  $("test-speaker-button").onclick = () => testSpeaker("menu-error");
+  $("audio-button").onclick = async () => { try { await room.startAudio(); } catch (_) { } renderAudioButton(); };
+  document.addEventListener("click", event => {
+    if (!deviceMenuOpen()) return;
+    const inside = n => n && (n === event.target || n.contains(event.target));
+    if (!inside($("device-menu")) && !inside($("mic-chevron")) && !inside($("camera-chevron"))) closeDeviceMenu();
+  });
   $("notes-button").onclick = toggleNotes;
   $("live-button").onclick = goLive;
   $("captions-button").onclick = () => setCaptions(!captionsOn);
@@ -1106,6 +1611,7 @@
       if (key === "l") goLive();
       else if (key === "c") setCaptions(!captionsOn);
     }
+    if (event.key === "Escape" && deviceMenuOpen()) { const from = $("mic-chevron"); closeDeviceMenu(); from.focus(); return; }
     if (event.key === "Escape" && panelView) closePanel();
   });
   const initialRoom = location.pathname.match(/^\/m\/([^/]+)\/?$/);

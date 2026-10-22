@@ -80,6 +80,27 @@
       <p>Share this link with the people you invite. You let each person in.</p>
       <label for="share-link">Meeting link</label>
       <div class="share-link-row"><input id="share-link" readonly><button id="copy-link-button" class="secondary" type="button">Copy link</button></div>
+      <section id="device-check" class="device-check" aria-labelledby="device-check-title">
+        <h2 id="device-check-title">Check your devices</h2>
+        <p class="field-help">Test your microphone, camera and speaker before you join. The check stays on this computer.</p>
+        <button id="check-devices-button" class="secondary wide" type="button">Check devices</button>
+        <div id="device-check-live" class="hidden">
+          <div class="check-video"><video id="check-video" autoplay muted playsinline></video><p id="check-video-off" class="check-video-off">Camera is off</p></div>
+          <label for="check-mic">Microphone</label>
+          <select id="check-mic"></select>
+          <div class="meter-line"><canvas id="check-meter" width="144" height="24" role="img" aria-label="Microphone level"></canvas><span id="check-mic-status" role="status" aria-live="polite"></span></div>
+          <label for="check-cam">Camera</label>
+          <select id="check-cam"></select>
+          <div id="check-spk-row" class="hidden">
+            <label for="check-spk">Speaker</label>
+            <select id="check-spk"></select>
+          </div>
+          <button id="check-test-speaker" class="secondary" type="button">Test speaker</button>
+          <label class="check-row" for="check-camera-on"><input id="check-camera-on" type="checkbox" disabled><span>Join with my camera on</span></label>
+        </div>
+        <p id="check-error" class="error" role="alert"></p>
+      </section>
+      <p id="share-error" class="error" role="alert"></p>
       <button id="share-join-button" class="primary wide" type="button">Join now</button>
     </section>
 
@@ -98,6 +119,7 @@
     <section id="meeting" class="meeting hidden">
       <div class="stage">
         <div id="tile-grid" class="tile-grid" aria-label="Participants"></div>
+        <button id="audio-button" class="audio-button hidden" type="button">Turn on sound</button>
         <div id="stage-captions" class="stage-captions hidden" aria-live="off"></div>
       </div>
 
@@ -110,9 +132,17 @@
         <div class="panel-body">
           <div id="panel-agent" class="panel-view">
             <p id="capture-status" class="status-line" role="status" aria-live="polite">Notes are off</p>
+            <section id="engine" class="engine hidden" aria-label="Notes engine status">
+              <h3>Notes engine</h3>
+              <ul id="engine-models" class="engine-models"></ul>
+              <p id="engine-input" class="engine-input" role="status" aria-live="polite"></p>
+              <div class="meter-row"><span class="meter-label">Your browser</span><canvas id="engine-browser-meter" width="144" height="24" role="img" aria-label="Level in your browser"></canvas></div>
+              <div class="meter-row"><span class="meter-label">Reaching the notes engine</span><canvas id="engine-server-meter" width="144" height="24" role="img" aria-label="Level reaching the notes engine"></canvas></div>
+              <p id="engine-warning" class="note engine-warning hidden" role="alert"></p>
+            </section>
             <div class="switch-row">
               <span id="notes-switch-label">Notes for me</span>
-              <span><span id="notes-label" class="switch-state">Off</span><button id="notes-button" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="notes-switch-label"><span class="switch-thumb"></span></button></span>
+              <span class="switch-wrap"><span id="notes-label" class="switch-state">Off</span><button id="notes-button" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="notes-switch-label"><span class="switch-thumb"></span></button></span>
             </div>
             <div class="captions-wrap">
               <div id="captions" class="captions" tabindex="0" aria-live="off" aria-label="Captions of your approved lines"></div>
@@ -180,11 +210,13 @@
         <svg class="icon-mic-off" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28m-4.02.17c0-.06.02-.11.02-.17V5a3 3 0 0 0-6 0v.18l5.98 5.99M4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3Z"/></svg>
         <span id="mic-label" class="sr-only">Mute</span>
       </button>
+      <button id="mic-chevron" class="control chevron" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="device-menu" aria-label="Microphone and speaker settings" title="Microphone and speaker settings"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
       <button id="camera-button" class="control camera-off" type="button" aria-pressed="false" aria-label="Turn on camera" title="Turn on camera">
         <svg class="icon-cam" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
         <svg class="icon-cam-off" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.55-.18L19.73 21 21 19.73 3.27 2z"/></svg>
         <span id="camera-label" class="sr-only">Turn on camera</span>
       </button>
+      <button id="camera-chevron" class="control chevron" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="device-menu" aria-label="Camera settings" title="Camera settings"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
       <button id="captions-button" class="control" type="button" aria-pressed="false" aria-label="Turn on captions" title="Turn on captions (c)">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1z"/></svg>
       </button>
@@ -206,6 +238,25 @@
       </button>
     </div>
   </footer>
+
+  <div id="device-menu" class="device-menu hidden" role="group" aria-label="Devices">
+    <section>
+      <h3 id="menu-mic-title">Microphone</h3>
+      <ul id="menu-mic" class="device-list" role="menu" aria-labelledby="menu-mic-title"></ul>
+      <div class="meter-line"><canvas id="menu-meter" width="144" height="24" role="img" aria-label="Microphone level"></canvas><span id="menu-mic-status" role="status"></span></div>
+    </section>
+    <section>
+      <h3 id="menu-spk-title">Speakers</h3>
+      <ul id="menu-spk" class="device-list" role="menu" aria-labelledby="menu-spk-title"></ul>
+      <p id="menu-spk-note" class="note hidden">Your browser uses the system default speaker</p>
+      <button id="test-speaker-button" class="secondary" type="button">Test speaker</button>
+    </section>
+    <section>
+      <h3 id="menu-cam-title">Camera</h3>
+      <ul id="menu-cam" class="device-list" role="menu" aria-labelledby="menu-cam-title"></ul>
+    </section>
+    <p id="menu-error" class="error" role="alert"></p>
+  </div>
 
   <div id="end-backdrop" class="backdrop hidden"></div>
   <section id="end-dialog" class="end-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="end-title">

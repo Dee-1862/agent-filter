@@ -174,7 +174,7 @@ def audit_css_block(a: Audit, name: str, text: str, lines: list[str], css: str, 
                 if n < 0 or (n > 0.5 if unit_px else n > 0.04):
                     a.add(name, ln, "letter-spacing", snippet, lines, file_text)
             if prop in ("animation", "animation-name"):
-                if value.strip() != "none" and not re.fullmatch(r"none|0", value.strip()):
+                if not re.fullmatch(r"(none|0)(\s*!important)?", value.strip()):
                     a.add(name, ln, "animation", snippet, lines, file_text)
             if prop == "transition" and re.match(r"all\b", value):
                 a.add(name, ln, "transition-all", snippet, lines, file_text)

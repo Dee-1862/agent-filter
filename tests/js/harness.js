@@ -3,8 +3,9 @@
  *
  *   node tests/js/harness.js        (exit code 0 = all checks passed)
  *
- * It exercises: the lobby / admission flow (host and guest), the three views (Realtime, Insights,
- * Explainability) in consent mode and in the operator console, and the privacy contract on the page:
+ * It exercises: the lobby / admission flow (host and guest), the single Meet-style side panel in consent mode
+ * (Off The Record, What was kept out, How it decides, People, Meeting details), the three views of the operator
+ * console, and the privacy contract on the page:
  * a planted secret never reaches the DOM, Insights has only category rows, and "Reveal text" exists
  * only in the operator console.
  */
@@ -337,11 +338,12 @@ async function consentHost() {
   admitBtn.click(); await sleep(20);
   check(env.calls.some(c => c.url === "/api/meetings/room1/admit" && c.body.request_id === "r1"), "host admitted the guest");
 
-  // three tabs: Realtime first
-  const tabs = ["tab-realtime", "tab-insights", "tab-explain"].map($);
-  check(tabs.every(t => t), "three tabs exist");
-  check(tabs[0].getAttribute("aria-selected") === "true" && visible($("view-realtime")) && !visible($("view-insights")) && !visible($("view-explain")),
-    "Realtime is the first view");
+  // Meet-style call: no tab bar, no status pill, no presenter button on the stage
+  check(!$("view-tabs") && !$("tab-realtime") && !$("status-pill") && !$("present-button"),
+    "consent page has no tab bar, status pill or presenter button");
+  // The lobby request opened the People panel for the host
+  check(visible($("side-panel")) && visible($("panel-people")) && !visible($("panel-agent")), "a waiting guest opens the People panel");
+  check(!$("people-badge").classList.contains("hidden") && text($("people-badge")) === "1", "people button shows the waiting count");
   const es = env.sources[0];
   check(es && es.url === "/stream", "stream opened");
   es.push({ type: "participants", participants: { "person-host": { name: "Hana", recording: true } } });
@@ -354,16 +356,39 @@ async function consentHost() {
     text: SECRET, trail: { family: "kw", before: "ON", after: "PENDING_CONFIRM", held_s: 2.4, text: SECRET } }] });
   es.push({ type: "status", ...insights, text: SECRET, items: [{ text: SECRET }] });
   await sleep(10);
+  check(text($("people-list")).includes("Hana") && text($("people-list")).includes("Notes on"), "People panel lists who has notes on");
+
+  // The Off The Record agent button opens the one side panel
+  $("agent-button").click();
+  check(visible($("side-panel")) && visible($("panel-agent")) && !visible($("panel-people")) && !visible($("view-insights")), "agent button opens the agent panel");
+  check($("agent-button").getAttribute("aria-expanded") === "true", "agent button reports expanded");
+  check(text($("panel-title")) === "Off The Record" && !visible($("panel-back")), "panel title, no back arrow at the root");
+  check(text($("capture-status")) === "Notes are on for you" && $("notes-button").getAttribute("aria-checked") === "true",
+    "one-line status and switch show notes on");
   const caps = text($("captions"));
   check(caps.includes("Plan the launch"), "caption shows the approved line");
   const chip = $("captions").all().find(e => e.tagName === "BUTTON" && e.getAttribute("data-category") === "pay_hr");
   check(!!chip && text(chip).includes("Pay and HR"), "kept-out marker chip shows the kind only");
   check(!text(env.doc.body).includes(SECRET), "the planted secret never reaches the page (realtime)");
-  check(text($("status-pill")) === "RECORDING ME", "status pill shows recording");
+  check(!visible($("live-button")), "Jump to latest is hidden while following");
+  $("captions").scrollHeight = 600; $("captions").clientHeight = 100; $("captions").scrollTop = 0;
+  $("captions").dispatch("scroll");
+  check(visible($("live-button")) && text($("live-button")).includes("Jump to latest"), "Jump to latest appears when scrolled up");
+  $("live-button").click();
+  check(!visible($("live-button")), "Jump to latest returns to the newest line and hides");
 
-  // Insights: one click
-  tabs[1].click();
-  check(visible($("view-insights")) && !visible($("view-realtime")) && tabs[1].getAttribute("aria-selected") === "true", "Insights opens with one click");
+  // Meet-style captions on the stage
+  check(!visible($("stage-captions")), "stage captions off by default");
+  $("captions-button").click();
+  check(visible($("stage-captions")) && text($("stage-captions")).includes("Plan the launch") && !text($("stage-captions")).includes(SECRET),
+    "captions button shows approved lines on the stage");
+  $("captions-button").click();
+  check(!visible($("stage-captions")), "captions button toggles off");
+
+  // What was kept out: a plain link inside the same panel, with a back arrow
+  $("link-insights").click();
+  check(visible($("view-insights")) && !visible($("panel-agent")) && visible($("panel-back")) && text($("panel-title")) === "What was kept out",
+    "What was kept out opens inside the panel with a back arrow");
   const ins = text($("view-insights"));
   check(ins.includes("Off the record (you asked)") && ins.includes("Pay and HR"), "insights lists the kinds");
   check(ins.includes("Off the record x2") && ins.includes("Pay and HR x1"), "insights summary has kinds and counts");
@@ -372,17 +397,21 @@ async function consentHost() {
   check(!ins.includes("Plan the launch") && !ins.includes("Hana") && !ins.includes(SECRET) && !ins.includes("k1") && !ins.includes("l1"),
     "insights has no lines, speakers, ids or secrets");
   check($("view-insights").all().some(e => e.tagName === "SVG" && e.className === "tl"), "insights has the recording-state timeline");
+  check(!$("view-insights").all().some(e => String(e.className).includes("iv-bar")), "no progress bars in the kind list");
+  check($("view-insights").all().filter(e => e.className === "iv-tile").length === 3, "three flat stat tiles");
+  $("panel-back").click();
+  check(visible($("panel-agent")) && !visible($("view-insights")), "back arrow returns to the agent panel");
 
-  // Explainability: one more click, then via the chip
-  tabs[2].click();
-  check(visible($("view-explain")), "Explainability opens");
+  // How it decides, then via a marker
+  $("link-explain").click();
+  check(visible($("view-explain")) && text($("panel-title")) === "How it decides", "How it decides opens inside the panel");
   const ex = text($("view-explain"));
   for (const label of ["Off the record (you asked)", "Retracted by the speaker (strike that)", "Personal and health", "Pay and HR",
     "Legal and confidential business", "Contact details masked", "Other sensitive"]) check(ex.includes(label), "explain lists " + label);
   check(!$("view-explain").all().some(e => text(e).includes("Reveal text")), "no Reveal text in consent mode");
-  tabs[0].click();
+  $("panel-back").click();
   $("captions").all().find(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr").click();
-  check(visible($("view-explain")), "opening the marker goes to Explainability");
+  check(visible($("view-explain")), "opening the marker goes to How it decides");
   const trail = text($("view-explain"));
   check(trail.includes("Keyword rule") && trail.includes("Recording") && trail.includes("Needs your OK") && trail.includes("2.4 s"),
     "marker trail shows rule family, state before/after and hold timing");
@@ -392,14 +421,16 @@ async function consentHost() {
   cardOff.click();
   check(text($("view-explain")).includes("Rule families that can produce this kind"), "choosing a kind shows its generic rule");
 
-  // presenter + Live
-  $("present-button").click();
-  check(env.doc.body.classList.contains("presenter"), "presenter mode toggles");
-  tabs[1].click();
-  $("live-button").click();
-  check(visible($("view-realtime")), "Live returns to the realtime view");
-  env.doc.dispatch("keydown", { key: "p", target: env.doc.body });
-  check(!env.doc.body.classList.contains("presenter"), "p toggles presenter");
+  // Meeting details, Escape, and the agent button closing the panel
+  $("info-button").click();
+  check(visible($("panel-info")) && $("info-link").value.endsWith("/m/room1"), "Meeting details shows the meeting link");
+  env.doc.dispatch("keydown", { key: "Escape", target: env.doc.body });
+  check(!visible($("side-panel")), "Escape closes the side panel");
+  $("agent-button").click();
+  $("agent-button").click();
+  check(!visible($("side-panel")), "agent button toggles the panel closed");
+  env.doc.dispatch("keydown", { key: "l", target: env.doc.body });
+  check(visible($("panel-agent")), "l opens the panel at the latest lines");
 
   // consent / mic / camera controls
   $("notes-button").click(); await sleep(20);

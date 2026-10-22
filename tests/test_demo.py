@@ -237,9 +237,9 @@ def test_live_endpoints_never_offer_replay_controls_or_raw_state():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
         home = client.get("/").text
-        assert "Create a meeting" in home and 'id="notes-button"' in home
-        assert "Your voice, your choice" in client.get("/live").text
-        assert "Your voice, your choice" in client.get("/live.html").text
+        assert "Start an instant meeting" in home and 'id="notes-button"' in home
+        assert "Join with your name" in client.get("/live").text
+        assert "Join with your name" in client.get("/live.html").text
         assert client.get("/api/state").status_code == 404
         assert client.post("/api/say", json={"speaker": "a", "text": "secret"}).status_code == 404
         assert client.post("/api/consent", json={"recording": True}).status_code == 401
@@ -790,18 +790,36 @@ def static_text(name):
     return (Path(__file__).resolve().parent.parent / "demo" / "static" / name).read_text(encoding="utf-8")
 
 
-def test_live_page_has_lobby_voice_and_three_views():
+def test_live_page_has_lobby_voice_and_one_side_panel():
     html, js = static_text("live.html"), static_text("live.js")
     for marker in ('id="create-button"', 'id="host-lobby"', 'id="camera-button"', 'id="mic-button"', 'id="notes-button"',
-                   'id="view-tabs"', 'id="tab-realtime"', 'id="tab-insights"', 'id="tab-explain"',
-                   'id="view-realtime"', 'id="view-insights"', 'id="view-explain"', 'id="status-pill"',
-                   'id="live-button"', 'id="present-button"', 'id="captions"', "/static/categories.js", "/static/views.js"):
+                   'id="captions-button"', 'id="leave-button"', 'id="people-button"', 'id="info-button"', 'id="agent-button"',
+                   'id="side-panel"', 'id="panel-agent"', 'id="link-insights"', 'id="link-explain"', 'id="panel-back"',
+                   'id="view-insights"', 'id="view-explain"', 'id="live-button"', 'id="captions"', 'id="stage-captions"',
+                   "What was kept out", "How it decides", "/static/categories.js", "/static/views.js"):
         assert marker in html, marker
+    # the agent is attached to the meeting: no tab bar, status pill, or presenter button on the stage
+    for gone in ('id="view-tabs"', 'id="tab-realtime"', 'id="status-pill"', 'id="present-button"', "NOT RECORDING ME"):
+        assert gone not in html, gone
+    # strict CSP stays workable: no inline style attributes or inline event handlers in the consent page
+    import re
+    assert not re.search(r"\sstyle=", html) and not re.search(r"\son[a-z]+=", html)
+    assert "style-src 'self'" in html and "script-src 'self'" in html
     for marker in ("setMicrophoneEnabled", "ActiveSpeakersChanged", "/api/consent", "/api/join", "/api/leave",
                    "/api/me", "kept_out", "renderInsights", "renderExplain"):
         assert marker in js, marker
     # the consent page never offers a reveal, and never calls the replay-only confirm endpoint
     assert "reveal:" not in js and "/api/confirm" not in js and "Reveal text" not in html
+
+
+def test_frontend_passes_ui_slop_audit():
+    """No single-side accent borders, gradients, glass, glow, emoji, dashes or decorative motion (docs/UI_STYLE.md)."""
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parent.parent
+    r = subprocess.run([sys.executable, str(root / "scripts" / "ui_slop_audit.py"), "--fail"],
+                       capture_output=True, text=True, cwd=root)
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_index_operator_console_has_three_views():
