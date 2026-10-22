@@ -1,4 +1,8 @@
-"""Hold buffer: segments wait `hold_seconds` before commit. Clock is injected via `now`."""
+"""Hold buffer: segments wait `hold_seconds` before commit. Clock is injected via `now`.
+
+Items are kept ordered by (seg.t_start, seq) so out-of-order arrival from different
+speakers still yields time-ordered release. `hold_seconds` is read live at release time.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,6 +18,7 @@ class Item:
     arrival: float
     pending: bool = False          # awaiting confirm(); blocks release of itself and later items
     after_pending: Optional[str] = None   # id of the pending item this one queued behind
+    tentative: bool = False        # OFF-scope utterance that may or may not be private yet; blocks release
 
 
 class HoldBuffer:
@@ -22,10 +27,18 @@ class HoldBuffer:
         self._items: list[Item] = []
         self._seq = 0
 
-    def add(self, seg: Segment, now: float) -> Item:
-        self._seq += 1
-        it = Item(seg=seg, seq=self._seq, arrival=now)
-        self._items.append(it)
+    def add(self, seg: Segment, now: float, seq: Optional[int] = None) -> Item:
+        if seq is None:
+            self._seq += 1
+            seq = self._seq
+        else:
+            self._seq = max(self._seq, seq)
+        it = Item(seg=seg, seq=seq, arrival=now)
+        key = (seg.t_start, seq)
+        pos = len(self._items)
+        while pos > 0 and (self._items[pos - 1].seg.t_start, self._items[pos - 1].seq) > key:
+            pos -= 1
+        self._items.insert(pos, it)
         return it
 
     def items(self) -> list[Item]:
@@ -43,24 +56,28 @@ class HoldBuffer:
     def pending_items(self) -> list[Item]:
         return [i for i in self._items if i.pending]
 
+    def tentative_items(self) -> list[Item]:
+        return [i for i in self._items if i.tentative]
+
     def release_due(self, now: float) -> list[Item]:
-        """Pop items older than hold_seconds, in order. A pending item is a barrier:
-        nothing at or after it is released until confirm() resolves it."""
+        """Pop items older than hold_seconds (read now, not at add time), in time order.
+        A pending or tentative item is a barrier: nothing at or after it is released until
+        confirm() / scope resolution clears it."""
         out = []
         for it in list(self._items):
-            if it.pending:
+            if it.pending or it.tentative:
                 break
             if now - it.arrival >= self.hold_seconds:
                 self._items.remove(it)
                 out.append(it)
             else:
-                break   # later items arrived later; keep order
+                break   # keep time order; later items wait for this one
         return out
 
     def drain(self) -> list[Item]:
-        """Pop everything not pending (end of meeting)."""
-        out = [i for i in self._items if not i.pending]
-        self._items = [i for i in self._items if i.pending]
+        """Pop everything not pending/tentative (end of meeting)."""
+        out = [i for i in self._items if not i.pending and not i.tentative]
+        self._items = [i for i in self._items if i.pending or i.tentative]
         return out
 
     def __len__(self):

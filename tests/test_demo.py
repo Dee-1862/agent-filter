@@ -1,10 +1,11 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from demo.server import create_app, parse_script
+from demo.server import build_livekit_source, create_app, load_script_segments
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "demo" / "scripts"
 
@@ -23,21 +24,38 @@ def kinds(msgs):
     return [e for m in msgs if m["type"] == "events" for e in m["events"]]
 
 
+def wait_for(cond, timeout=5.0):
+    end = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < end, "timed out"
+        time.sleep(0.02)
+
+
 @pytest.mark.parametrize("name", ["demo_main", "demo_retro_committed", "demo_false_alarm"])
 def test_scripts_parse(name):
-    lines = parse_script(SCRIPTS / f"{name}.txt")
-    assert len(lines) >= 5
-    assert all(sp and tx for sp, tx, _ in lines)
+    segs = load_script_segments(SCRIPTS / f"{name}.txt")
+    assert len(segs) >= 5
+    assert all(s.speaker and s.text and not s.text.startswith("@") for s in segs)
+    assert len({s.id for s in segs}) == len(segs)
+    assert all(a.t_end <= b.t_start for a, b in zip(segs, segs[1:]))
+
+
+def test_pause_directive_shifts_time_and_is_not_text(tmp_path):
+    p = tmp_path / "s.txt"
+    p.write_text("A: one\n@pause 5\nB: two\n", encoding="utf-8")
+    a, b = load_script_segments(p)
+    assert b.text == "two" and b.t_start - a.t_end >= 5
 
 
 def test_main_script_has_four_speakers():
-    assert len({sp for sp, _, _ in parse_script(SCRIPTS / "demo_main.txt")}) == 4
+    assert len({s.speaker for s in load_script_segments(SCRIPTS / "demo_main.txt")}) == 4
 
 
 def test_index_served():
     with TestClient(create_app("fake", autostart=False)) as c:
         r = c.get("/")
         assert r.status_code == 200 and "Committed notes" in r.text
+        assert "Presenter mode" in r.text and "pendcard" in r.text
 
 
 def test_session_replay_events_in_order():
@@ -45,19 +63,26 @@ def test_session_replay_events_in_order():
     with TestClient(app) as c:
         msgs = read_stream(c)
     assert msgs[0]["type"] == "reset" and msgs[-1]["type"] == "done"
+    assert any(m["type"] == "segment" for m in msgs)
     events = kinds(msgs)
     ts = [e["t"] for e in events]
     assert ts == sorted(ts)
     ks = [e["kind"] for e in events]
     assert {"held", "committed", "redacted", "state_change", "pending_confirm"} <= set(ks)
-    # every held segment appears before its resolution
     first = {}
     for i, e in enumerate(events):
         first.setdefault(e["segment_id"], i)
         if e["kind"] == "committed":
             assert events[first[e["segment_id"]]]["kind"] == "held"
     states = [e["state"] for e in events if e["kind"] == "state_change"]
-    assert "OFF" in states and states.index("OFF") < len(states) - 1 and "ON" in states[states.index("OFF"):]
+    assert "OFF" in states and "ON" in states[states.index("OFF"):]
+
+
+def test_state_has_health_and_source():
+    with TestClient(create_app("fake", autostart=False)) as c:
+        s = c.get("/api/state").json()
+        assert s["source"] == "typed" and s["health"]["queue_depth"] == 0
+        assert c.get("/api/health").json()["type"] == "health"
 
 
 def test_say_and_confirm():
@@ -66,11 +91,11 @@ def test_say_and_confirm():
         sid = c.post("/api/say", json={"speaker": "Dan", "text": "His salary is 150,000"}).json()["segment_id"]
         s = c.get("/api/state").json()
         assert s["audit"][-1]["kind"] == "pending_confirm"
+        assert [p["segment_id"] for p in s["pending"]] == [sid]
         r = c.post("/api/confirm", json={"segment_id": sid, "keep_out": True})
         assert r.status_code == 200
         assert [e["kind"] for e in r.json()["events"]][0] == "redacted"
         assert c.get("/api/state").json()["notes"] == []
-        # confirm "No" path commits
         sid2 = c.post("/api/say", json={"speaker": "Dan", "text": "the bonus plan"}).json()["segment_id"]
         r = c.post("/api/confirm", json={"segment_id": sid2, "keep_out": False})
         assert r.json()["events"][0]["kind"] == "committed"
@@ -81,14 +106,31 @@ def test_say_and_confirm():
 
 
 def test_hold_endpoint_and_retro():
-    app = create_app("fake", autostart=False, hold_seconds=0.0)
+    app = create_app("fake", autostart=False, hold_seconds=0.0, tick_interval=0.02)
     with TestClient(app) as c:
         assert c.post("/api/hold", json={"seconds": 5}).json()["hold_seconds"] == 5
         c.post("/api/hold", json={"seconds": 0})
         c.post("/api/say", json={"speaker": "A", "text": "we ship friday"})
-        c.app.state.session.tick()
-        assert len(c.get("/api/state").json()["notes"]) == 1
+        wait_for(lambda: len(c.get("/api/state").json()["notes"]) == 1)
         c.post("/api/say", json={"speaker": "A", "text": "scratch that"})
         ks = [e["kind"] for e in c.get("/api/state").json()["audit"]]
         assert "retro_removed" in ks
         assert c.get("/api/state").json()["notes"] == []
+        assert c.post("/api/hold", json={}).status_code == 400
+
+
+def test_restart_replays_script():
+    app = create_app("fake", script=SCRIPTS / "demo_false_alarm.txt", speed=500, hold_seconds=0.2)
+    with TestClient(app) as c:
+        read_stream(c)
+        assert c.post("/api/restart").status_code == 200
+        msgs = read_stream(c)
+        assert msgs[0]["type"] == "reset" and msgs[-1]["type"] == "done"
+
+
+def test_livekit_missing_sdk_gives_clear_error(monkeypatch):
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda n, *a: None if n == "livekit" else real(n, *a))
+    with pytest.raises(RuntimeError, match="livekit"):
+        build_livekit_source("demo")

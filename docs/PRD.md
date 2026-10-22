@@ -123,11 +123,11 @@ Rules: add new entries at the bottom of the relevant section. Each entry has an 
 
 | ID | Phase | Window | Deliverable | Status |
 |---|---|---|---|---|
-| P1 | Clone and run | 0:00–0:25 | Clone repos; Ollama with qwen2.5:7b (3b if slow); whisper_online.py transcribes a test file; locate LocalAgreement hook | proposed |
-| P2 | Benchmark | 0:25–0:55 | 20 ConfAIde Tier 4 items + 20 QMSum chunks with LLM-inserted spans; hand-check ~10; save `otr_bench.jsonl` | proposed |
-| P3 | Build system C | 0:55–1:45 | Hold buffer, cue detector, state machine, wired into emit point | proposed |
-| P4 | Evaluate | 1:45–2:15 | Run A, B, C; leak rate, over-redaction, per-type table; one table + one bar chart | proposed |
-| P5 | Live demo | 2:15–2:45 | Streamlit page: grey = held, green = committed, red = redacted; scripted demo | proposed |
+| P1 | Clone and run | 0:00–0:25 | Clone repos; Ollama with qwen2.5:7b (3b if slow); whisper_online.py transcribes a test file; locate LocalAgreement hook | proposed (no evidence in repo; ingest uses faster-whisper chunking, not whisper_streaming) |
+| P2 | Benchmark | 0:25–0:55 | 20 ConfAIde Tier 4 items + 20 QMSum chunks with LLM-inserted spans; hand-check ~10; save `otr_bench.jsonl` | in-progress (2026-10-22: 40 synthetic items exist; no ConfAIde/QMSum imported; labels unreviewed) |
+| P3 | Build system C | 0:55–1:45 | Hold buffer, cue detector, state machine, wired into emit point | in-progress (2026-10-22: built, 25 offline tests pass; first eval shows C leaking 45%, see 2.5) |
+| P4 | Evaluate | 1:45–2:15 | Run A, B, C; leak rate, over-redaction, per-type table; one table + one bar chart | in-progress (2026-10-22: A/B-stub/C run with no LLM; table and chart exist; no LLM run) |
+| P5 | Live demo | 2:15–2:45 | Streamlit page: grey = held, green = committed, red = redacted; scripted demo | in-progress (2026-10-22: replay demo built with FastAPI-style page, not Streamlit; never viewed in a browser) |
 | P6 | Slides | 2:45–3:00 | Problem, gap, method, results, demo, future work | proposed |
 
 ## 2.2 Team split (initial)
@@ -154,7 +154,17 @@ Rules: add new entries at the bottom of the relevant section. Each entry has an 
 
 ## 2.5 Results log
 
-_Empty. Add one dated entry per evaluation run: system, buffer length, model, benchmark version, leak rate, over-redaction, per-type numbers._
+_Add one dated entry per evaluation run: system, buffer length, model, benchmark version, leak rate, over-redaction, per-type numbers. Entries are appended below._
+
+### R-001 · 2026-10-22 (files written 12:32) · first three-system run · synthetic, unreviewed, early
+- Source: `bench/results.json` / `bench/results.md`. Benchmark: `bench/otr_bench.jsonl`, 40 synthetic items (8 per case type), none known hand-checked. LLM: none (`llm: none`). Hold seconds: harness default (not recorded in results.json meta). Systems: A = rules + PII; B-stub = heuristic stand-in, not an LLM; C = ours without LLM.
+- Leak rate: A 14%, B-stub 21%, C 45%. Item-level leak: 22% / 31% / 72%. Over-redaction: 38% / 18% / 12%. Summary usefulness: 68% / 85% / 90%.
+- Per-type leak (A / B-stub / C): explicit_start_end 0 / 0 / 28; explicit_start_implicit_end 0 / 0 / 50; retroactive 8 / 50 / 50; implicit 43 / 43 / 52; false_alarm n/a.
+- Reading: C leaks more than A and B-stub; the hypothesis is not supported by this run. Do not use on slides.
+
+### R-002 · 2026-10-22 (files written 12:32) · hold-length sweep · synthetic, unreviewed, early
+- Source: `bench/results_sweep.json` / `bench/results_sweep.md`. Same 40 items, LLM none, system C only, hold 0 s vs 30 s.
+- Result: identical in every cell (leak 45%, item leak 72%, over-redaction 12%, usefulness 90%). This is a suspected harness/pipeline artefact (WORK_SPLIT I2), not evidence that hold length does not matter. Bears on Q3 and F5.
 
 ## 2.6 Open questions
 
@@ -163,11 +173,17 @@ _Empty. Add one dated entry per evaluation run: system, buffer length, model, be
 | Q1 | Is whisper_streaming fast enough on the target laptop, or do we switch to SimulStreaming? | open |
 | Q2 | How do we label "implicit end" of a scope reliably in inserted spans? | open |
 | Q3 | What is the right hold-buffer default (30 s vs. 60 s)? | open |
-| Q4 | Which leak judge do we use (string match, LLM judge, or both)? | open |
+| Q4 | Which leak judge do we use (string match, LLM judge, or both)? | open (2026-10-22: bench/metrics.py scores by segment id, i.e. neither) |
+| Q5 | Is the 40-item synthetic set, written by the team that built the systems, a fair test, and how much should the ConfAIde/QMSum import replace it? | open |
 
 ## 2.7 Additions (new addenda go here)
 
-_None yet. Template:_
+### A-001 · 2026-10-22 · Early implementation differs from the initial plan · accepted
+What: Observed deviations from 2.1: ingest is LiveKit plus faster-whisper chunking and a replay source (docs/INGEST.md), not whisper_streaming; the demo is a web page served by `demo/server.py`, not Streamlit; the benchmark is 40 synthetic items rather than 20 ConfAIde plus 20 QMSum; system B is a heuristic stub until an LLM run exists.
+Why: Recorded so the PRD status matches the repo. Source: file listing and `bench/README.md` on 2026-10-22.
+Impact on foundation: none (1.6 and 1.7 remain the target; the deviations are scope gaps to close)
+
+_Template:_
 
 ```
 ### A-001 · YYYY-MM-DD · <title> · status

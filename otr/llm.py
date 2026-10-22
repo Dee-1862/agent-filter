@@ -85,9 +85,19 @@ _KEYWORDS: dict[str, list[str]] = {
     "health": [r"diagnos", r"cancer", r"chemo", r"surgery", r"medication", r"prescri", r"therapy",
                r"therapist", r"depress", r"anxiety", r"pregnan", r"medical", r"illness",
                r"hospital", r"tumou?r", r"\bdoctor", r"mental health", r"rehab", r"\bdiabet"],
-    "salary": [r"\bsalary", r"\bsalaries", r"pay raise", r"\braise\b", r"compensation", r"\bbonus",
-               r"\bpaid\b", r"\bmakes? \$?\d", r"\$\s?\d[\d,]*\s?k?\b.*\b(year|salary|annual)",
-               r"\boffer\b.*\$", r"equity grant", r"\bpay cut"],
+    # Salary keywords need person-directed or confidential framing (a possessive, an amount, a
+    # named person, "give him a raise"). A bare "salary calculator we launched" is public.
+    "salary": [rf"{_POSS}\s+(?:\w+\s+){{0,2}}(?:salary|salaries|pay|bonus|bonuses|compensation|comp|raise)\b",
+               rf"\b(?:salary|salaries|bonus|bonuses|raise|compensation|pay)\b[^.?!]{{0,25}}{_AMT}",
+               rf"{_AMT}[^.?!]{{0,20}}\b(?:salary|salaries|bonus|raise|compensation|base pay|a year)\b",
+               r"\bpay raise\b", r"\b(?:underpaid|overpaid)\b",
+               r"\b(?:give|giving|gave|get|getting|got|deserves?|wants?|asked?|asking|denied|promised?)\s+"
+               r"(?:for\s+)?(?:\w+\s+){0,2}(?:a\s+|the\s+)?raise\b",
+               r"\bcompensation\s+(?:for|of)\s+(?-i:[A-Z][a-z]+)", r"\bcompensation\s+package\b",
+               rf"\b(?:is|are|am|was|were|being|getting|gets)\s+(?:only\s+|being\s+)?paid\s+(?:{_AMT}|less|more|way|much|too)",
+               rf"\b(?:makes?|earns?|earning|making)\s+{_AMT}",
+               rf"\boffer\b[^.?!]{{0,30}}{_AMT}", r"\boffer\b.*\$",
+               r"equity grant", r"\bpay cut"],
     "hr": [r"performance review", r"\bpip\b", r"improvement plan", r"harass", r"disciplin",
            r"\bhr\b", r"human resources", r"\bterminat", r"get(ting)? fired", r"\bfire (him|her|them)\b",
            r"\bgrievance", r"underperform", r"written warning"],

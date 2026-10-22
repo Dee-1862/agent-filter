@@ -51,7 +51,7 @@ section > h2 { margin: 0; padding: 10px 16px; font-size: 14px; letter-spacing: .
 .ask { margin-top: 8px; display: flex; align-items: center; gap: 10px; color: var(--amber); font-weight: 650; }
 .ask button { border-color: var(--amber); color: var(--amber); font-weight: 700; }
 .ask button.yes { background: #f0b42933; }
-.bar { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--grey); width: 100%; transform-origin: left; }
+.bar { position: absolute; left: 0; bottom: 0; height: 5px; transform: scaleX(1); background: var(--grey); width: 100%; transform-origin: left; }
 
 .note { padding: 8px 10px; border-left: 4px solid var(--green); background: #3fb95010; border-radius: 6px; margin-bottom: 8px; transition: opacity 1.2s, max-height 1.2s .6s, margin 1.2s .6s, padding 1.2s .6s; max-height: 200px; }
 .note .who { font-weight: 700; margin-right: 6px; }
@@ -67,6 +67,35 @@ footer { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid var
 footer input { font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
 footer input#spk { width: 160px; } footer input#line { flex: 1; }
 .conn { font-size: 14px; color: var(--dim); }
+
+.health { display: flex; gap: 8px 18px; padding: 6px 20px; border-bottom: 1px solid var(--line); font: 13px/1.3 ui-monospace, Consolas, monospace; color: var(--dim); flex-wrap: wrap; align-items: center; background: var(--panel); }
+.health b { color: var(--text); font-weight: 650; }
+.health .warn b { color: var(--amber); } .health .bad b { color: var(--red); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--dim); margin-right: 6px; vertical-align: middle; }
+.dot.ok { background: var(--green); } .dot.bad { background: var(--red); } .dot.warn { background: var(--amber); }
+#banner { display: none; background: var(--red); color: #fff; font-weight: 700; padding: 10px 20px; text-align: center; letter-spacing: .02em; }
+#banner.warn { background: var(--amber); color: #1a1300; }
+.lanes { display: flex; gap: 10px; padding: 10px 14px; flex-wrap: wrap; min-height: 54px; }
+.chip { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 2px solid var(--line); background: var(--panel2); font-weight: 700; transition: box-shadow .2s, border-color .2s; }
+.chip .mic { width: 12px; height: 12px; border-radius: 50%; background: var(--dim); }
+.chip .n { font-weight: 400; color: var(--dim); font-size: 13px; }
+.chip.speaking { box-shadow: 0 0 0 3px var(--c, var(--blue)); border-color: var(--c, var(--blue)); }
+.chip.speaking .mic { background: var(--c, var(--blue)); animation: pulse .8s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.5); opacity: .5; } }
+#pendcard { display: none; border: 2px solid var(--amber); background: #f0b42918; border-radius: 12px; padding: 12px 16px; }
+#pendcard .pc { margin-bottom: 8px; } #pendcard .pc:last-child { margin-bottom: 0; }
+#pendcard .q { color: var(--amber); font-weight: 750; font-size: 1.05em; }
+#pendcard .t { margin: 4px 0 8px; }
+#pendcard button { border-color: var(--amber); color: var(--amber); font-weight: 750; font-size: 1.05em; padding: 8px 22px; margin-right: 10px; }
+#pendcard button.yes { background: #f0b42933; }
+#pendcard kbd { font: 12px ui-monospace, Consolas, monospace; border: 1px solid var(--amber); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+.row .err { display: block; font-size: 13px; color: var(--amber); margin-top: 2px; }
+body.presenter { font-size: 26px; }
+body.presenter .audit-sec, body.presenter footer, body.presenter .legend { display: none; }
+body.presenter main { grid-template-columns: 1.2fr 1fr; }
+body.presenter .row .who, body.presenter .row .txt, body.presenter .note { font-size: 1.15em; }
+body.presenter .row .tag, body.presenter .row .why { font-size: .6em; }
+body.presenter .health { font-size: 15px; }
 @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -76,11 +105,29 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
   <span id="badge" class="badge ON">ON</span>
   <span class="spacer"></span>
   <label class="ctl">Hold <input id="hold" type="range" min="0" max="60" step="1" value="10"><b id="holdv">10 s</b></label>
-  <button id="restart">Restart replay</button>
+  <button id="present" title="Toggle presenter mode (p)">Presenter mode</button>
+  <button id="restart">Restart</button>
   <span class="conn" id="conn">connecting...</span>
 </header>
+<div class="health" id="health">
+  <span><i class="dot" id="hdot"></i><b id="hsrc">-</b> <span id="hsrcst">connecting</span></span>
+  <span>pipeline <b id="hpl">-</b></span>
+  <span>state <b id="hstate">-</b></span>
+  <span id="hq">queue <b>0</b></span>
+  <span id="hlat">last push <b>-</b></span>
+  <span>pushes <b id="hpush">0</b></span>
+  <span id="herr">errors <b>0</b></span>
+  <span id="hdrop" style="display:none">dropped <b>0</b></span>
+  <span id="hlast" style="color:var(--amber)"></span>
+</div>
+<div id="banner" role="alert"></div>
 <main>
   <div class="col">
+    <section>
+      <h2>Speakers <span style="float:right;text-transform:none;letter-spacing:0">lit = speaking now</span></h2>
+      <div class="lanes" id="lanes"><span class="empty">Waiting for speech...</span></div>
+    </section>
+    <div id="pendcard"></div>
     <section class="grow">
       <h2>Live transcript <span id="pl" style="float:right;text-transform:none;letter-spacing:0"></span></h2>
       <div class="list" id="tr"></div>
@@ -97,7 +144,7 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
       <h2>Committed notes</h2>
       <div class="list" id="notes"><div class="empty">Nothing committed yet.</div></div>
     </section>
-    <section class="grow">
+    <section class="grow audit-sec">
       <h2>Audit log</h2>
       <div class="list audit" id="audit"></div>
     </section>
@@ -127,21 +174,50 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
   function post(url, body) {
     return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   }
+  function perf() { return performance.now() / 1000; }
 
-  var rows = {};          // segment_id -> {el, txt, tag, why, bar, ask, anim}
+  var rows = {};          // segment_id -> row record
   var holdSeconds = 10;
-  var prevNotes = {};     // id -> element
+  var prevNotes = {};
   var lastNoteIds = [];
+  var pending = {};       // segment_id -> {speaker,text}
+  var lanes = {};         // speaker -> {chip, n, count, last}
+  var clockOffset = null; // local perf() minus server uptime
+  var streamUp = false, srcState = "none", srcName = "-", srcErr = "";
 
+  // ---------------------------------------------------------- reset / badge
   function reset() {
     $("tr").textContent = ""; $("audit").textContent = "";
     $("notes").textContent = ""; $("notes").appendChild(el("div", "empty", "Nothing committed yet."));
-    rows = {}; prevNotes = {}; lastNoteIds = [];
-    setBadge("ON");
+    $("lanes").textContent = ""; $("lanes").appendChild(el("span", "empty", "Waiting for speech..."));
+    rows = {}; prevNotes = {}; lastNoteIds = []; pending = {}; lanes = {};
+    renderPending(); setBadge("ON");
   }
   function setBadge(s) { var b = $("badge"); b.className = "badge " + s; b.textContent = s === "PENDING_CONFIRM" ? "PENDING" : s; }
   function scrollDown(node) { node.scrollTop = node.scrollHeight; }
 
+  // ---------------------------------------------------------- speaker lanes
+  function laneFor(speaker) {
+    var l = lanes[speaker];
+    if (l) return l;
+    var empty = $("lanes").querySelector(".empty"); if (empty) empty.remove();
+    var chip = el("div", "chip");
+    var c = colorOf(speaker);
+    chip.style.setProperty("--c", c);
+    chip.appendChild(el("span", "mic"));
+    var nm = el("span", null, speaker || "?"); nm.style.color = c; chip.appendChild(nm);
+    var n = el("span", "n", "0"); chip.appendChild(n);
+    $("lanes").appendChild(chip);
+    l = lanes[speaker] = { chip: chip, n: n, count: 0, last: -100, on: false };
+    return l;
+  }
+  function spoke(speaker, live) {
+    var l = laneFor(speaker);
+    l.count++; l.n.textContent = l.count + " seg";
+    if (live) l.last = perf();
+  }
+
+  // ---------------------------------------------------------- transcript rows
   function ensureRow(seg) {
     var r = rows[seg.id];
     if (r) return r;
@@ -151,45 +227,32 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
     who.style.color = colorOf(seg.speaker);
     var txt = el("span", "txt", seg.text || "");
     var why = el("span", "why"); why.style.display = "none";
-    d.appendChild(tag); d.appendChild(who); d.appendChild(txt); d.appendChild(why);
+    var err = el("span", "err"); err.style.display = "none";
+    d.appendChild(tag); d.appendChild(who); d.appendChild(txt); d.appendChild(why); d.appendChild(err);
     $("tr").appendChild(d);
-    r = rows[seg.id] = { el: d, tag: tag, txt: txt, why: why, bar: null, ask: null, anim: null };
+    r = rows[seg.id] = { el: d, tag: tag, txt: txt, why: why, err: err, bar: null, heldServer: null, heldLocal: 0 };
     scrollDown($("tr"));
     return r;
   }
-  function clearBar(r) {
-    if (r.bar) { if (r.anim) r.anim.cancel(); r.bar.remove(); r.bar = null; r.anim = null; }
-  }
-  function clearAsk(r) { if (r.ask) { r.ask.remove(); r.ask = null; } }
+  function clearBar(r) { if (r.bar) { r.bar.remove(); r.bar = null; } }
 
   function applyEvent(e) {
     if (e.state) setBadge(e.state);
     if (e.kind === "state_change" || !e.segment_id) return;
     var r = ensureRow({ id: e.segment_id, speaker: e.speaker, text: e.text });
-    if (e.kind !== "held" && e.kind !== "pending_confirm") clearBar(r);
+    if (e.kind !== "held") clearBar(r);
     r.el.className = "row " + e.kind;
+    r.err.style.display = "none";
     r.tag.textContent = ({ held: "held", committed: "committed", redacted: "redacted",
       pending_confirm: "confirm?", retro_removed: "removed from notes" })[e.kind] || e.kind;
     if (e.kind === "held") {
-      clearBar(r);
-      if (holdSeconds > 0 && !r.el.querySelector(".ask")) {
-        r.bar = el("div", "bar"); r.el.appendChild(r.bar);
-        r.anim = r.bar.animate([{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }],
-                               { duration: holdSeconds * 1000, fill: "forwards", easing: "linear" });
-      }
+      if (!r.bar) { r.bar = el("div", "bar"); r.el.appendChild(r.bar); }
+      r.heldServer = e.t; r.heldLocal = perf();
     } else if (e.kind === "pending_confirm") {
-      clearBar(r); clearAsk(r);
-      var ask = el("div", "ask");
-      ask.appendChild(el("span", null, "Keep that out of the notes?"));
-      [["Yes", true], ["No", false]].forEach(function (p) {
-        var b = el("button", p[1] ? "yes" : "no", p[0]);
-        b.onclick = function () { b.disabled = true; post("/api/confirm", { segment_id: e.segment_id, keep_out: p[1] }); };
-        ask.appendChild(b);
-      });
-      r.el.appendChild(ask); r.ask = ask;
-    } else {
-      clearAsk(r);
+      pending[e.segment_id] = { speaker: e.speaker, text: e.text || r.txt.textContent };
+      renderPending();
     }
+    if (e.kind !== "pending_confirm" && e.kind !== "held" && pending[e.segment_id]) { delete pending[e.segment_id]; renderPending(); }
     if (e.kind === "redacted" || e.kind === "retro_removed") {
       r.why.textContent = (e.kind === "retro_removed" ? "removed retroactively" : "redacted") + (e.reason ? " (" + e.reason + ")" : "");
       r.why.style.display = "block";
@@ -197,11 +260,59 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
     if (e.text && !r.txt.textContent) r.txt.textContent = e.text;
   }
 
+  // Countdown bars follow the live hold slider: scale = 1 - age / holdSeconds, recomputed every frame.
+  function frame() {
+    var nowL = perf();
+    Object.keys(rows).forEach(function (id) {
+      var r = rows[id];
+      if (!r.bar) return;
+      var age = (clockOffset !== null && r.heldServer !== null) ? (nowL - clockOffset - r.heldServer) : (nowL - r.heldLocal);
+      var f = holdSeconds > 0 ? Math.max(0, Math.min(1, 1 - age / holdSeconds)) : 0;
+      r.bar.style.transform = "scaleX(" + f.toFixed(4) + ")";
+    });
+    Object.keys(lanes).forEach(function (k) {
+      var l = lanes[k], on = nowL - l.last < 2.5;
+      if (on !== l.on) { l.on = on; l.chip.classList.toggle("speaking", on); }
+    });
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------- pending-confirm card (Yes/No, y/n)
+  function answer(sid, keepOut) {
+    if (!pending[sid]) return;
+    post("/api/confirm", { segment_id: sid, keep_out: keepOut });
+  }
+  function renderPending() {
+    var box = $("pendcard"), ids = Object.keys(pending);
+    box.textContent = "";
+    box.style.display = ids.length ? "block" : "none";
+    ids.forEach(function (sid, i) {
+      var p = pending[sid], c = el("div", "pc");
+      c.appendChild(el("div", "q", "Keep that out of the notes?" + (ids.length > 1 ? "  (" + (i + 1) + " of " + ids.length + ")" : "")));
+      c.appendChild(el("div", "t", (p.speaker ? p.speaker + ": " : "") + '"' + p.text + '"'));
+      var y = el("button", "yes", "Yes, keep out"), n = el("button", "no", "No, keep in");
+      if (i === 0) { y.appendChild(el("kbd", null, "y")); n.appendChild(el("kbd", null, "n")); }
+      y.onclick = function () { answer(sid, true); };
+      n.onclick = function () { answer(sid, false); };
+      c.appendChild(y); c.appendChild(n); box.appendChild(c);
+    });
+  }
+  document.addEventListener("keydown", function (ev) {
+    var t = ev.target && ev.target.tagName;
+    if (t === "INPUT" || t === "TEXTAREA" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    var k = ev.key.toLowerCase();
+    if (k === "p") { togglePresenter(); return; }
+    var ids = Object.keys(pending);
+    if (!ids.length) return;
+    if (k === "y") { answer(ids[0], true); ev.preventDefault(); }
+    else if (k === "n") { answer(ids[0], false); ev.preventDefault(); }
+  });
+
+  // ---------------------------------------------------------- notes / audit
   function renderNotes(notes) {
     var box = $("notes");
     var empty = box.querySelector(".empty"); if (empty) empty.remove();
     var ids = notes.map(function (n) { return n.id; });
-    // dropped lines: animate out
     lastNoteIds.forEach(function (id) {
       if (ids.indexOf(id) < 0 && prevNotes[id]) {
         var n = prevNotes[id]; delete prevNotes[id];
@@ -220,7 +331,6 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
     lastNoteIds = ids;
     scrollDown(box);
   }
-
   function renderAudit(list) {
     var box = $("audit"); box.textContent = "";
     list.slice().reverse().forEach(function (e) {
@@ -232,24 +342,81 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
     });
   }
 
+  // ---------------------------------------------------------- health strip + banner
+  function setLabel(id, label, value, level) {
+    var n = $(id); n.textContent = "";
+    n.appendChild(document.createTextNode(label + " ")); n.appendChild(el("b", null, value));
+    n.className = level || "";
+  }
+  function renderHealth(h) {
+    if (h) {
+      clockOffset = perf() - h.uptime;
+      srcName = h.source; srcState = h.source_state; srcErr = h.source_error || "";
+      $("hpl").textContent = h.pipeline || "-";
+      $("hstate").textContent = h.state;
+      setLabel("hq", "queue", String(h.queue_depth), h.queue_depth > 3 ? "bad" : h.queue_depth > 0 ? "warn" : "");
+      var lat = h.last_push_ms;
+      setLabel("hlat", "last push", lat == null ? "-" : Math.round(lat) + " ms", lat > 2000 ? "bad" : lat > 500 ? "warn" : "");
+      $("hpush").textContent = h.pushes;
+      setLabel("herr", "errors", String(h.errors), h.errors ? "bad" : "");
+      $("hdrop").style.display = h.dropped ? "" : "none";
+      if (h.dropped) setLabel("hdrop", "dropped", String(h.dropped), "warn");
+    }
+    $("hsrc").textContent = srcName;
+    var up = streamUp && (srcState === "connected" || srcState === "ended" || srcState === "none" || srcState === "starting");
+    $("hdot").className = "dot " + (!streamUp ? "bad" : up ? "ok" : "warn");
+    $("hsrcst").textContent = !streamUp ? "UI disconnected" : srcState === "none" ? "typed input only" : srcState;
+    var b = $("banner");
+    if (!streamUp) { b.className = ""; b.textContent = "Stream disconnected - reconnecting... (notes below may be stale)"; b.style.display = "block"; }
+    else if (srcState === "disconnected" || srcState === "error" || srcState === "reconnecting") {
+      b.className = srcState === "reconnecting" ? "warn" : "";
+      b.textContent = "Audio source " + srcState + (srcErr ? ": " + srcErr : "") + (srcState === "error" ? "" : " - waiting for it to come back");
+      b.style.display = "block";
+    } else b.style.display = "none";
+  }
+
+  // ---------------------------------------------------------- messages
+  function syncSlider() { $("hold").value = holdSeconds; $("holdv").textContent = holdSeconds + " s"; }
   function handle(m) {
     if (m.type === "reset") { reset(); holdSeconds = m.hold_seconds; syncSlider(); $("pl").textContent = "pipeline: " + m.pipeline; }
     else if (m.type === "config") { holdSeconds = m.hold_seconds; syncSlider(); }
-    else if (m.type === "segment") ensureRow(m.segment);
+    else if (m.type === "segment") { ensureRow(m.segment); spoke(m.segment.speaker, true); }
     else if (m.type === "events") { m.events.forEach(applyEvent); renderNotes(m.notes); renderAudit(m.audit); }
+    else if (m.type === "health") renderHealth(m);
+    else if (m.type === "source") { srcState = m.state; srcErr = m.error || ""; srcName = m.source; renderHealth(null); }
+    else if (m.type === "error") {
+      $("hlast").textContent = "last error (" + m.where + "): " + m.message;
+      var r = m.segment_id && rows[m.segment_id];
+      if (r) { r.err.textContent = "pipeline error - segment NOT processed: " + m.message; r.err.style.display = "block"; r.tag.textContent = "error"; clearBar(r); }
+    }
     else if (m.type === "done") $("conn").textContent = "session finished";
   }
-  function syncSlider() { $("hold").value = holdSeconds; $("holdv").textContent = holdSeconds + " s"; }
 
-  var es;
+  var es = null, retryTimer = null;
   function connect() {
+    if (es) { es.close(); es = null; }
     es = new EventSource("/stream");
-    es.onopen = function () { $("conn").textContent = "live"; };
+    es.onopen = function () { streamUp = true; $("conn").textContent = "live"; renderHealth(null); };
     es.onmessage = function (ev) { try { handle(JSON.parse(ev.data)); } catch (err) { console.error(err); } };
-    es.onerror = function () { $("conn").textContent = "reconnecting..."; };
+    es.onerror = function () {
+      streamUp = false; $("conn").textContent = "reconnecting..."; renderHealth(null);
+      // Reconnect from scratch (full history replay) so a restarted server cannot leave a half-stale page.
+      if (es) { es.close(); es = null; }
+      clearTimeout(retryTimer); retryTimer = setTimeout(connect, 1500);
+    };
   }
 
-  $("hold").oninput = function () { $("holdv").textContent = this.value + " s"; };
+  // ---------------------------------------------------------- controls
+  function togglePresenter(force) {
+    var on = typeof force === "boolean" ? force : !document.body.classList.contains("presenter");
+    document.body.classList.toggle("presenter", on);
+    $("present").textContent = on ? "Exit presenter mode" : "Presenter mode";
+    try { localStorage.setItem("otr-presenter", on ? "1" : "0"); } catch (e) {}
+  }
+  $("present").onclick = function () { togglePresenter(); };
+  try { if (localStorage.getItem("otr-presenter") === "1") togglePresenter(true); } catch (e) {}
+
+  $("hold").oninput = function () { holdSeconds = Number(this.value); $("holdv").textContent = this.value + " s"; };
   $("hold").onchange = function () { post("/api/hold", { seconds: Number(this.value) }); };
   $("restart").onclick = function () { post("/api/restart"); };
   function send() {
@@ -259,6 +426,8 @@ footer input#spk { width: 160px; } footer input#line { flex: 1; }
   }
   $("send").onclick = send;
   $("line").onkeydown = function (e) { if (e.key === "Enter") send(); };
+  renderHealth(null);
+  requestAnimationFrame(frame);
   connect();
 })();
 </script>

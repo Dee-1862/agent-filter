@@ -72,13 +72,13 @@ All 33 tests pass (`python -m pytest tests -q`, with `OTR_NO_PRESIDIO=1`). First
 
 **C currently leaks more than A and B-stub, so the hypothesis is not supported yet.** That is expected for a first run with no LLM, but do not put these numbers on a slide as a result.
 
-| # | Issue | Owner | Evidence |
-|---|---|---|---|
-| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28–52% by case type |
-| I2 | Hold-seconds sweep gives identical numbers for 0 and 30. The harness only ticks at each segment's `t_start`, and the pipeline may not honour `hold_seconds` at tick time | Person 2 | `bench/results_sweep.json` |
-| I3 | Salary keyword check flags public text ("salary calculator we launched") and flush then redacts it | Person 2 | `demo/scripts/demo_false_alarm.txt` |
-| I4 | `demo_retro_committed`: "Dana from finance told me in confidence..." was committed; confirm the script intends it as private | Person 2 | script run |
-| I5 | `@pause N` is plain text for `otr.ingest.replay_source.parse_script`, but a directive for the demo's own parser. Make the ingest parser handle it | Person 1 | `otr/ingest/replay_source.py` |
-| I6 | Benchmark labels unchecked; cue lines ("strike that") are unscored; "strike that" used as an ordinary correction removes the previous line | Person 2 | `bench/README.md` |
+| # | Issue | Owner | Evidence | Status (2026-10-22, Docs Keeper pass 1) |
+|---|---|---|---|---|
+| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28–52% by case type | open: unchanged `state_machine.py`, results.json unchanged (STATUS pass 1) |
+| I2 | Hold-seconds sweep gives identical numbers for 0 and 30. The harness only ticks at each segment's `t_start`, and the pipeline may not honour `hold_seconds` at tick time | Person 2 | `bench/results_sweep.json` | open: results_sweep.json 0s vs 30s identical |
+| I3 | Salary keyword check flags public text ("salary calculator we launched") and flush then redacts it | Person 2 | `demo/scripts/demo_false_alarm.txt` | unknown: no rerun observed |
+| I4 | `demo_retro_committed`: "Dana from finance told me in confidence..." was committed; confirm the script intends it as private | Person 2 | script run | unknown: no rerun observed |
+| I5 | `@pause N` is plain text for `otr.ingest.replay_source.parse_script`, but a directive for the demo's own parser. Make the ingest parser handle it | Person 1 | `otr/ingest/replay_source.py` | partly mitigated (see note): demo/server.py now uses ingest parse_script and handles `@pause` itself; ingest parser still ignores it; tests/test_demo.py import broken |
+| I6 | Benchmark labels unchecked; cue lines ("strike that") are unscored; "strike that" used as an ordinary correction removes the previous line | Person 2 | `bench/README.md` | open: bench/README.md: mostly unreviewed |
 
 Fix I1 first: it dominates the leak rate. Re-run `python -m bench.run_eval --systems A,B,C --llm none --out bench/results.json` after each change and log the run in `docs/PRD.md` section 2.5.
