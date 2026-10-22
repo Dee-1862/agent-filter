@@ -37,9 +37,11 @@ export LIVEKIT_PUBLIC_URL="$LIVEKIT_URL"
 export MEETING_PUBLIC_ORIGIN="${MEETING_PUBLIC_ORIGIN:-https://consentmeeting.vercel.app}"
 export OTR_PUBLIC_ORIGIN="${OTR_PUBLIC_ORIGIN:-$MEETING_PUBLIC_ORIGIN}"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export SSL_CERT_FILE="${SSL_CERT_FILE:-$("$repo_root/.venv/bin/python" -c 'import certifi; print(certifi.where())')}"
 export OTR_MAX_ACTIVE_MEETINGS="${OTR_MAX_ACTIVE_MEETINGS:-4}"
 export OTR_MAX_PENDING_JOIN_REQUESTS="${OTR_MAX_PENDING_JOIN_REQUESTS:-20}"
 
 cd "$repo_root"
 exec "$repo_root/.venv/bin/python" -m demo.server --source livekit --pipeline real \
+  --llm "${OTR_LLM_SPEC:-none}" \
   --host 127.0.0.1 --port "${OTR_BACKEND_PORT:-18773}"
