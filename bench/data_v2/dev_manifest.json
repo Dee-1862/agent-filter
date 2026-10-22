@@ -1,0 +1,127 @@
+{
+ "split": "dev",
+ "files": {
+  "dev": {
+   "path": "bench/data_v2/dev/otr2_dev.jsonl",
+   "md5": "0c743eb93d58cf309ee1009b2f3500b7",
+   "n_items": 246
+  },
+  "dev_noisy": {
+   "path": "bench/data_v2/dev/otr2_dev_noisy.jsonl",
+   "md5": "cc1fdd9bc92488636d807850f73b0508",
+   "n_items": 63
+  }
+ },
+ "counts": {
+  "n_items": 246,
+  "n_with_private": 165,
+  "n_no_private": 81,
+  "n_segments": 5780,
+  "n_clusters": 133,
+  "case_type": {
+   "explicit_start_end": 34,
+   "explicit_start_implicit_end": 24,
+   "false_alarm": 38,
+   "implicit": 71,
+   "public": 22,
+   "retroactive": 57
+  },
+  "subtype": {
+   "contextual_confidential": 12,
+   "cross_segment_pii": 12,
+   "ese_long_reactions": 17,
+   "ese_short": 17,
+   "esie_long": 12,
+   "esie_short": 12,
+   "fa_named_work": 7,
+   "fa_negated_cue": 8,
+   "fa_public_lookalike": 8,
+   "fa_quoted_cue": 7,
+   "fa_record_sense": 8,
+   "implicit_health": 8,
+   "implicit_hr_performance": 8,
+   "implicit_layoffs": 7,
+   "implicit_legal": 8,
+   "implicit_personal": 8,
+   "implicit_salary": 8,
+   "public_plain": 22,
+   "repair": 14,
+   "retro_count": 11,
+   "retro_other_confirmed": 10,
+   "retro_other_refused": 7,
+   "retro_topic": 15
+  },
+  "author": {
+   "P1": 39,
+   "P2": 39,
+   "P3": 39,
+   "P4": 39,
+   "P5": 39,
+   "P6": 39,
+   "confaide-authors": 12
+  },
+  "domain": {
+   "ami": 124,
+   "committee": 42,
+   "confaide": 12,
+   "icsi": 68
+  }
+ },
+ "noisy_counts": {
+  "n_items": 63,
+  "n_with_private": 41,
+  "n_no_private": 22,
+  "n_segments": 1474,
+  "n_clusters": 54,
+  "case_type": {
+   "explicit_start_end": 8,
+   "explicit_start_implicit_end": 6,
+   "false_alarm": 10,
+   "implicit": 18,
+   "public": 6,
+   "retroactive": 15
+  },
+  "subtype": {
+   "contextual_confidential": 3,
+   "cross_segment_pii": 3,
+   "ese_long_reactions": 4,
+   "ese_short": 4,
+   "esie_long": 3,
+   "esie_short": 3,
+   "fa_named_work": 2,
+   "fa_negated_cue": 2,
+   "fa_public_lookalike": 2,
+   "fa_quoted_cue": 2,
+   "fa_record_sense": 2,
+   "implicit_health": 2,
+   "implicit_hr_performance": 2,
+   "implicit_layoffs": 2,
+   "implicit_legal": 2,
+   "implicit_personal": 2,
+   "implicit_salary": 2,
+   "public_plain": 6,
+   "repair": 4,
+   "retro_count": 3,
+   "retro_other_confirmed": 2,
+   "retro_other_refused": 2,
+   "retro_topic": 4
+  },
+  "author": {
+   "P1": 5,
+   "P2": 18,
+   "P3": 8,
+   "P4": 13,
+   "P5": 8,
+   "P6": 8,
+   "confaide-authors": 3
+  },
+  "domain": {
+   "ami": 28,
+   "committee": 15,
+   "confaide": 3,
+   "icsi": 17
+  }
+ },
+ "seen_author_items": 234,
+ "unseen_author_items": 0
+}

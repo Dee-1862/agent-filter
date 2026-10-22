@@ -1,0 +1,42 @@
+{
+ "pre_adjudication": {
+  "stage": "pre-adjudication (author labels vs blind labeller, before applying work/fixes.json)",
+  "n_items": 61,
+  "n_segments": 1417,
+  "n_inserted_segments": 287,
+  "kappa_all_segments": 0.982,
+  "kappa_inserted_segments": 0.975,
+  "kappa_private_vs_rest_inserted": 0.992,
+  "raw_agreement_inserted": 0.986,
+  "item_private_set_exact": "60/61",
+  "item_has_private_agree": "61/61",
+  "n_items_with_disagreement": 3,
+  "confusion_inserted": {
+   "private->private": 87,
+   "public->public": 164,
+   "public->private": 1,
+   "neutral->neutral": 32,
+   "neutral->public": 3
+  },
+  "adjudication": "lead adopted the labeller label for all 4 disagreeing segments (all marked unsure by the labeller); no item dropped",
+  "caveat": "labeller and authors are the same model family (Claude Sonnet) reading the same written rules; agreement measures rule consistency, not human judgement. No human has checked these labels."
+ },
+ "post_adjudication": {
+  "n_items": 61,
+  "n_segments": 1417,
+  "n_inserted_segments": 287,
+  "kappa_all_segments": 1.0,
+  "kappa_inserted_segments": 1.0,
+  "raw_agreement_all": 1.0,
+  "raw_agreement_inserted": 1.0,
+  "kappa_private_vs_rest_inserted": 1.0,
+  "item_private_set_exact": "61/61",
+  "item_has_private_agree": "61/61",
+  "confusion_inserted": {
+   "private->private": 88,
+   "public->public": 167,
+   "neutral->neutral": 32
+  },
+  "n_items_with_disagreement": 0
+ }
+}

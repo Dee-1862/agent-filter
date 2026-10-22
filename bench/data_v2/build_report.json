@@ -1,0 +1,261 @@
+{
+ "drops": {},
+ "n_authored": 376,
+ "n_windows": 376,
+ "contamination": {
+  "inserted_lines_checked": 1286,
+  "verbatim_in_tests_or_otr": [],
+  "verbatim_in_old_bench_sets": []
+ },
+ "diversity_all": {
+  "n_cue_lines": 219,
+  "distinct_2grams": 1964,
+  "distinct_3grams": 2508,
+  "distinct_4grams": 2605,
+  "max_exact_line_repeat": 2,
+  "stock_phrase_line_rate": {
+   "off the record": 0.0046,
+   "on the record": 0.0,
+   "strike that": 0.0,
+   "scratch that": 0.0,
+   "don't write": 0.0,
+   "do not write": 0.0,
+   "between us": 0.0091,
+   "forget what i said": 0.0046,
+   "disregard": 0.0,
+   "don't put": 0.0,
+   "keep this out": 0.0046,
+   "keep that out": 0.0
+  },
+  "any_stock_phrase_rate": 0.0228,
+  "per_author_cue_lines": {
+   "P1": 28,
+   "P2": 26,
+   "P3": 21,
+   "P4": 39,
+   "P5": 18,
+   "P6": 33,
+   "P7": 30,
+   "P8": 24
+  },
+  "per_author_distinct_3grams": {
+   "P1": 235,
+   "P2": 579,
+   "P3": 256,
+   "P4": 125,
+   "P5": 404,
+   "P6": 447,
+   "P7": 427,
+   "P8": 338
+  }
+ },
+ "diversity_sealed": {
+  "n_cue_lines": 85,
+  "distinct_2grams": 922,
+  "distinct_3grams": 1115,
+  "distinct_4grams": 1131,
+  "max_exact_line_repeat": 1,
+  "stock_phrase_line_rate": {
+   "off the record": 0.0,
+   "on the record": 0.0,
+   "strike that": 0.0,
+   "scratch that": 0.0,
+   "don't write": 0.0,
+   "do not write": 0.0,
+   "between us": 0.0,
+   "forget what i said": 0.0,
+   "disregard": 0.0,
+   "don't put": 0.0,
+   "keep this out": 0.0,
+   "keep that out": 0.0
+  },
+  "any_stock_phrase_rate": 0.0,
+  "per_author_cue_lines": {
+   "P1": 10,
+   "P2": 5,
+   "P3": 3,
+   "P4": 5,
+   "P5": 2,
+   "P6": 6,
+   "P7": 30,
+   "P8": 24
+  },
+  "per_author_distinct_3grams": {
+   "P1": 68,
+   "P2": 144,
+   "P3": 34,
+   "P4": 19,
+   "P5": 57,
+   "P6": 113,
+   "P7": 427,
+   "P8": 338
+  }
+ },
+ "diversity_dev": {
+  "n_cue_lines": 134,
+  "distinct_2grams": 1280,
+  "top_2grams": [
+   [
+    "the notes",
+    18,
+    0.1343
+   ],
+   [
+    "out of",
+    15,
+    0.1119
+   ],
+   [
+    "the minutes",
+    14,
+    0.1045
+   ],
+   [
+    "i said",
+    13,
+    0.097
+   ],
+   [
+    "back to",
+    12,
+    0.0896
+   ],
+   [
+    "the next",
+    11,
+    0.0821
+   ],
+   [
+    "last two",
+    9,
+    0.0672
+   ],
+   [
+    "not for",
+    8,
+    0.0597
+   ]
+  ],
+  "distinct_3grams": 1527,
+  "top_3grams": [
+   [
+    "out of the",
+    11,
+    0.0821
+   ],
+   [
+    "back to the",
+    8,
+    0.0597
+   ],
+   [
+    "i said about",
+    7,
+    0.0522
+   ],
+   [
+    "in the notes",
+    7,
+    0.0522
+   ],
+   [
+    "the last two",
+    6,
+    0.0448
+   ],
+   [
+    "not for the",
+    6,
+    0.0448
+   ],
+   [
+    "said about my",
+    5,
+    0.0373
+   ],
+   [
+    "what i said",
+    5,
+    0.0373
+   ]
+  ],
+  "distinct_4grams": 1544,
+  "top_4grams": [
+   [
+    "i said about my",
+    5,
+    0.0373
+   ],
+   [
+    "what i said about",
+    4,
+    0.0299
+   ],
+   [
+    "out of the minutes",
+    4,
+    0.0299
+   ],
+   [
+    "last two things i",
+    3,
+    0.0224
+   ],
+   [
+    "two things i said",
+    3,
+    0.0224
+   ],
+   [
+    "the last two things",
+    3,
+    0.0224
+   ],
+   [
+    "i'm not sure it's",
+    3,
+    0.0224
+   ],
+   [
+    "right where were we",
+    3,
+    0.0224
+   ]
+  ],
+  "max_exact_line_repeat": 1,
+  "stock_phrase_line_rate": {
+   "off the record": 0.0075,
+   "on the record": 0.0,
+   "strike that": 0.0,
+   "scratch that": 0.0,
+   "don't write": 0.0,
+   "do not write": 0.0,
+   "between us": 0.0149,
+   "forget what i said": 0.0075,
+   "disregard": 0.0,
+   "don't put": 0.0,
+   "keep this out": 0.0075,
+   "keep that out": 0.0
+  },
+  "any_stock_phrase_rate": 0.0373,
+  "per_author_cue_lines": {
+   "P1": 18,
+   "P2": 21,
+   "P3": 18,
+   "P4": 34,
+   "P5": 16,
+   "P6": 27
+  },
+  "per_author_distinct_3grams": {
+   "P1": 176,
+   "P2": 454,
+   "P3": 236,
+   "P4": 106,
+   "P5": 351,
+   "P6": 336
+  }
+ },
+ "max_cue_4gram_rate_all": 0.032,
+ "max_cue_3gram_rate_all": 0.0639,
+ "noisy_check_errors": {}
+}
