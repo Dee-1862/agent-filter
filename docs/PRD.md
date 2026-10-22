@@ -428,3 +428,32 @@ hold buffer, owner-only removal, and the count-only redaction report remain.
 
 Impact on foundation: supersedes the private-draft display and final-only
 combined-text rules in G5, section 1.6, A-008, and A-011; logged in C-022.
+
+### A-013 · 2026-10-22 · Approved transcript visible to every admitted participant · accepted
+
+What: Notes controls whether the local notetaker captures **your** microphone.
+It does not control whether you can read the shared transcript. Every admitted
+participant can open the side drawer and see approved lines from speakers who
+have turned Notes on, even while their own Notes is off. The drawer never shows
+provisional ASR or withheld speech. A new line appears only after the speaker
+finishes the utterance, local policy approves it, and the safety hold ends.
+If nobody has enabled capture, there is no transcript to show. Speakers can
+remove their own approved lines; removal reaches every viewer.
+
+The entry form remembers the name and email a person types on that browser.
+This is a local convenience for the next visit, not identity verification or
+consent to capture or receive email. Do not save room tokens, audio, or
+transcript text in browser storage.
+
+In the temporary public demo, every admitted viewer's approved transcript
+responses travel through Vercel and Cloudflare. LiveKit Cloud carries meeting
+media, including media from speakers with Notes off. ASR and policy checks run
+on the meeting host. This route is not fully local.
+
+Why: Participants need to follow what the meeting has actually kept without
+turning on capture of their own speech. Remembering entry details removes
+repeated typing without changing the consent decision.
+
+Impact on foundation: supersedes the viewer Notes-on condition in A-012 and
+its earlier private-draft rules. Per-speaker opt-in, owner-only removal,
+policy approval, and the safety hold remain; logged in C-023.

@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-023 · Separate transcript viewing from speaker capture
+- Type: addendum
+- Touches: PRD 2.7 (A-013), LOCAL_PRIVACY.md, PUBLIC_MEDIA_DEMO.md, vercel-demo/README.md
+- What changed: Every admitted participant can read post-hold approved lines regardless of their own Notes setting. Notes still controls capture of that person's audio. The entry form remembers name and email in that browser. The temporary hosted route carries approved transcript responses through Vercel and Cloudflare for all admitted viewers.
+- Why: Lance wants people to follow the shared transcript without consenting to transcription of their own speech and to avoid retyping their entry details.
+- Decided by: Lance in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-022 · Shared live approved notes
 - Type: addendum
 - Touches: PRD 2.7 (A-012), LOCAL_PRIVACY.md, PUBLIC_MEDIA_DEMO.md, vercel-demo/README.md

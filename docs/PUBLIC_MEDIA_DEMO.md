@@ -10,11 +10,12 @@ meeting audio and video, including media from people who have notes turned off.
 Notes-off controls what the local notetaker subscribes to and transcribes; it
 does not stop the meeting server from routing that person's media to other
 participants. Separately, the Vercel API proxy and Cloudflare tunnel carry
-meeting-control requests and responses. When a notes-on participant polls the
+meeting-control requests and responses. When an admitted participant polls the
 shared live transcript, approved text also passes through Vercel and
 Cloudflare. Do not describe this mode as fully local or cloud-private. A
-notes-off participant gets no live transcript text, but LiveKit Cloud still
-carries their meeting audio and video.
+notes-off participant can read approved lines from consenting speakers, but
+their own speech is not transcribed for notes. LiveKit Cloud still carries
+their meeting audio and video.
 
 ## Configure on the meeting host
 
