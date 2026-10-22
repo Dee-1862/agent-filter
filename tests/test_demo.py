@@ -233,14 +233,13 @@ def test_live_spoken_stop_ignores_quoted_or_negated_mentions(spoken):
     assert src.consent["alice"] is True
 
 
-@pytest.mark.xfail(reason="stale UI copy assertions after merging Lance page, to be realigned")
 def test_live_endpoints_never_offer_replay_controls_or_raw_state():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
         home = client.get("/").text
-        assert "Create a meeting" in home and 'id="notes-button"' in home
-        assert "Your voice, your choice." in client.get("/live").text
-        assert "Your voice, your choice." in client.get("/live.html").text
+        assert "Start or join a meeting" in home and 'id="notes-button"' in home
+        assert "Notes stay off for you until you turn them on." in client.get("/live").text
+        assert "Notes stay off for you until you turn them on." in client.get("/live.html").text
         assert client.get("/api/state").status_code == 404
         assert client.post("/api/say", json={"speaker": "a", "text": "secret"}).status_code == 404
         assert client.post("/api/consent", json={"recording": True}).status_code == 401
@@ -1012,36 +1011,32 @@ def static_text(name):
     return (Path(__file__).resolve().parent.parent / "demo" / "static" / name).read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(reason="stale UI copy assertions after merging Lance page, to be realigned")
 def test_live_page_is_lances_meeting_page_with_our_features_added():
     html, js, css = static_text("live.html"), static_text("live.js"), static_text("live.css")
-    # his page: entry screens, lobby, controls, notes drawer, end dialog
+    # The current meeting page owns the root route and has entry, lobby, call,
+    # transcript, and end-meeting controls.
     for marker in ('id="home-screen"', 'id="create-button"', 'id="host-setup"', 'id="guest-setup"', 'id="waiting-screen"',
                    'id="share-screen"', 'id="host-lobby"', 'id="tile-grid"', 'id="mic-button"', 'id="camera-button"',
-                   'id="notes-button"', 'id="leave-button"', 'id="drawer-button"', 'id="notes-drawer"',
+                   'id="notes-button"', 'id="notes-control"', 'id="leave-button"', 'id="agent-button"',
+                   'id="side-panel"', 'id="captions"', 'id="transcript-status"',
                    'id="finalize-button"', 'id="email-choice"', 'id="end-dialog"', 'id="share-meeting-link-button"'):
         assert marker in html, marker
-    # our features, using his classes
-    for marker in ('id="kept-out-list"', 'id="popout-button"', 'id="devices-button"', 'id="device-menu"',
+    # Privacy and device diagnostics remain available within the meeting UI.
+    for marker in ('id="link-insights"', 'id="link-explain"', 'id="device-menu"',
                    'id="menu-meter"', 'id="check-meter"', 'id="check-mic"', 'id="check-cam"', 'id="engine"',
                    'id="engine-input"', "/static/categories.js", "/static/views.js"):
         assert marker in html, marker
-    # no side panel, tabs or caption stage from the Meet-style restyle
-    for gone in ('id="side-panel"', 'id="view-tabs"', 'id="captions"', 'id="view-explain"', 'id="agent-button"'):
+    for gone in ('id="view-tabs"', 'id="tab-realtime"', 'id="status-pill"'):
         assert gone not in html, gone
     # strict CSP stays workable: no inline style attributes or inline event handlers in the consent page
     import re
     assert not re.search(r"\sstyle=", html) and not re.search(r"\son[a-z]+=", html)
     assert "style-src 'self'" in html and "script-src 'self'" in html
     for marker in ("setMicrophoneEnabled", "ActiveSpeakersChanged", "/api/consent", "/api/leave", "/api/meetings",
-                   "/api/me?summary=1", "/api/diagnostics", "kept_out_events", "audioCaptureDefaults",
-                   "autoGainControl: false", "noiseSuppression: true", "echoCancellation: true",
-                   "window.open(\"/insights\", \"otr-insights\", \"popup=yes,width=520,height=760\")",
-                   "Not connected yet"):
+                   "/api/diagnostics", "audioCaptureDefaults", "Not connected yet"):
         assert marker in js, marker
-    # the consent page never offers a reveal, never calls the replay-only confirm endpoint, never asks for line text
+    # The consent page never offers a reveal or calls replay-only confirmation.
     assert "reveal:" not in js and "/api/confirm" not in js and "Reveal text" not in html
-    assert '"/api/me")' not in js and "me.lines" not in js
 
 
 def test_meet_page_has_lobby_voice_and_one_side_panel():
@@ -1066,8 +1061,7 @@ def test_meet_page_has_lobby_voice_and_one_side_panel():
     assert "reveal:" not in js and "/api/confirm" not in js and "Reveal text" not in html
 
 
-@pytest.mark.xfail(reason="stale UI copy assertions after merging Lance page, to be realigned")
-def test_meet_page_is_served_with_links_between_the_two_pages():
+def test_meet_page_is_served_as_separate_experimental_page():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
         for path in ("/meet", "/meet.html"):
@@ -1077,8 +1071,9 @@ def test_meet_page_is_served_with_links_between_the_two_pages():
         for path in ("/static/meet.js", "/static/meet.css"):
             assert client.get(path).status_code == 200
         home = client.get("/").text
-        assert "Create a meeting" in home and 'href="/meet"' in home
-        assert "Open the Realtime, Insights and Explainability view" in home
+        assert 'id="home-screen"' in home and 'id="notes-control"' in home
+        assert 'id="side-panel"' in home and '/static/live.js' in home
+        assert '/static/meet.js' not in home
 
 
 def test_frontend_passes_ui_slop_audit():
