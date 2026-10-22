@@ -454,6 +454,16 @@ class LiveSession:
     def publish_participants(self):
         self.messages.append({"type": "participants", "participants": self.snapshot()})
 
+    def broadcast_scope(self, source_identity: str, off: bool, reason: str):
+        """Apply one speaker's off-the-record start or explicit end to everyone in the room."""
+        label = "off_record" if off else "recording"
+        for identity in list(self.names):
+            if self.mark_state(identity, label):
+                self.publish_status(identity)
+            pipe = self.pipes.get(identity)
+            if identity != source_identity and pipe is not None and hasattr(pipe, "set_room_scope"):
+                pipe.set_room_scope(off, reason.split("(")[0])
+
     def set_consent(self, identity: str, enabled: bool, *, sensitive_pause: bool = False,
                     state_label: str | None = None):
         if enabled and identity in self.finalized:
@@ -556,8 +566,13 @@ class LiveSession:
                 self.approved.pop(event.segment_id, None)
                 self.line_owner.pop(event.segment_id, None)
                 safe.append({"kind": "removed", "id": event.segment_id, "owner": identity})
-            elif event.kind == "state_change" and event.state == "OFF":
-                self.set_consent(identity, False, state_label="off_record")
+            elif event.kind == "state_change":
+                # Off the record covers the whole room and keeps everyone transcribing (nothing is
+                # released while off), so "back on the record" can still be heard by anyone.
+                if event.state == "OFF" and not event.reason.startswith("room:"):
+                    self.broadcast_scope(identity, True, event.reason)
+                elif event.state == "ON" and event.reason.startswith("cue:"):
+                    self.broadcast_scope(identity, False, event.reason)
         if pausing:
             self.set_consent(identity, False, sensitive_pause=True)
         if safe:
@@ -655,7 +670,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         for room in meetings.values():
             room["session"].stop()
 
-    app = FastAPI(title="OTR demo (consent mode)", lifespan=lifespan)
+    app = FastAPI(title="Off The Record", lifespan=lifespan)
     app.state.session = session
     meetings: dict[str, dict] = {}
     app.state.meetings = meetings

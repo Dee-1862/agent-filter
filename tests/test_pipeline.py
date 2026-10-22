@@ -485,3 +485,13 @@ def test_paraphrased_cues_and_hr_keyword():
     assert ks("Our salary survey tool for the HR portal is in beta.")[0] is False
     assert ks("Let's add a bonus estimator next.")[0] is False
     assert ks("HR asked me to send it over.")[1] == "hr"
+
+
+def test_room_scope_from_another_speaker_keeps_reactions_out_until_back_on_record():
+    p = Pipeline(hold_seconds=10)
+    assert p.set_room_scope(True, "cue:off_the_record") is True
+    run(p, [("Wow, I did not know that.", 0)])
+    assert "Wow" not in note_text(p)
+    assert p.set_room_scope(False, "cue:scope_end") is True
+    run(p, [("The launch date is the fourteenth.", 20)])
+    assert "fourteenth" in note_text(p)

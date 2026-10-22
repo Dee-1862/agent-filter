@@ -34,6 +34,17 @@ class Pipeline:
         self._audit.append(e)
         return e
 
+    @property
+    def state(self):
+        return self._state
+
+    def set_room_scope(self, off, reason="room"):
+        new = "OFF" if off else "ON"
+        changed = self._state != new and (off or self._state == "OFF")
+        if changed:
+            self._state = new
+        return changed
+
     def _set_state(self, s, seg=None, reason=""):
         self._state = s
         return self._ev("state_change", seg, reason)

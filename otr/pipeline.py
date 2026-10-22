@@ -103,6 +103,23 @@ class Pipeline:
                 ev += self._replay(plan, rec)
             return ev
 
+    def set_room_scope(self, off: bool, reason: str = "room") -> bool:
+        """Apply another speaker's off-the-record signal to this speaker's pipeline.
+
+        In a meeting, "off the record" covers the room, not only the person who said it, so
+        reactions from others stay out too. Returns True if the state changed. Lines already
+        committed are not touched; lines still held are judged by the new state as they arrive.
+        """
+        with self._lock:
+            if off and self.sm.state == ON:
+                self.sm.set(OFF, f"room:{reason}")
+                self.sm.start_scope("", self._now)
+                return True
+            if not off and self.sm.state == OFF:
+                self.sm.set(ON, f"room:{reason}")
+                return True
+            return False
+
     def tick(self, now: float) -> list[Event]:
         with self._lock:
             self._now = max(self._now, now)

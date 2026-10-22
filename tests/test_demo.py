@@ -190,8 +190,9 @@ def test_live_uses_per_person_consent_and_publishes_approved_only():
     assert live.approved["a1"]["text"] == "Plan the launch"
     live.set_consent("bob", True)
     live.push(Segment("b1", "bob", "off the record", 1, 1))
-    assert src.consent["bob"] is False
-    assert src.consent["alice"] is True
+    # off the record keeps everyone transcribing so "back on the record" can be heard; nothing is released
+    assert src.consent["bob"] is True and src.consent["alice"] is True
+    assert live.pipes["alice"].state == "OFF"          # it covers the whole room
     assert "off the record" not in json.dumps(live.messages)
     live.push(Segment("a2", "alice", "stop recording me", 1, 1))
     assert src.consent["alice"] is False
@@ -1215,7 +1216,7 @@ def test_live_insights_have_only_category_keys_and_counts():
     live.push(Segment("b1", "bob", "off the record", 1, 1))
     live.push(Segment("b2", "bob", "the launch slipped", 2, 2))
     ins = live.insights_for("bob")
-    assert ins["kept_out"] == {"off_record": 1} and ins["timeline"][-1]["state"] == "off_record"
+    assert ins["kept_out"] == {"off_record": 2} and ins["timeline"][-1]["state"] == "off_record"
     live.leave("alice")
     assert live.insights_for("alice")["kept_out"] == {} and "alice" not in live.kept_out
 
