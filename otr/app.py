@@ -328,7 +328,9 @@ def parse_args(argv=None) -> tuple[Options, bool]:
     ap.add_argument("--turns", help="speaker-turn JSON for a single mixed file")
     ap.add_argument("--script", help="replay script (Alice: text lines, @pause N) or .jsonl")
     ap.add_argument("--llm", default="none", help="none | ollama | ollama:MODEL")
-    ap.add_argument("--hold", type=float, default=10.0, help="hold seconds")
+    ap.add_argument("--hold", type=float, default=None,
+                    help="hold seconds before a line is released (default $OTR_HOLD_SECONDS, else 5 for "
+                         "--source livekit and 10 otherwise; shorter = less time for a later 'strike that')")
     ap.add_argument("--speed", type=float, default=1.0, help="1 = real time, 0 = as fast as possible (audio/replay)")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--host", default="127.0.0.1")
@@ -337,8 +339,14 @@ def parse_args(argv=None) -> tuple[Options, bool]:
     ap.add_argument("--no-docker", action="store_true", help="never run docker compose for LiveKit")
     ap.add_argument("--check", action="store_true", help="print the readiness table and exit")
     a = ap.parse_args(argv)
+    hold = a.hold
+    if hold is None:
+        try:
+            hold = float(os.environ["OTR_HOLD_SECONDS"])
+        except (KeyError, ValueError):
+            hold = 5.0 if a.source == "livekit" else 10.0
     o = Options(source=a.source, audio=a.audio or [], turns=a.turns, script=a.script, llm=a.llm,
-                hold=a.hold, speed=a.speed, port=a.port, host=a.host, model=a.model, room=a.room,
+                hold=hold, speed=a.speed, port=a.port, host=a.host, model=a.model, room=a.room,
                 no_docker=a.no_docker)
     return o, a.check
 
