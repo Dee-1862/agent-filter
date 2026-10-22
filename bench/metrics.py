@@ -9,11 +9,14 @@ def score_item(item: dict, notes) -> dict:
     text = " ".join(s.text for s in notes).lower()
     priv, pub = item["private_ids"], item["public_ids"]
     leaked = [i for i in priv if i in ids]
+    ever = getattr(notes, "ever_committed_ids", None)      # system C: includes later-retracted text
+    ever = ids if ever is None else set(ever) | ids
+    committed_leaked = [i for i in priv if i in ever]
     missing = [i for i in pub if i not in ids]
     facts = item.get("public_facts", [])
     found = [f for f in facts if f.lower() in text]
     return {"id": item["id"], "case_type": item["case_type"],
-            "n_private": len(priv), "n_leaked": len(leaked),
+            "n_private": len(priv), "n_leaked": len(leaked), "n_committed_leaked": len(committed_leaked),
             "n_public": len(pub), "n_missing": len(missing),
             "n_facts": len(facts), "n_facts_found": len(found)}
 
@@ -25,6 +28,7 @@ def _ratio(a: int, b: int):
 def aggregate(rows: list[dict]) -> dict:
     priv = sum(r["n_private"] for r in rows)
     leaked = sum(r["n_leaked"] for r in rows)
+    cleaked = sum(r.get("n_committed_leaked", r["n_leaked"]) for r in rows)
     pub = sum(r["n_public"] for r in rows)
     miss = sum(r["n_missing"] for r in rows)
     facts = sum(r["n_facts"] for r in rows)
@@ -32,6 +36,7 @@ def aggregate(rows: list[dict]) -> dict:
     with_priv = [r for r in rows if r["n_private"]]
     return {"n_items": len(rows),
             "leak_rate": _ratio(leaked, priv),
+            "committed_leak_rate": _ratio(cleaked, priv),
             "item_leak_rate": _ratio(sum(1 for r in with_priv if r["n_leaked"]), len(with_priv)),
             "over_redaction": _ratio(miss, pub),
             "summary_usefulness": _ratio(found, facts)}

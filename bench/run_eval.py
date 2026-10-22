@@ -36,7 +36,9 @@ def _pct(x) -> str:
 def to_markdown(results: dict) -> str:
     names = list(results["systems"])
     out = []
-    for title, key in [("Leak rate (private segments reaching notes, lower is better)", "leak_rate"),
+    for title, key in [("Leak rate (private segments reaching final notes, lower is better)", "leak_rate"),
+                       ("Committed-leak rate (private segments that were ever committed, even if retracted later; "
+                        "shows what the hold buffer buys; lower is better)", "committed_leak_rate"),
                        ("Over-redaction (public segments missing, lower is better)", "over_redaction"),
                        ("Summary usefulness (public facts present, higher is better)", "summary_usefulness")]:
         out += [f"**{title}**", "", "| case type | " + " | ".join(names) + " |",

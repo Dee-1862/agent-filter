@@ -81,6 +81,9 @@ Utterance: "{text}"
 
 Reply with JSON only: {{"sensitive": true|false, "category": "<category or none>"}}"""
 
+_POSS = r"\b(?:my|his|her|their|your|\w+'s)"
+_AMT = r"(?:\$\s?\d[\d,.]*\s?(?:k|m|thousand|million)?\b|\d[\d,.]*\s?(?:k\b|thousand|grand|million))"
+
 _KEYWORDS: dict[str, list[str]] = {
     "health": [r"diagnos", r"cancer", r"chemo", r"surgery", r"medication", r"prescri", r"therapy",
                r"therapist", r"depress", r"anxiety", r"pregnan", r"medical", r"illness",

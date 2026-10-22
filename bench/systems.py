@@ -152,8 +152,16 @@ def run_B(item: dict, llm: Optional[LLM] = None) -> list[Segment]:
 # --------------------------------------------------------------------------- C
 
 
+class Notes(list):
+    """Final notes plus the ids that were EVER committed (incl. ones later retro-removed)."""
+    ever_committed_ids: set
+
+
 def run_C(item: dict, llm: Optional[LLM] = None, hold_seconds: float = 30.0) -> list[Segment]:
-    from otr.pipeline import Pipeline  # lazy: may not exist yet
+    """Replay the item as a live stream: each segment is pushed when it ends (now = t_end),
+    the clock is ticked at that time, and after the last segment the clock runs on to
+    t_end + hold_seconds so held text is released by tick() (not just by flush())."""
+    from otr.pipeline import Pipeline
 
     pipe = Pipeline(llm=llm, hold_seconds=hold_seconds)
 
@@ -162,11 +170,16 @@ def run_C(item: dict, llm: Optional[LLM] = None, hold_seconds: float = 30.0) -> 
             if ev.kind == "pending_confirm" and ev.segment_id:
                 answer(pipe.confirm(ev.segment_id, keep_out=True))  # 'user says yes' policy
 
-    for seg in to_segments(item):
-        answer(pipe.push(seg, now=seg.t_start))
-        answer(pipe.tick(seg.t_start))
+    segs = to_segments(item)
+    for seg in segs:
+        answer(pipe.push(seg, now=seg.t_end))
+        answer(pipe.tick(seg.t_end))
+    if segs:
+        answer(pipe.tick(max(s.t_end for s in segs) + hold_seconds))
     answer(pipe.flush())
-    return pipe.notes()
+    out = Notes(pipe.notes())
+    out.ever_committed_ids = {e.segment_id for e in pipe.audit_log() if e.kind == "committed"}
+    return out
 
 
 SYSTEMS: dict[str, Callable] = {"A": run_A, "B": run_B, "C": run_C}
