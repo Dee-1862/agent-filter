@@ -341,6 +341,28 @@ def test_public_demo_meeting_limit_releases_slot_on_end(monkeypatch):
         assert other.post("/api/meetings", json=body).status_code == 200
 
 
+def test_diagnostics_requires_meeting_session_even_from_loopback():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    # A reverse proxy uses a loopback connection to the app for remote visitors.
+    # That socket address alone must not unlock a cross-room operator view.
+    with TestClient(app, client=("127.0.0.1", 50000)) as visitor, TestClient(app) as host:
+        room = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()["room_id"]
+        assert visitor.get("/api/diagnostics").status_code == 401
+        response = host.get("/api/diagnostics")
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body) == {"models", "me", "hold_seconds"}
+        assert "participants" not in body and "room" not in body
+
+
+def test_unused_standalone_insights_paths_do_not_reference_missing_files():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as client:
+        for path in ("/insights", "/insights.html", "/m/example/insights",
+                     "/static/insights.js", "/static/insights.css"):
+            assert client.get(path).status_code == 404
+
+
 def test_public_demo_pending_request_limit_frees_slots(monkeypatch):
     monkeypatch.setenv("OTR_MAX_PENDING_JOIN_REQUESTS", "1")
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)

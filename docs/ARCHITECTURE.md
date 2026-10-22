@@ -1,12 +1,12 @@
 # Architecture: how voice becomes notes
 
-Mermaid diagrams of the running system, drawn from the code on `master` (`otr/`, `demo/`). They render on GitHub and in VS Code with a Mermaid preview extension.
+Mermaid diagrams of the meeting and privacy pipeline (`otr/`, `demo/`). They render on GitHub and in VS Code with a Mermaid preview extension.
 
-**Status legend** (applies to every diagram): nothing below the browser has been run against real voices yet. The LiveKit path, real speech-to-text and the Ollama language-model calls are untested end to end; the pipeline, runtime and demo server are covered by offline tests (`python -m pytest tests -q`).
+**Status legend:** The public call path has been tested with two real browsers, and a separate end-to-end test used synthetic speech through LiveKit, local transcription, and consent-gated notes. Real-voice transcription accuracy and the Ollama path have not been measured end to end. The diagrams show both the per-person consent page and a separate operator view; the latter has a different privacy boundary.
 
 ## 0. The simple version (start here)
 
-People talk. Everything they say is written down, but **nothing reaches the shared notes until a privacy check has had a chance to stop it.** Everything runs on the laptop; no meeting content goes to a cloud service.
+People talk in a LiveKit room. The notetaker subscribes only to speakers who opt in; their text waits for a privacy check before it can reach the shared notes. In the current public demo, LiveKit Cloud carries call audio and video. Vercel and Cloudflare carry API requests and approved transcript responses to and from the host laptop, where transcription, filtering, and note assembly run. The long-term target is to host the whole path locally.
 
 ```mermaid
 flowchart LR
@@ -24,8 +24,8 @@ What each part does, in plain words:
 
 | Step | Tool | What it does | What can go wrong |
 |---|---|---|---|
-| 1. Speak | Browser microphone | Captures your voice; you choose whether recording is on | Nobody has tested this with real voices yet |
-| 2. Meeting room | **LiveKit** | A local video-call server. Every person gets their own audio track, so we know who is speaking without guessing from the sound | Needs Docker running |
+| 1. Speak | Browser microphone | Sends your voice into the call; you separately choose whether the notetaker can use it | The call carries speech even when notes are off |
+| 2. Meeting room | **LiveKit** | Keeps each person's audio track separate; the public demo uses LiveKit Cloud | Call media passes through a cloud service in the public demo |
 | 3. Voice to text | **faster-whisper** | Speech-to-text. A sentence is only passed on once two passes agree on the words | Mishears words, including cue phrases like "off the record" |
 | 4. Waiting room | **Hold buffer** | The key idea. Text waits before it can reach the notes, so a "strike that" said a few seconds later can still catch it | Adds delay to the live notes |
 | 5a. Contact details | **Presidio** | Microsoft's open-source tool that spots emails, phone numbers and similar details and masks them. We use a simple pattern-matching version if Presidio isn't installed | Only finds obvious details, not secrets |
@@ -33,7 +33,7 @@ What each part does, in plain words:
 | 5c. Memory | **State machine** | Remembers if we are RECORDING, OFF THE RECORD, or waiting for your OK. Stays off until someone says we are back | Ending the off-the-record section too early leaks text |
 | 5d. Unspoken secrets | **Ollama** (local language model) | Judges whether a sentence is sensitive without any signal, such as salary, health or HR. Falls back to keywords if Ollama isn't running | A small model misses subtle cases |
 | 6. Notes | Committed list | Only text that passed every check. Anything removed later by "strike that" is deleted and logged | |
-| 7. Your screen | Meeting view | Shows captions of approved text only. One click for insights, one more for why something was kept out | Private text is hidden on screen but still sent to the browser |
+| 7. Your screen | Meeting view | The consent page shows approved captions and text-free redaction details | The separate operator view sends private event text to its browser; do not use it as the public consent page |
 
 **What you see as a user:** a normal-looking meeting. Captions appear a few seconds late. If someone says "off the record", the status changes and their words vanish from the captions. If someone mentions a salary, a small card asks "Keep that out of the notes?" Click Insights to see what was kept out and why, and Why? on any item to see the exact rule that fired.
 
@@ -54,7 +54,7 @@ flowchart LR
     MIC --> CONSENT
   end
 
-  subgraph LK["LiveKit server (docker, local)"]
+  subgraph LK["LiveKit Cloud in public demo; self-hosted option locally"]
     ROOM["Room: one audio track per participant"]
   end
 
@@ -81,8 +81,8 @@ flowchart LR
     LIVE["LiveSession<br/>consent mode: one Pipeline per speaker<br/>approved-only transcript"]
   end
 
-  SERVER -- "SSE /stream" --> VIEW
-  LIVE -- "SSE /stream approved lines" --> CONSENT
+  SERVER -- "SSE /stream; operator view can expose private events" --> VIEW
+  LIVE -- "approved lines and text-free details; public API proxy" --> CONSENT
   VIEW -- "POST /api/confirm, /api/hold, /api/say" --> SERVER
   CONSENT -- "POST /api/join, /api/consent, /api/leave" --> LIVE
 ```
@@ -101,7 +101,7 @@ Both pages show the same three views of the same pipeline, implemented once in `
 - Insights: aggregate only. Kinds of things kept out (Off the record, Retracted, Personal and health, Pay and HR, Legal and confidential business, Contact details masked, Other sensitive) with counts, and a recording-state timeline. Never lists items, speakers or quotes.
 - Explainability: the rule for each kind; opening a chip shows the generic trail (rule family, state before and after, hold timing). "Reveal text" exists only in the operator console, never in consent mode.
 
-In consent mode the server sends category keys and counts only, to the owner only (`status` messages, `kept_out` placeholders); text that was kept out never leaves the server.
+In consent mode the server sends approved transcript text and text-free details about withheld content. The public demo routes those responses through Vercel and Cloudflare to the participant's browser. Withheld text is not in those responses.
 
 ## 2. Inside the Pipeline: what happens to one Segment
 
@@ -206,7 +206,7 @@ flowchart TD
   L2 --- LV
 ```
 
-Private text is never drawn on level 0 or 1. It still travels to the browser in the event stream, so it is visible in developer tools; it appears on screen only after clicking Reveal text or Show text.
+This level 0/1/2 diagram describes the separate operator view. It hides private text on its first two screens but still sends that text to the browser, where developer tools can see it. The public per-person consent page omits withheld text from its responses and does not offer Reveal text.
 
 ## 5. Component map
 

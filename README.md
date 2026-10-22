@@ -1,6 +1,6 @@
-# OTR Agent: a local meeting agent that respects "off the record"
+# OTR Agent: a consent-first meeting notetaker
 
-A meeting notetaker that runs on your own machine and listens for how people actually signal privacy: "this is off the record", "strike that", "forget what I said about X", and the content nobody labels (a salary, a health detail, an HR matter). Every transcribed sentence waits in a **hold buffer** before it can reach the notes. A **cue detector** hears the spoken signals, a **state machine** remembers whether the room is recording, off the record or waiting for a confirmation, and a local language model is used only for the hard judgment calls. Because text is held, a "strike that" said a few seconds later can still stop a line before it is committed. Early research prototype; read the "What is verified" section before trusting any number.
+A meeting notetaker with per-person consent and local transcription and filtering. It listens for how people signal privacy: "this is off the record", "strike that", "forget what I said about X", and the content nobody labels (a salary, a health detail, an HR matter). Every transcribed sentence waits in a **hold buffer** before it can reach the notes. A **cue detector** hears spoken signals, a **state machine** tracks each speaker's recording state, and a local language model handles the harder judgments. The public demo uses cloud services for the call and web access; see the data boundary below. Early research prototype; read "What is verified" before trusting any number.
 
 Details: [docs/PRD.md](docs/PRD.md) (Part 1 is the frozen foundation), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -12,7 +12,7 @@ Details: [docs/PRD.md](docs/PRD.md) (Part 1 is the frozen foundation), [docs/ARC
 
 ## Architecture
 
-Everything runs on the laptop; no meeting content goes to a cloud service ([docs/LOCAL_PRIVACY.md](docs/LOCAL_PRIVACY.md)).
+In the current public demo, LiveKit Cloud carries call audio and video. Vercel serves the page, and the API path passes through Vercel and a Cloudflare tunnel to the local meeting service; control requests and approved transcript responses traverse that path. Transcription, filtering, and note assembly run on the host laptop. This demo does **not** meet the project's fully local deployment goal. See [docs/PRD.md](docs/PRD.md) A-011 and [docs/PUBLIC_MEDIA_DEMO.md](docs/PUBLIC_MEDIA_DEMO.md).
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ flowchart LR
 ```
 
 1. **Speak.** A person talks into the browser microphone; each person controls their own recording consent.
-2. **Meeting room (LiveKit).** A local LiveKit server gives each person their own audio track, so the speaker is known without guessing from sound.
+2. **Meeting room (LiveKit).** LiveKit keeps each person's audio track separate. The public demo uses LiveKit Cloud; a self-hosted local server remains an option for local deployments.
 3. **Voice to text (faster-whisper).** Local speech-to-text turns each track into speaker-labelled sentences.
 4. **Hold buffer.** Each sentence waits (10 s by default in the demo) before it may reach the notes.
 5. **Privacy checks.** Presidio (regex fallback if absent) masks emails, phone numbers and similar; the cue detector reads "off the record", "back on the record", "strike that"; the state machine keeps the scope; a local Ollama model (default `granite4.2:3b`, keyword fallback if Ollama is down) judges unlabelled sensitive content.
@@ -43,8 +43,8 @@ Built: hold buffer, cue detector (with ASR-noise repair and false-alarm checks),
 Verified, strictly:
 
 - **Offline tests pass** (`python -m pytest tests -q`). STATUS.md pass 2 recorded 74 passed; the count moves as workers add tests, so rerun it. The Presidio path is not covered by that run (tests set `OTR_NO_PRESIDIO=1`).
-- **Synthetic audio only.** [docs/LOCAL_PRIVACY.md](docs/LOCAL_PRIVACY.md) reports a local LiveKit SDK smoke test, a two-person headless browser check, and an end-to-end run with synthetic speech generated on one Mac. [docs/INGEST.md](docs/INGEST.md): "microphone speech still needs a human check". **No real-voice run has been recorded.**
-- **No ordinary-browser visual check recorded** for the rewritten meeting UI (STATUS.md pass 2: "nobody on record opened it in a browser"; headless check only, per LOCAL_PRIVACY.md).
+- **Public call connection:** A host and guest joined the deployed page through LiveKit Cloud and saw each other. A separate end-to-end test used synthetic speech to exercise consent, local transcription, and note generation. The host and a friend also reported that their real browser call worked. We have not measured real-voice transcription accuracy.
+- **Visual review:** The meeting UI has been opened in an ordinary browser. Earlier notes in [docs/STATUS.md](docs/STATUS.md) and [docs/LOCAL_PRIVACY.md](docs/LOCAL_PRIVACY.md) describe a prior checkpoint.
 - **The LLM path has not been scored.** All benchmark numbers below are `llm: none` (rules and keyword fallback). STATUS.md: Ollama path never run against the benchmark.
 - **Benchmark is small and synthetic**, written by the team that built the systems; labels mostly unreviewed ([bench/README.md](bench/README.md)). `-stub` baselines are heuristics, not LLMs.
 
@@ -75,7 +75,7 @@ HF_HUB_OFFLINE=1 python -m demo.server --source livekit --pipeline real --host 1
 # open http://127.0.0.1:8765/ in two tabs; each person joins and starts "Not recorded"
 ```
 
-Ollama (optional, only for the language-model checks): `ollama pull granite4.2:3b` (default in `otr/llm.py`; override with `OTR_LLM_MODEL`). Without it the pipeline falls back to keyword checks. Voice-demo details: [docs/INGEST.md](docs/INGEST.md). Exact commands and flags may have been refined in `docs/RUNNING.md` (coming).
+Ollama (optional, only for the language-model checks): `ollama pull granite4.2:3b` (default in `otr/llm.py`; override with `OTR_LLM_MODEL`). Without it the pipeline falls back to keyword checks. Voice-demo details: [docs/INGEST.md](docs/INGEST.md) and [docs/RUNNING.md](docs/RUNNING.md). The commands above start a local LiveKit setup; the public demo uses the separate path in [docs/PUBLIC_MEDIA_DEMO.md](docs/PUBLIC_MEDIA_DEMO.md).
 
 Benchmark: `python -m bench.run_eval --set all` regenerates dev, held-out and noisy results; see [bench/README.md](bench/README.md).
 
@@ -85,7 +85,7 @@ Benchmark: `python -m bench.run_eval --set all` regenerates dev, held-out and no
 2. Insights: counts, state timeline, final notes, and a list of what was kept out as kinds of redaction with reasons, not the specifics (text hidden by default).
 3. **Explainability** ("Why?"): the rule that fired, state before and after, hold timeline; text only after clicking Reveal.
 
-Caveat from ARCHITECTURE.md: private text is hidden on screen but still travels to the browser in the event stream. The consent page `live.html` and the meeting view `index.html` are not yet unified.
+The shared operator view can send private event text to its browser even when the UI hides it. The per-person consent page sends approved text and text-free redaction details instead. Use the consent page for the public demo; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Repo map
 
@@ -107,11 +107,11 @@ Caveat from ARCHITECTURE.md: private text is hidden on screen but still travels 
 - [docs/CHANGES.md](docs/CHANGES.md) and [docs/LESSONS_LEARNED.md](docs/LESSONS_LEARNED.md) are **append-only**, newest first, with the entry formats given at their tops.
 - [docs/PRD.md](docs/PRD.md) Part 1 is **frozen**; new decisions go in Part 2 (addenda 2.7, results log 2.5). [docs/STATUS.md](docs/STATUS.md) is regenerated each pass.
 - RESEARCH.md numbers are corrected only with a matching update-log entry; keep its confidence tags when citing.
-- Be honest in wording: the benchmark is early evidence, the live path is not validated with real voices.
+- Be honest in wording: the benchmark is early evidence, and real-voice transcription accuracy has not been measured.
 
 ## Limitations and roadmap
 
-- Not tested with real human voices or in an ordinary browser session; STT mishears cue phrases; the cue detector can mistake a movie title or quote for a signal.
+- Real-voice transcription and cue accuracy have not been measured; STT can mishear cue phrases, and the cue detector can mistake a movie title or quote for a signal.
 - The sensitive-content check is incomplete for contextual HR and numeric disclosures ([docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)); a 3B local model will miss subtle cases, and the literature suggests the local LLM bounds the implicit class (RESEARCH.md bottom line, item 4).
 - Off is not "zero leak by construction": other people can paraphrase, mics bleed, and other participants can still hear someone whose notetaker consent is OFF (RESEARCH.md item 7, LOCAL_PRIVACY.md).
 - The same-machine LiveKit `--dev` server uses placeholder credentials; do not expose it to a LAN or the internet.

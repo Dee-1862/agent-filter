@@ -240,10 +240,10 @@
         ? (room ? !room.localParticipant.isMicrophoneEnabled : false)
         : muted.get(identity) === true;
       const state = tile.querySelector(".mic-state");
+      state.classList.toggle("hidden", !connected);
       state.classList.toggle("muted", isMuted);
       state.setAttribute("aria-label", isMuted ? "Microphone off" : "Microphone on");
-      const note = tile.querySelector(".tile-mic");
-      if (note) setText(note, connected ? "" : "Not connected yet");
+      tile.querySelector(".tile-presence").classList.toggle("hidden", connected);
     }
   }
 
@@ -318,6 +318,7 @@
       mic.append(micOn, micOff);
       const label = element("div", "tile-label");
       label.append(element("span", "tile-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
+      label.append(element("span", "tile-presence hidden", "Not connected yet"));
       const notes = element("span", "tile-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
       notes.prepend(element("span", "dot"));
       label.append(notes);
@@ -608,12 +609,12 @@
     const paused = sensitivePaused && !finalized;
     button.disabled = finalized;
     button.setAttribute("aria-checked", String(myNotesOn));
-    let state, line;
-    if (finalized) { state = "Finished"; line = "Notes are finished"; }
-    else if (paused) { state = "Paused"; line = "Notes are paused for you"; }
-    else if (myNotesOn) { state = "On"; line = "Notes are on for you"; }
-    else { state = "Off"; line = "Notes are off"; }
-    setText($("notes-label"), state);
+    let action, line;
+    if (finalized) { action = "Notes finished"; line = "Notes are finished"; }
+    else if (paused) { action = "Turn on notes"; line = "Notes are paused for you"; }
+    else if (myNotesOn) { action = "Turn off notes"; line = "Notes are on for you"; }
+    else { action = "Turn on notes"; line = "Notes are off"; }
+    setText($("notes-label"), action);
     setText($("capture-status"), line);
     $("agent-dot").classList.toggle("hidden", !myNotesOn);
     const agent = $("agent-button");
@@ -1355,7 +1356,9 @@
       catch (_) {
         throw new Error("Could not connect to the call server. Check that LiveKit is running and reachable from this browser, then try again.");
       }
-      for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
+      if (room.remoteParticipants) {
+        for (const identity of room.remoteParticipants.keys()) connectedPeople.add(identity);
+      }
       setText($("room-chip"), `Room ${config.room}`);
       $("room-chip").classList.remove("hidden");
       for (const screen of ENTRY_SCREENS) $(screen).classList.add("hidden");

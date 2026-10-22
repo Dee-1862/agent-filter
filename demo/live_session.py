@@ -745,14 +745,6 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
     async def classic_page():
         return FileResponse(STATIC / "live.html")
 
-    # The pop-out Insights and Explanation page. Same strict CSP (a meta tag in the file) and no-store as `/`.
-    # The room-scoped path lets /api/me and /stream pick this meeting's cookie from the Referer.
-    @app.get("/insights")
-    @app.get("/insights.html")
-    @app.get("/m/{room_id}/insights")
-    async def insights_page(room_id: str | None = None):
-        return FileResponse(STATIC / "insights.html", headers={"Cache-Control": "no-store"})
-
     @app.get("/m/{room_id}")
     async def meeting_page(room_id: str):
         if room_id not in meetings:
@@ -964,8 +956,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.get("/static/{asset}")
     async def static_asset(asset: str):
-        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css",
-                         "insights.js", "insights.css"}:
+        if asset not in {"live.js", "livekit-client.umd.js", "live.css", "views.js", "views.css"}:
             raise HTTPException(404)
         return FileResponse(STATIC / asset)
 
@@ -1034,27 +1025,13 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.get("/api/diagnostics")
     async def diagnostics(request: Request):
-        """Capture health, text-free. A signed-in caller sees only their own audio status;
-        a loopback caller without a session (scripts/mic_check.py) sees status for everyone,
-        still numbers and state words only."""
+        """Capture health for the signed-in participant only.
+
+        Reverse proxies connect to the app over loopback, so the client socket
+        address cannot authorize an operator-wide view of meeting metadata.
+        """
         headers = {"Cache-Control": "no-store"}
-        try:
-            _, live, identity = room_for(request)
-        except HTTPException:
-            if not (request.client and request.client.host in ("127.0.0.1", "::1", "localhost")):
-                raise
-            people = {}
-            for lv in [session, *[m["session"] for m in meetings.values()]]:
-                src_diag = lv.source.diagnostics() if hasattr(lv.source, "diagnostics") else {"bot": {}, "participants": {}}
-                for ident in lv.names:
-                    me = lv.diagnostics_for(ident)
-                    me["name"] = lv.names[ident]
-                    me["room"] = getattr(lv.source, "room_name", "")
-                    me["bot"] = src_diag["bot"]
-                    people[ident] = me
-            return JSONResponse({"models": model_info(), "hold_seconds": hold_seconds,
-                                 "bot": session.source.diagnostics()["bot"] if hasattr(session.source, "diagnostics") else {},
-                                 "participants": people}, headers=headers)
+        _, live, identity = room_for(request)
         mine = live.diagnostics_for(identity)
         mine["waiting_lines"] = live.waiting_count(identity)   # a count of lines in the hold buffer, never text
         return JSONResponse({"models": model_info(), "me": mine,

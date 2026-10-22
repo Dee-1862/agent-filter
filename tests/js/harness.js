@@ -330,6 +330,7 @@ async function consentHost() {
   $("share-join-button").click();
   await sleep(60);
   check(visible($("meeting")) && visible($("control-bar")), "meeting and control bar shown after entering");
+  check(text($("notes-label")) === "Turn on notes", "notes switch labels the action while notes are off");
   check(env.rooms.length === 1 && env.rooms[0].token === "tok", "joined the LiveKit room with the server-issued token");
   check(visible($("host-lobby")), "host sees the lobby");
   await sleep(10);
@@ -365,6 +366,7 @@ async function consentHost() {
   check(text($("panel-title")) === "Off The Record" && !visible($("panel-back")), "panel title, no back arrow at the root");
   check(text($("capture-status")) === "Notes are on for you" && $("notes-button").getAttribute("aria-checked") === "true",
     "one-line status and switch show notes on");
+  check(text($("notes-label")) === "Turn off notes", "notes switch labels the action while notes are on");
   const caps = text($("captions"));
   check(caps.includes("Plan the launch"), "caption shows the approved line");
   const chip = $("captions").all().find(e => e.tagName === "BUTTON" && e.getAttribute("data-category") === "pay_hr");

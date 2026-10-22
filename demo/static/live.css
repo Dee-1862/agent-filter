@@ -155,6 +155,7 @@ body:has(#meeting:not(.hidden)) #site-header { display: none; }
 .tile-notes .dot, .person-notes .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--call-ink-2); }
 .tile-notes.on { color: #fff; }
 .tile-notes.on .dot, .person-notes.on .dot { background: #81c995; }
+.tile-presence { color: #fdd663; font-size: 12px; font-weight: 400; white-space: nowrap; }
 .mic-state { position: absolute; z-index: 2; top: var(--s2); right: var(--s2); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(32, 33, 36, .7); color: #fff; }
 .mic-state svg { width: 16px; height: 16px; display: block; }
 .mic-state .m-off { display: none; }
