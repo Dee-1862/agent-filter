@@ -1,5 +1,20 @@
 # Work Split: two people, working in parallel
 
+## Branches and integration (2026-10-22)
+
+The remote has three branches: `master` is the shared integration branch,
+`feat/20261022-meeting-ui` is Lance's branch, and `p2-brain` is Deekshith's
+branch. Each person keeps committing to their own branch. Worktrees can be used
+for separate local tasks without creating more remote branches.
+
+Lance's meeting UI is in [draft PR #3](https://github.com/Dee-1862/agent-filter/pull/3)
+against `master`. Deekshith's `p2-brain` work is still on his branch. Before
+either branch is merged, its owner should pull the latest `master`, resolve any
+overlap with the other person's changes, run the relevant tests, and review the
+resulting PR. Do not push one person's work directly to the other's branch or
+force-push a shared branch. Merge into `master` only after the integration
+check and review.
+
 ## Current decision (2026-10-22)
 
 **Lance owns the live meeting path. Deekshith owns local NLP and policy.** The
@@ -81,7 +96,7 @@ Split along the seam in [otr/types.py](../otr/types.py): **Person 1 owns everyth
 2. **Handoff A (Person 2 → Person 1):** the real pipeline passes the three demo scripts. Until then Person 1 uses `demo/fake_pipeline.py`.
 3. **Handoff B (Person 1 → Person 2):** transcripts from real LiveKit sessions (save the Segment JSONL). Person 2 replays them through the pipeline as extra test data.
 4. **Integration checkpoint:** when both finish their tasks 3-5 (Person 1) and 3-4 (Person 2), do one run together: LiveKit speech → real pipeline → demo page.
-5. **Git:** each person works on their own branch (`p1-live`, `p2-brain`) and touches only owned files. Merge to `master` after the checkpoint. Don't edit the other person's files; message them instead.
+5. **Git:** use the branches named in "Branches and integration" above. Each person touches only owned files. Merge to `master` after the checkpoint. Don't edit the other person's files; message them instead.
 6. **Docs:** append to `docs/CHANGES.md` and `docs/LESSONS_LEARNED.md` as you go (append-only, never rewrite).
 7. **Honesty:** the benchmark is small and synthetic, so call it early evidence. The live LiveKit path and the web page are untested until Person 1 finishes tasks 1-3.
 

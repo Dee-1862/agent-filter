@@ -8,6 +8,7 @@ node_modules/
 models/
 recordings/
 transcripts/
+.local-lan/
 *.wav
 *.mp3
 *.mp4

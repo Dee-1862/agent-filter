@@ -205,8 +205,36 @@
         <div id="final-report" class="final-report hidden" aria-live="polite"></div>
         <p id="copy-result" class="waiting" role="status"></p>
       </section>
+      <section id="email-choice" class="drawer-section email-choice hidden" aria-labelledby="email-choice-heading">
+        <h3 id="email-choice-heading">Join the final email draft</h3>
+        <p class="drawer-hint">This is separate from the email you used to join. If you opt in, the host can include you in a draft in their mail app after everyone finishes. The host decides whether to send it.</p>
+        <label class="check-row" for="email-opt-in"><input id="email-opt-in" type="checkbox"><span>Include me in the host's email draft</span></label>
+        <label for="delivery-email">Email address for the final transcript</label>
+        <input id="delivery-email" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com">
+        <button id="save-email-choice" class="secondary" type="button">Save email choice</button>
+        <p id="email-choice-result" class="waiting" role="status"></p>
+      </section>
     </div>
   </aside>
+
+  <div id="end-backdrop" class="backdrop hidden"></div>
+  <section id="end-dialog" class="end-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="end-title">
+    <div class="end-dialog-head"><h2 id="end-title">End meeting</h2><button id="end-cancel" class="icon-button" type="button" aria-label="Keep meeting open">✕</button></div>
+    <p id="end-summary">Checking whether the final transcript is ready…</p>
+    <div id="end-email-review" class="hidden">
+      <h3>Email draft</h3>
+      <p id="end-recipients"></p>
+      <label for="end-transcript">Official final transcript</label>
+      <textarea id="end-transcript" readonly rows="8"></textarea>
+      <p id="end-redactions" class="end-report"></p>
+      <p class="end-disclosure">Opening your mail app may sync this final transcript as a draft. This app never sends email. Review it in your mail app and send it yourself.</p>
+      <p id="end-mail-limit" class="end-mail-limit hidden">The transcript is too long for an email link. Copy it first, then paste it into the addressed draft.</p>
+      <button id="end-copy-transcript" class="secondary hidden" type="button">Copy transcript</button>
+      <a id="end-email-link" class="primary draft-link" href="#">Open email draft and end meeting</a>
+    </div>
+    <p id="end-error" class="error" role="alert"></p>
+    <div class="end-actions"><button id="end-without-email" class="secondary" type="button">End without email</button><button id="end-keep-open" class="secondary" type="button">Keep meeting open</button></div>
+  </section>
 
   <div id="toast" class="toast" role="status">
     <p id="toast-text"></p>
