@@ -2,7 +2,11 @@
 
 Regenerated each pass by the Docs Keeper (this file is NOT append-only). Every statement cites a command or file observed in that pass. Nothing here is claimed verified unless someone ran it.
 
-**Pass 1 · 2026-10-22 · observed 12:42 local**
+**Pass 2 · 2026-10-22 · observed about 13:08 local** (pass 1 was at 12:42)
+
+## Git
+
+`git log --graph --all`: HEAD is branch `p2-brain` at `366f7b8` (13:02), which is also `origin/p2-brain`. `origin/master` is `1850cfa` (Lance's PR #1 merged). Local `master` is still `aa9835e`, 3 behind. `p2-brain` is not merged into master. `git status --short` at observation: modified `demo/static/index.html`, `tests/test_demo.py` (uncommitted), plus the docs edited in this pass.
 
 ## Area status
 
@@ -10,67 +14,74 @@ Scale: not-started / in-progress / built-untested / tested-offline / verified-li
 
 | Area | Status | Evidence |
 |---|---|---|
-| Ingest (`otr/ingest/`) | built-untested (live paths) / tested-offline (replay) | `tests/test_ingest.py` passes in the 25-test run below; files mtime 12:29-12:30; LiveKit/STT/diarize never run against real services (no evidence in repo) |
-| Engine (`otr/pipeline.py`, `state_machine.py`, `cue_detector.py`, `hold_buffer.py`, `pii.py`, `llm.py`) | tested-offline, in-progress | 25 tests pass (`OTR_NO_PRESIDIO=1 python -m pytest tests -q --ignore=tests/test_demo.py`, 12:42). `otr/cue_detector.py` still being edited (mtime 12:41:59; working-tree diff adds an ASR-noise repair step, uncommitted). `pipeline.py` mtime 12:32:00 and `state_machine.py` 12:30:28: no sign yet of an I1 fix |
-| Runtime (`otr/runtime.py`) | built-untested | New untracked file, 361 lines, mtime 12:40:08. Docstring describes `StreamRunner` (worker thread for pipeline calls, bounded subscriber queues). No test file for it in `tests/` |
-| Demo UI (`demo/server.py`, `demo/static/index.html`) | in-progress, tests broken | Both modified, mtime 12:40. `demo/server.py` no longer exports `parse_script` (now `load_script_segments`), so `tests/test_demo.py` fails at collection: `ImportError: cannot import name 'parse_script' from 'demo.server'` (seen at 12:41 and 12:42). Nobody has looked at the page in a browser |
-| Bench (`bench/`) | tested-offline, early | 40 synthetic items (`wc -l bench/otr_bench.jsonl` = 40), `tests/test_bench.py` passes. Results generated 12:32:41 with `llm: none` (`bench/results.json` meta). ConfAIde/QMSum importers exist but have not been run (`bench/README.md`) |
-| Research (`docs/research/`) | not-started (as observed) | Directory does not exist; draft_a.md and draft_b.md absent |
-| Docs | in-progress | This pass created STATUS.md, appended C-008..C-011 and L-005..L-008, filled PRD 2.1/2.5/2.6/2.7 |
+| Ingest (`otr/ingest/`) | tested-offline (replay, token/consent logic); live paths built-untested | `tests/test_ingest.py` (9 test functions) passes; `livekit_source.py` and `stt.py` changed 12:46 (Lance); no record of a real LiveKit or STT run |
+| Engine (`otr/pipeline.py`, `state_machine.py`, `cue_detector.py`, `hold_buffer.py`, `llm.py`) | tested-offline | 74 passed in the full run. `pipeline.py` / `state_machine.py` 12:55, `cue_detector.py` / `llm.py` 13:00. Heuristic only: LLM path never run against Ollama |
+| Runtime (`otr/runtime.py`) | tested-offline | `tests/test_runtime.py` (8 test functions) now exists and passes. Not run live |
+| Live consent (`demo/live_session.py`, `demo/static/live.*`) | tested-offline | Lance's per-person consent path; `tests/test_demo.py` has a consent test (`test_live_consent_is_bound_to_server_issued_identity`). Not run against a real LiveKit server on record |
+| Demo UI (`demo/static/index.html`, `demo/server.py`) | built-untested, uncommitted | `index.html` 46.5 KB, mtime 13:06, has "Level 1: insights" and "Level 2: explain" sections (the coordinator calls it a 3-level view); nobody on record opened it in a browser. `--source` is now replay / livekit / livekit-stream (two unreconciled live modes) |
+| Bench (`bench/`) | tested-offline, dev set | 47 synthetic items (`wc -l bench/otr_bench.jsonl`), `_items_c.py` adds 7 ASR-style items; `tests/test_bench.py` passes. Results 13:00:52, `llm: none`. `bench/results.png` is stale (12:32). Importers not run. Dev-set caveat below |
+| Research | built (drafts, critiques, merged) | `docs/RESEARCH.md` 13:02; `docs/research/draft_a.md`, `draft_b.md`, `critique_of_a.md`, `critique_of_b.md` 12:56-12:58 |
+| Docs | in-progress | This pass: C-012..C-017, L-009..L-014, PRD R-003, R-004, A-007, Q10-Q18 pointer, WORK_SPLIT statuses. Not yet reflected in PRD Part 1 (frozen) |
 
 ## Test run
 
-- `OTR_NO_PRESIDIO=1 python -m pytest tests -q` (12:41 and again 12:42): **fails at collection**, 1 error in `tests/test_demo.py` (ImportError above), 0 tests run. Cause is a sibling agent mid-refactor of `demo/server.py`.
-- `OTR_NO_PRESIDIO=1 python -m pytest tests -q --ignore=tests/test_demo.py`: **25 passed in 0.19s**.
-- The previous documented total was 33 (WORK_SPLIT.md "Known issues"); test_demo.py therefore presumably holds about 8 tests, which did not run this pass.
+`OTR_NO_PRESIDIO=1 python -m pytest tests -q` (about 13:07): **74 passed, 1 warning** in 6.08 s (warning: PyJWT `InsecureKeyLengthWarning`, 6-byte HMAC key in a test). Pass 1 was a collection error and 25 passed without `test_demo.py`. Not tested: the Presidio path (env var disables it).
 
-## Latest eval
+## Latest eval (dev-set tuned, synthetic, no LLM, early)
 
-Files: `bench/results.json` (mtime 12:32:41, md5 aebe132af0f1bf59758876737a57dcaf), `bench/results.md`, `bench/results_sweep.json` (12:32:42, md5 cc2aa7b966cc72244410331016b88e9f), `bench/otr_bench.jsonl` (md5 9133c471c7c8cb7bee8069babd68e80c, 40 items). Settings: n_items 40, llm none, hold 0 s and 30 s in the sweep. **Synthetic, unreviewed, early.** Not valid for slides.
+**HELD-OUT CAVEAT.** The engine heuristics were written while reading these same 47 items (`bench/README.md`). A separate 9-item check written afterwards (not committed) reportedly gave C 53% leak, equal to A, before further fixes. The C numbers below are a regression check on the dev set, not evidence for the hypothesis.
+
+Files: `bench/results.json` (13:00:52, md5 1546dc42b9937c496ee5f98589108b54), `bench/results.md`, `bench/results_sweep.json` (13:00:53, md5 90eb955d95fc7fabcdedd44d4f705f5b), `bench/otr_bench.jsonl` (12:58, md5 ebe64fba645191c37df914599b4ef0b0, 47 items). Meta: n_items 47, llm none.
 
 | system | leak | item-level leak | over-redaction | summary usefulness |
 |---|---|---|---|---|
-| A (rules + PII) | 14% | 22% | 38% | 68% |
-| B-stub (heuristic, NOT an LLM) | 21% | 31% | 18% | 85% |
-| C (ours, no LLM) | 45% | 72% | 12% | 90% |
+| A (rules + PII) | 21% | 30% | 37% | 69% |
+| B-stub (heuristic, NOT an LLM) | 27% | 38% | 17% | 87% |
+| C (ours, no LLM) | 1% | 3% | 3% | 98% |
 
-Per-type leak (A / B-stub / C): explicit_start_end 0/0/28; explicit_start_implicit_end 0/0/50; retroactive 8/50/50; implicit 43/43/52; false_alarm n/a (no private segments).
-
-The hypothesis (structure beats prompting) is **not supported** by this run. The results predate the 12:41 cue_detector edit and have not been regenerated since.
+Hold sweep for C (committed-leak, final-notes leak is 1% at all): 0 s 11%, 5 s 10%, 15 s 1%, 30 s 1%, 60 s 1%. Logged in PRD 2.5 as R-003 and R-004.
 
 ## Open issues I1-I6 (WORK_SPLIT.md)
 
 | # | Status | Evidence |
 |---|---|---|
-| I1 implicit-end heuristic closes scope early | open | `state_machine.py` untouched since 12:30:28; C figures in results.json equal those quoted in WORK_SPLIT (45%; per type 28/50/50/52) |
-| I2 hold sweep identical for 0 and 30 | open | `bench/results_sweep.json` (12:32:42): C@0s and C@30s equal in every cell |
-| I3 salary keyword flags public text | unknown | no rerun of `demo_false_alarm.txt` observed |
-| I4 `demo_retro_committed` ambiguity | unknown | no evidence either way |
-| I5 `@pause` parser mismatch | partially mitigated, still open | `demo/server.py` now builds segments through `otr.ingest.replay_source.parse_script` and pre-splits `@pause` itself (`load_script_segments`), so the duplicate parser is gone. `parse_script` itself still does not understand `@pause` (grep of `otr/ingest/replay_source.py`), which is what the issue asked for. The refactor also broke the `tests/test_demo.py` import |
-| I6 labels unchecked, cue lines unscored | open | `bench/README.md`: about 10 hand-checked "if any", rest unreviewed |
+| I1 implicit-end closes scope early | fixed on dev set, with caveat | C leak 45% -> 1% (`bench/results.md`); tuned on the same items |
+| I2 hold sweep identical | fixed on dev set | committed-leak varies with hold (`bench/results_sweep.md`); final-notes leak flat by design (`bench/README.md`) |
+| I3 salary keyword flags public text | fixed on dev set | `tests/test_pipeline.py` line 405; `demo_false_alarm.txt` not rerun through `--pipeline real` on record |
+| I4 `demo_retro_committed` ambiguity | open, no evidence | no run of the script through the real pipeline on record |
+| I5 `@pause` parser mismatch | open | no `@pause` in `otr/ingest/replay_source.py`; the shim lives in `demo/server.py`; test import now collects |
+| I6 labels unchecked | partly fixed on dev set | ASR-style items added; labels unreviewed (`bench/README.md`) |
+
+## Inconsistencies seen
+
+- PRD 2.7 has two entries titled A-001 (Docs Keeper's and Lance's); new addenda continue from A-007 (A-002 is taken).
+- `bench/results.png` (12:32) does not match the current results.
+- WORK_SPLIT.md still opens with the Person 1 / Person 2 split, and now also names Lance and Deekshith; the owner mapping in the table headings is the old one.
+- Part 1 of the PRD still carries the unchecked wording that RESEARCH.md corrects (A-007 proposes a decision).
+- Local `master` lags `origin/master` by 3 commits.
 
 ## Nobody has verified
 
-- Live LiveKit: bot, token minting, real SDK calls, per-participant speaker labels (no recorded run).
-- The demo page in a real browser (layout, countdown bar, Yes/No buttons, slider).
-- Any Ollama/LLM path: all evals ran with `llm: none`; B is a heuristic stub; `OllamaLLM` never exercised in a recorded run.
-- Hand-checked benchmark labels (none marked checked).
-- The Presidio path (tests ran with `OTR_NO_PRESIDIO=1`).
-- `otr/runtime.py` (no tests).
-- Cited literature figures (L-001 still open).
+- Live LiveKit end to end (either mode), real STT latency, diarization.
+- The rewritten demo page in a browser.
+- Any Ollama / LLM path (C with LLM, a real B, a stronger B+).
+- Held-out performance: no committed held-out set exists.
+- Hand-checked benchmark labels.
+- The Presidio path.
+- Each cited literature figure beyond what RESEARCH.md reports (the Docs Keeper has not read the papers).
 
 ## Next 5 actions
 
 **Person 1 (live side)**
-1. Make `tests/test_demo.py` match the refactored `demo/server.py` (or restore the export) so the full suite collects again.
-2. Open the demo page in a browser with `python -m demo.server --script demo/scripts/demo_main.txt`; fix layout and controls.
-3. Bring up LiveKit (`docker compose -f docker-compose.livekit.yml up -d`), join from two tabs plus the bot, save Segment JSONL.
-4. Fix the LiveKit bot against the real SDK; wire `--source livekit` through `otr.runtime.StreamRunner`; add tests for the runtime.
-5. Teach `otr.ingest.replay_source.parse_script` the `@pause N` directive (I5) and drop the shim in `demo/server.py`.
+1. Open the rewritten `demo/static/index.html` in a browser (`python -m demo.server --script demo/scripts/demo_main.txt`); commit the UI and `tests/test_demo.py` if good.
+2. Run a real LiveKit session (`docker compose -f docker-compose.livekit.yml up -d`); save Segment JSONL.
+3. Reconcile `--source livekit` (per-person consent) with `--source livekit-stream` (shared StreamRunner).
+4. Add `@pause N` to `parse_script` and drop the `demo/server.py` shim (I5).
+5. Get `p2-brain` merged to master after checks.
 
 **Person 2 (brain + proof)**
-1. Fix I1 (`state_machine.topic_changed`), then rerun `python -m bench.run_eval --systems A,B,C --llm none --out bench/results.json`.
-2. Rerun the hold sweep after making the pipeline read `hold_seconds` at tick time (I2).
-3. Install Ollama, pull `qwen2.5:3b`, confirm `OllamaLLM().complete("hi")`, rerun the eval with a real LLM for B and C.
-4. Hand-check about 10 items in `bench/otr_bench.jsonl` and mark them in `bench/README.md` (I6).
-5. Run the three demo scripts with `--pipeline real` (I3, I4); verify the ConfAIde/PrivacyLens figures (L-001) before any slide.
+1. Install Ollama; run C with the LLM and a stronger B+ (RESEARCH.md Q10).
+2. Write and freeze a bigger held-out set before any more tuning; report dev and held-out separately.
+3. Compare causal B with hindsight B at matched delay.
+4. Hand-check about 10 labels; mark them in `bench/README.md`.
+5. Regenerate `bench/results.png`; log each run in PRD 2.5.

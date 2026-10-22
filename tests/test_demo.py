@@ -57,8 +57,28 @@ def test_main_script_has_four_speakers():
 def test_index_served():
     with TestClient(create_app("fake", autostart=False)) as c:
         r = c.get("/")
-        assert r.status_code == 200 and "Committed notes" in r.text
+        assert r.status_code == 200 and "Final notes" in r.text
         assert "Presenter mode" in r.text and "pendcard" in r.text
+
+
+def test_index_has_progressive_disclosure_levels():
+    with TestClient(create_app("fake", autostart=False)) as c:
+        r = c.get("/")
+        assert r.status_code == 200
+        for marker in ('id="tiles"', 'id="captions"', 'id="status-pill"', 'id="insights-btn"',
+                       'id="insights-panel"', 'id="explain-panel"', 'id="live-btn"',
+                       'id="settings-menu"', 'id="banner"', "Keep that out of the notes?"):
+            assert marker in r.text, marker
+        # the overview must not render private text: only a placeholder chip
+        assert "kept out of notes" in r.text and "Reveal text" in r.text
+
+
+def test_index_dom_ids_all_exist():
+    import re
+    html = (Path(__file__).resolve().parent.parent / "demo" / "static" / "index.html").read_text(encoding="utf-8")
+    declared = set(re.findall(r'\bid="([^"]+)"', html))
+    used = set(re.findall(r'\$\("([^"]+)"\)', html))
+    assert used - declared == set(), used - declared
 
 
 def test_session_replay_events_in_order():

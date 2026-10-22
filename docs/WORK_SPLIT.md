@@ -103,13 +103,29 @@ All 33 tests pass (`python -m pytest tests -q`, with `OTR_NO_PRESIDIO=1`). First
 
 **C currently leaks more than A and B-stub, so the hypothesis is not supported yet.** That is expected for a first run with no LLM, but do not put these numbers on a slide as a result.
 
-| # | Issue | Owner | Evidence | Status (2026-10-22, Docs Keeper pass 1) |
+| # | Issue | Owner | Evidence | Status (Docs Keeper pass 2, 2026-10-22) |
 |---|---|---|---|---|
-| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28–52% by case type | open: unchanged `state_machine.py`, results.json unchanged (STATUS pass 1) |
-| I2 | Hold-seconds sweep gives identical numbers for 0 and 30. The harness only ticks at each segment's `t_start`, and the pipeline may not honour `hold_seconds` at tick time | Person 2 | `bench/results_sweep.json` | open: results_sweep.json 0s vs 30s identical |
-| I3 | Salary keyword check flags public text ("salary calculator we launched") and flush then redacts it | Person 2 | `demo/scripts/demo_false_alarm.txt` | unknown: no rerun observed |
-| I4 | `demo_retro_committed`: "Dana from finance told me in confidence..." was committed; confirm the script intends it as private | Person 2 | script run | unknown: no rerun observed |
-| I5 | `@pause N` is plain text for `otr.ingest.replay_source.parse_script`, but a directive for the demo's own parser. Make the ingest parser handle it | Person 1 | `otr/ingest/replay_source.py` | partly mitigated (see note): demo/server.py now uses ingest parse_script and handles `@pause` itself; ingest parser still ignores it; tests/test_demo.py import broken |
-| I6 | Benchmark labels unchecked; cue lines ("strike that") are unscored; "strike that" used as an ordinary correction removes the previous line | Person 2 | `bench/README.md` | open: bench/README.md: mostly unreviewed |
+| I1 | **Implicit-end heuristic ends OFF scope too early.** In `ese-01` the scope closed at the 2nd private line (`implicit_end:topic_change`) although the topic (the deal, a hiring freeze) had not changed; lines s05 and s06 then reached the notes. The no-LLM check in `otr/state_machine.py` `topic_changed` is the likely cause | Person 2 | `ese-01`; C leaks 28–52% by case type | fixed on dev set, with caveat (pass 2): C leak 45% -> 1% on 47 items (`bench/results.md` 13:00), but tuned on those items; a 9-item fresh check was 53% before further fixes (`bench/README.md`). Not validated held-out |
+| I2 | Hold-seconds sweep gives identical numbers for 0 and 30. The harness only ticks at each segment's `t_start`, and the pipeline may not honour `hold_seconds` at tick time | Person 2 | `bench/results_sweep.json` | fixed on dev set (pass 2): sweep now varies committed-leak 11/10/1/1/1% at hold 0/5/15/30/60 (`bench/results_sweep.md`); final-notes leak flat by design (`bench/README.md`) |
+| I3 | Salary keyword check flags public text ("salary calculator we launched") and flush then redacts it | Person 2 | `demo/scripts/demo_false_alarm.txt` | fixed on dev set (pass 2): `tests/test_pipeline.py` line 405 asserts the salary-calculator sentence is public; 74 tests pass. `demo_false_alarm.txt` not rerun through `--pipeline real` on record |
+| I4 | `demo_retro_committed`: "Dana from finance told me in confidence..." was committed; confirm the script intends it as private | Person 2 | script run | open, no evidence (pass 2): no run of `demo_retro_committed.txt` through the real pipeline on record; script intent unconfirmed |
+| I5 | `@pause N` is plain text for `otr.ingest.replay_source.parse_script`, but a directive for the demo's own parser. Make the ingest parser handle it | Person 1 | `otr/ingest/replay_source.py` | open (pass 2): `otr/ingest/replay_source.py` has no `@pause` handling (grep); `demo/server.py` handles it in `load_script_segments`; `tests/test_demo.py` collects again (74 pass) |
+| I6 | Benchmark labels unchecked; cue lines ("strike that") are unscored; "strike that" used as an ordinary correction removes the previous line | Person 2 | `bench/README.md` | partly fixed on dev set (pass 2): cue/false-alarm handling and 7 ASR-style items added; labels still unreviewed, hand-check not done (`bench/README.md`) |
 
 Fix I1 first: it dominates the leak rate. Re-run `python -m bench.run_eval --systems A,B,C --llm none --out bench/results.json` after each change and log the run in `docs/PRD.md` section 2.5.
+
+### Next 5 actions (Docs Keeper pass 2, 2026-10-22)
+
+**Person 1 (live side, Lance)**
+1. Open the rewritten `demo/static/index.html` in a real browser; run `python -m demo.server --script demo/scripts/demo_main.txt`; commit the UI and `tests/test_demo.py` if it looks right.
+2. Do a live LiveKit run (`docker compose -f docker-compose.livekit.yml up -d`, two tabs plus recorder); save the Segment JSONL as Handoff B.
+3. Reconcile `--source livekit` (per-person consent, `demo/live_session.py`) with `--source livekit-stream` (shared `StreamRunner`) into one design.
+4. Add `@pause N` to `otr.ingest.replay_source.parse_script` and drop the shim in `demo/server.py` (I5).
+5. Get `p2-brain` merged to master (local master is still `aa9835e`) once the above is checked.
+
+**Person 2 (brain + proof, Deekshith)**
+1. Install Ollama, pull `qwen2.5:3b` or `7b`, confirm `OllamaLLM().complete("hi")`, then run C with the LLM check and a stronger B+ (RESEARCH.md Q10).
+2. Build a larger held-out set: write and freeze it before any further tuning, commit it, report dev and held-out separately.
+3. Compare causal B (no future text) with hindsight B at matched delay.
+4. Hand-check about 10 labels in `bench/otr_bench.jsonl`, mark them in `bench/README.md` (I6).
+5. Regenerate `bench/results.png` (still 12:32) and log each new run in PRD 2.5.

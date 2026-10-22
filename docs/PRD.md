@@ -145,11 +145,11 @@ Historical plan; superseded for the LiveKit consent demo by A-005 below.
 
 | ID | Phase | Window | Deliverable | Status |
 |---|---|---|---|---|
-| P1 | Clone and run | 0:00–0:25 | Clone repos; Ollama with qwen2.5:7b (3b if slow); whisper_online.py transcribes a test file; locate LocalAgreement hook | proposed (no evidence in repo; ingest uses faster-whisper chunking, not whisper_streaming) |
-| P2 | Benchmark | 0:25–0:55 | 20 ConfAIde Tier 4 items + 20 QMSum chunks with LLM-inserted spans; hand-check ~10; save `otr_bench.jsonl` | in-progress (2026-10-22: 40 synthetic items exist; no ConfAIde/QMSum imported; labels unreviewed) |
-| P3 | Build system C | 0:55–1:45 | Hold buffer, cue detector, state machine, wired into emit point | in-progress (2026-10-22: built, 25 offline tests pass; first eval shows C leaking 45%, see 2.5) |
-| P4 | Evaluate | 1:45–2:15 | Run A, B, C; leak rate, over-redaction, per-type table; one table + one bar chart | in-progress (2026-10-22: A/B-stub/C run with no LLM; table and chart exist; no LLM run) |
-| P5 | Live demo | 2:15–2:45 | Streamlit page: grey = held, green = committed, red = redacted; scripted demo | in-progress (2026-10-22: replay demo built with FastAPI-style page, not Streamlit; never viewed in a browser) |
+| P1 | Clone and run | 0:00–0:25 | Clone repos; Ollama with qwen2.5:7b (3b if slow); whisper_online.py transcribes a test file; locate LocalAgreement hook | proposed (2026-10-22 pass 2: still no evidence of whisper_streaming or an Ollama run; ingest uses faster-whisper chunking) |
+| P2 | Benchmark | 0:25–0:55 | 20 ConfAIde Tier 4 items + 20 QMSum chunks with LLM-inserted spans; hand-check ~10; save `otr_bench.jsonl` | in-progress (pass 2: 47 synthetic items incl. `bench/_items_c.py`; no ConfAIde/QMSum imported; labels unreviewed; the set doubled as the dev set, see R-003) |
+| P3 | Build system C | 0:55–1:45 | Hold buffer, cue detector, state machine, wired into emit point | in-progress (pass 2: built, 74 offline tests pass; C leak 1% on the dev set it was tuned on, held-out check not committed, see R-003) |
+| P4 | Evaluate | 1:45–2:15 | Run A, B, C; leak rate, over-redaction, per-type table; one table + one bar chart | in-progress (pass 2: A/B-stub/C and a 5-point hold sweep run with no LLM; `results.png` is stale at 12:32; no LLM run) |
+| P5 | Live demo | 2:15–2:45 | Streamlit page: grey = held, green = committed, red = redacted; scripted demo | in-progress (pass 2: web page, not Streamlit; rewritten UI uncommitted at 13:06; two LiveKit modes unreconciled; never viewed in a browser on record) |
 | P6 | Slides | 2:45–3:00 | Problem, gap, method, results, demo, future work | proposed |
 
 ## 2.2 Team split (initial)
@@ -190,6 +190,20 @@ _Add one dated entry per evaluation run: system, buffer length, model, benchmark
 - Source: `bench/results_sweep.json` / `bench/results_sweep.md`. Same 40 items, LLM none, system C only, hold 0 s vs 30 s.
 - Result: identical in every cell (leak 45%, item leak 72%, over-redaction 12%, usefulness 90%). This is a suspected harness/pipeline artefact (WORK_SPLIT I2), not evidence that hold length does not matter. Bears on Q3 and F5.
 
+### R-003 · 2026-10-22 (files written 13:00:52) · three-system run on 47 items · dev-set tuned, synthetic, no LLM, early
+- **HELD-OUT CAVEAT: these are dev-set numbers.** The engine heuristics were developed while reading these same 47 items (`bench/README.md`). A separate 9-item check written afterwards (not committed, not auditable) reportedly gave C 53% leak vs A 53% before the gaps it found were fixed. Do not report the C figures below as the result. Use only as a regression check.
+- Source: `bench/results.json` / `bench/results.md`, md5 of results.json 1546dc42b9937c496ee5f98589108b54, benchmark `bench/otr_bench.jsonl` md5 ebe64fba645191c37df914599b4ef0b0 (47 items). LLM: none. B-stub is a heuristic stand-in, not an LLM. Hold seconds: default (not recorded in meta). Command: `python -m bench.run_eval --systems A,B,C --llm none --out bench/results.json` (per `bench/README.md`; the exact invocation used is not recorded).
+- Leak rate (final notes): A 21%, B-stub 27%, C 1%. Item-level leak: 30% / 38% / 3%. Over-redaction: 37% / 17% / 3%. Summary usefulness: 69% / 87% / 98%.
+- Per-type leak (A / B-stub / C): explicit_start_end 13 / 13 / 0; explicit_start_implicit_end 13 / 13 / 0; retroactive 13 / 47 / 0; implicit 43 / 43 / 5; false_alarm n/a. Per-type over-redaction for C: false_alarm 6%, implicit 7%, others 0%.
+- Supersedes R-001 for the same system (R-001 used the 40-item set and the pre-hardening engine; the files it cites were overwritten, so R-001 is now reproducible only from this document and `git log`).
+- Reading: C below A and B-stub on the dev set. This does not test the hypothesis: no LLM, B is a stub, and the set was used for tuning.
+
+### R-004 · 2026-10-22 (files written 13:00:53) · hold-length sweep 0/5/15/30/60 s · dev-set tuned, synthetic, no LLM, early
+- Source: `bench/results_sweep.json` / `results_sweep.md`, md5 90eb955d95fc7fabcdedd44d4f705f5b; 47 items; system C only; LLM none. Supersedes R-002 (R-002 was flat; the harness has since been fixed per C-012).
+- Final-notes leak: 1% at every hold. Over-redaction 3% and usefulness 98% at every hold.
+- Committed-leak rate (private text ever committed, even if later retracted): 11% at 0 s, 10% at 5 s, 1% at 15 s, 1% at 30 s, 1% at 60 s. Retroactive type: 53% / 47% / 0 / 0 / 0.
+- Reading: on this synthetic set, 15 s already catches the retractions; 30 vs 60 s is not distinguished. RESEARCH.md Q11 says the real retraction-delay distribution is unmeasured, so this does not settle Q3.
+
 ## 2.6 Open questions
 
 | ID | Question | Status |
@@ -203,6 +217,7 @@ _Add one dated entry per evaluation run: system, buffer length, model, benchmark
 | Q7 | Which HR categories and numeric values must be suppressed as entire utterances, versus safe span redaction? | open |
 | Q8 | Can publisher-side LiveKit track permissions harden consent beyond recorder-side selective subscription without slowing the demo? | open |
 | Q9 | Is the 40-item synthetic set, written by the team that built the systems, a fair test, and how much should the ConfAIde/QMSum import replace it? | open |
+| Q10-Q18 | Research questions (B+ baseline design, retraction delay, cue recall under ASR error, privacy-signal ownership, implicit labelling, local model adequacy, local judge vs gold labels, consent boundary). Kept in `docs/RESEARCH.md` section 7.1, not copied here | open (2026-10-22 pass 2) |
 
 ## 2.7 Additions (new addenda go here)
 
@@ -289,3 +304,8 @@ capture and would make the visible status misleading.
 
 Impact on foundation: clarifies A-001–A-003 and the two-person work split;
 logged in C-006. See [WORK_SPLIT.md](WORK_SPLIT.md).
+
+### A-007 · 2026-10-22 · Wording corrections recommended by RESEARCH.md for PRD 1.1 and 1.4 · proposed
+What: `docs/RESEARCH.md` section 1 recommends these corrections. Part 1 is frozen and is NOT edited here; any change to it needs an explicit decision logged in CHANGES.md. (a) ConfAIde 39% / 57% is the Tier 4 meeting-summary "Leaks Secret" rate (mean of 10 runs, privacy instruction already in the prompt); the action-item figures are 29% / 38%. (b) PrivacyLens 25.68% / 38.69% is the helpfulness-adjusted leak rate; the raw rates are 24.54% / 39.15%. (c) Survey figures in 1.1: 34.7% always asked, 36.5% sometimes, 25.1% never, 3.6% found out afterward; commissioned by a law firm; n=167 exposed respondents. This does not support "most people aren't asked". (d) Novelty wording: "no prior published evaluation" of spoken off-the-record cues, scope end or retroactive requests in streaming meeting transcription; do not claim no prior work (a Zoom patent claims keyword-triggered off-the-record requests). Also: newer-model prompting results (RESEARCH.md bottom line item 2) make a one-pass B a weak baseline, so a B+ is needed (Q10). Note: A-002 is already used by Lance's addendum, so this is A-007.
+Why: the PRD figures came from a pasted plan (L-001); RESEARCH.md checked them against sources. The Docs Keeper has not re-checked the papers itself.
+Impact on foundation: requires decision (see CHANGES.md) before 1.1 / 1.4 text changes

@@ -17,6 +17,48 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-017 · Docs Keeper pass 2 (STATUS regenerated, PRD 2.1/2.5/2.6/2.7, WORK_SPLIT statuses)
+- Type: process
+- Touches: PRD 2.1, 2.5 (R-003, R-004), 2.6, 2.7 (A-007); WORK_SPLIT Known issues
+- What changed: Regenerated `docs/STATUS.md`; updated `docs/.docs-keeper-state.json`; corrected stale cross-references in L-005..L-008 (they pointed at pre-merge C-numbers; see L-014). Recorded wording corrections from `docs/RESEARCH.md` as A-007 without touching PRD Part 1. Note: the PRD now has two entries titled A-001 (the Docs Keeper's, then Lance's); both are kept and new addenda continue from A-007.
+- Why: keep docs tied to observed state after the merge.
+- Decided by: project owner (Docs Keeper role)
+
+## 2026-10-22 · C-016 · Branch and merge history
+- Type: process
+- Touches: WORK_SPLIT rule 5
+- What changed: `git log --graph --all` shows: `aa9835e` basic foundation; Lance's branch `feat/20261022-livekit-consent` (`453c01b`, `be06d18`) merged into origin/master as PR #1 (`1850cfa`); `p2-brain` carried two WIP commits (`e4430aa`, `5fad7a5`), merged the consent branch (`41a24ad`) and origin/master (`544873f`), then `366f7b8` "Engine hardening: conservative scope end, live hold, ASR-noise cues; 47-item bench; research round 2" (13:02). Local `master` is still at `aa9835e`, 3 behind origin/master; `p2-brain` is not merged to master. Uncommitted at 13:06: `demo/static/index.html`, `tests/test_demo.py`.
+- Why: record where the code lives, since the docs refer to both people's work.
+- Decided by: observed via `git log --graph --all`, `git branch -a -vv`, `git status --short`
+
+## 2026-10-22 · C-015 · RESEARCH.md merged from two researchers
+- Type: process
+- Touches: PRD 1.1, 1.4 (wording corrections only, see A-007), 2.6
+- What changed: `docs/RESEARCH.md` (13:02) merges `docs/research/draft_a.md` (12:58) and `draft_b.md` (12:56) after cross-critiques (`critique_of_a.md`, `critique_of_b.md`). It has a verified-facts table, ranked design changes, a dispute log and open questions Q10-Q18. Owned by the researchers; the Docs Keeper only reads it.
+- Why: replace the unchecked literature figures noted in L-001.
+- Decided by: researchers and judge pass (see RESEARCH.md section 9)
+
+## 2026-10-22 · C-014 · Demo UI rewritten (uncommitted)
+- Type: demo
+- Touches: PRD 2.1 P5
+- What changed: `demo/static/index.html` is now 46.5 KB (was 17.7 KB), mtime 13:06. The file labels "Level 1: insights" and "Level 2: explain" sections; the coordinator describes it as a 3-level meeting view. `tests/test_demo.py` was modified alongside (17 test functions). Both are in the working tree, not in `366f7b8`. No record of anyone opening it in a browser.
+- Why: make held / committed / redacted states and the reasons visible (G5).
+- Decided by: runtime/demo agent
+
+## 2026-10-22 · C-013 · demo/live_session.py split: two LiveKit modes
+- Type: system
+- Touches: PRD A-001..A-006 (Lance's), WORK_SPLIT
+- What changed: `demo/live_session.py` (16 KB, 12:48) added. `demo/server.py` `--source` now takes `replay`, `livekit` or `livekit-stream` (line 234). `livekit` is Lance's per-person consent session; `livekit-stream` is the shared `otr.runtime.StreamRunner` path with reconnect. Both coexist and are not reconciled into one design; neither has been run against a real LiveKit server on record. `demo/static/live.html/js/css` and a vendored `livekit-client.umd.js` back the consent page.
+- Why: Lance's consent contract (C-006, C-007) conflicts with the earlier single global pipeline state.
+- Decided by: Lance (consent mode), runtime agent (stream mode)
+
+## 2026-10-22 · C-012 · Engine hardening, 47-item bench, regenerated results
+- Type: system
+- Touches: PRD 1.6, 1.7, 2.1 P2-P4, 2.5
+- What changed: Commit `366f7b8`. Engine files: `otr/state_machine.py` (8.1 KB, 12:55), `otr/pipeline.py` (18.9 KB, 12:55), `otr/cue_detector.py` (16 KB, 13:00, ASR-noise repair), `otr/llm.py` (13:00), `otr/hold_buffer.py` (12:51). The bench grew from 40 to 47 items with `bench/_items_c.py` (7 live-ASR-style items); `bench/build_bench.py`, `run_eval.py` (hold sweep 0,5,15,30,60 plus a committed-leak metric), `metrics.py`, `systems.py` updated; `bench/results*.json/md` regenerated 13:00. Evidence per issue: I1 (scope end) - C leak fell from 45% to 1% in `bench/results.md`; I2 (hold) - the sweep now varies the committed-leak rate (11%, 10%, 1%, 1%, 1% at hold 0/5/15/30/60) where the old sweep was flat; I3 - `tests/test_pipeline.py` line 405 asserts "The salary calculator we launched..." is public, and `otr/llm.py` line 92 comments on it; I6 - cue lines and false alarms are handled and 7 ASR-style items were added, but labels are still unreviewed. All on the dev set (see L-009). Tests: 74 passed (`OTR_NO_PRESIDIO=1 python -m pytest tests -q`, 6.08 s).
+- Why: the first eval showed C worse than A (L-005).
+- Decided by: engine agent
+
 ## 2026-10-22 · C-011 · Docs Keeper pass 1: STATUS dashboard and state file
 - Type: process
 - Touches: PRD 2.1 (statuses), 2.5 (results), 2.6 (Q5), 2.7 (A-001)
