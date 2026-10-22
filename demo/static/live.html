@@ -70,8 +70,10 @@
 
     <section id="waiting-screen" class="setup-card waiting-card hidden" aria-labelledby="waiting-title">
       <h1 id="waiting-title">Waiting for the host to let you in</h1>
-      <p>Stay on this page. You join as soon as the host admits you.</p>
+      <p id="waiting-message">Your request has been sent. Stay on this page and you will join when the host lets you in.</p>
       <p id="waiting-room-label" class="waiting-room-label"></p>
+      <p id="waiting-error" class="error" role="alert"></p>
+      <button id="waiting-retry-button" class="primary wide hidden" type="button">Try connecting again</button>
       <button id="waiting-cancel-button" class="secondary wide" type="button">Cancel request</button>
     </section>
 
