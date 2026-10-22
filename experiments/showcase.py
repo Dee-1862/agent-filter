@@ -77,13 +77,22 @@ def shot(page, name: str) -> None:
     print(f"  screenshot {name}.png", flush=True)
 
 
+def open_agent(page) -> None:
+    """Show the Off The Record panel on its main view (captions, links)."""
+    for _ in range(4):
+        if page.is_visible("#link-insights"):
+            return
+        if page.is_visible("#panel-back"):
+            page.click("#panel-back")
+        else:
+            page.click("#agent-button")
+        time.sleep(0.5)
+
+
 def open_view(page, link: str) -> None:
-    if not page.is_visible("#side-panel"):
-        page.click("#agent-button")
-    if page.is_visible("#panel-back"):
-        page.click("#panel-back")
+    open_agent(page)
     page.click(f"#{link}")
-    time.sleep(0.6)
+    time.sleep(0.8)
 
 
 def run(app: str, speech_at: float, wait_after: float) -> int:
@@ -145,6 +154,8 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
                 pg.click("#camera-button")
                 print(f"{name} turned notes and camera on", flush=True)
 
+            for pg in pages.values():
+                open_agent(pg)
             shot(pages["Alice"], "01-three-people-notes-on")
             left = t_speech - time.time()
             print(f"speech starts in about {left:.0f} s, meeting runs for about 110 s", flush=True)
@@ -158,6 +169,7 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
                     if t >= at and at not in done:
                         done.add(at)
                         for name in pages:
+                            open_agent(pages[name])
                             shot(pages[name], f"{label}-{name.lower()}")
                 time.sleep(0.5)
 
@@ -167,12 +179,13 @@ def run(app: str, speech_at: float, wait_after: float) -> int:
                          "kept_out": me.get("kept_out", []), "insights": me.get("insights", {})}
                 (OUT / f"proof_{name.lower()}.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
                 print(f"{name}: {len(proof['approved_lines'])} approved lines, {len(proof['kept_out'])} kept out", flush=True)
+                open_agent(pg)
                 shot(pg, f"06-final-captions-{name.lower()}")
                 open_view(pg, "link-insights")
                 shot(pg, f"07-insights-{name.lower()}")
                 open_view(pg, "link-explain")
                 shot(pg, f"08-how-it-decides-{name.lower()}")
-                pg.click("#panel-back")
+                open_agent(pg)
                 chip = pg.query_selector("#captions [data-category]")
                 if chip:
                     chip.click()
