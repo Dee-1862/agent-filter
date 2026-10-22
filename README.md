@@ -10,11 +10,11 @@ New to this? Read [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) first. It needs n
 
 ```mermaid
 flowchart LR
-  A[You speak] --> B[Speech becomes text]
-  B --> C[Wait a few seconds]
-  C --> D{Is it private?}
-  D -->|No| E[Goes into the notes]
-  D -->|Yes| F[Stays out of the notes]
+  A[Your voice] --> B[Speech to text on the laptop]
+  B --> C[Short wait]
+  C --> D{Privacy check: rules plus local AI}
+  D -->|Safe| E[Notes]
+  D -->|Private| F[Kept out, you can see why]
 ```
 
 - **Consent per person.** Each person turns their own notes on or off. If off, their voice is never transcribed.
@@ -54,6 +54,7 @@ python -m pytest tests -q
 ```
 
 The demo script and talking points are in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+Every launcher option: [docs/RUNNING.md](docs/RUNNING.md). Setting up a Windows machine from scratch: [docs/SETUP.md](docs/SETUP.md).
 
 ### Share it over the internet (optional)
 
@@ -76,6 +77,7 @@ A tunnel provider can see the traffic that passes through it, so do not call thi
 - **Built:** consent per person, local speech to text, hold buffer, cue detector, PII masking, model assisted checks, three views, a one command launcher, a redaction check script, a benchmark.
 - **Tested:** the offline test suite passes (`python -m pytest tests -q`). A browser with fake devices drove the call page. A live microphone with real people has not been tested by us.
 - **Benchmark:** on realistic data (QMSum meetings with inserted private lines, written by language models and not reviewed by people), the pipeline without a model leaked in about 59 to 67 percent of private items. Simple rule baselines leaked in 85 to 87 percent. Over-removal of public text was 25 to 35 percent. This is far from zero. Numbers and caveats: [bench/data_v2/README.md](bench/data_v2/README.md).
+- **Charts:** leak, over-removal, the hold sweep and a competitor grid, each with its caveat, are in [docs/RESULTS.md](docs/RESULTS.md).
 - **Earlier small sets** reported lower leak rates because they were written knowing the cue lists. Treat them as regression checks, not evidence.
 - **The model:** in one test it fixed pay and health cases but did not clearly help overall. It can only keep a scope open, never close one, because a small model ended scopes too early.
 
@@ -88,7 +90,7 @@ A tunnel provider can see the traffic that passes through it, so do not call thi
 | `demo/` | Web server and pages (`/` meeting, `/meet` three views, `/insights` pop out) |
 | `bench/` | Benchmark data, systems, metrics, results |
 | `scripts/` | Environment check, redaction check, helpers |
-| `docs/` | Plain explanation, architecture, research, demo script, setup, project log |
+| `docs/` | Plain explanation, architecture, results, research, demo script, setup, project log; superseded notes in `docs/archive/` |
 
 ## Contributing
 

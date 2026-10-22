@@ -17,11 +17,11 @@ The speech is turned into text on the host's own computer. It is not sent to an 
 
 ```mermaid
 flowchart LR
-  A[You speak] --> B[Your words become text]
-  B --> C[Wait a few seconds]
-  C --> D{Is it private?}
-  D -->|No| E[Goes into the notes]
-  D -->|Yes| F[Stays out of the notes]
+  A[Your voice] --> B[Speech to text on the laptop]
+  B --> C[Short wait]
+  C --> D{Privacy check: rules plus local AI}
+  D -->|Safe| E[Notes]
+  D -->|Private| F[Kept out, you can see why]
 ```
 
 ## The five steps

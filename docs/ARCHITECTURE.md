@@ -10,30 +10,23 @@ People talk in a LiveKit room. The notetaker subscribes only to speakers who opt
 
 ```mermaid
 flowchart LR
-  A["1. YOU SPEAK<br/>Browser microphone"] --> B["2. MEETING ROOM<br/>LiveKit<br/>keeps each person's voice separate"]
-  B --> C["3. VOICE TO TEXT<br/>faster-whisper<br/>turns each voice into sentences,<br/>labelled with who said them"]
-  C --> D["4. WAITING ROOM<br/>Hold buffer<br/>every sentence waits 10 to 30 s"]
-  D --> E["5. PRIVACY CHECKS<br/>Presidio finds phone numbers and emails<br/>Cue detector hears off the record, strike that<br/>State machine remembers if we are off the record<br/>Ollama model spots salary, health, HR"]
-  E -- "safe" --> F["6. NOTES<br/>Committed text only"]
-  E -- "private" --> G["Kept out<br/>or asks: keep that out of the notes?"]
-  F --> H["7. YOUR SCREEN<br/>Meeting view<br/>captions, insights, why was this kept out"]
-  G --> H
+  A[Your voice] --> B[Speech to text on the laptop]
+  B --> C[Short wait]
+  C --> D{Privacy check: rules plus local AI}
+  D -->|Safe| E[Notes]
+  D -->|Private| F[Kept out, you can see why]
 ```
 
-What each part does, in plain words:
+The tools behind each box:
 
-| Step | Tool | What it does | What can go wrong |
-|---|---|---|---|
-| 1. Speak | Browser microphone | Sends your voice into the call; you separately choose whether the notetaker can use it | The call carries speech even when notes are off |
-| 2. Meeting room | **LiveKit** | Keeps each person's audio track separate; the public demo uses LiveKit Cloud | Call media passes through a cloud service in the public demo |
-| 3. Voice to text | **faster-whisper** | Speech-to-text. A sentence is only passed on once two passes agree on the words | Mishears words, including cue phrases like "off the record" |
-| 4. Waiting room | **Hold buffer** | The key idea. Text waits before it can reach the notes, so a "strike that" said a few seconds later can still catch it | Adds delay to the live notes |
-| 5a. Contact details | **Presidio** | Microsoft's open-source tool that spots emails, phone numbers and similar details and masks them. We use a simple pattern-matching version if Presidio isn't installed | Only finds obvious details, not secrets |
-| 5b. Spoken signals | **Cue detector** | Listens for "off the record", "between us", "back on the record", "strike that", "forget what I said about X". Tolerates speech-to-text errors | Can mistake a movie title or a quote for a signal |
-| 5c. Memory | **State machine** | Remembers if we are RECORDING, OFF THE RECORD, or waiting for your OK. Stays off until someone says we are back | Ending the off-the-record section too early leaks text |
-| 5d. Unspoken secrets | **Ollama** (local language model) | Judges whether a sentence is sensitive without any signal, such as salary, health or HR. Falls back to keywords if Ollama isn't running | A small model misses subtle cases |
-| 6. Notes | Committed list | Only text that passed every check. Anything removed later by "strike that" is deleted and logged | |
-| 7. Your screen | Meeting view | The consent page shows approved captions and text-free redaction details | The separate operator view sends private event text to its browser; do not use it as the public consent page |
+| Box | Tools | What can go wrong |
+|---|---|---|
+| Your voice | Browser microphone, **LiveKit** (one audio track per person; the notetaker listens only to people whose notes are on) | The call still carries speech when notes are off; the public demo uses LiveKit Cloud for media |
+| Speech to text | **faster-whisper**, on the host laptop | Mishears words, including cue phrases like "off the record" |
+| Short wait | Hold buffer, 2 to 30 seconds | Adds delay to the live notes |
+| Privacy check | **Presidio** (contact details), cue detector ("off the record", "strike that"), state machine (on or off the record), **Ollama** local model (salary, health, HR; keyword rules if Ollama is not running) | Takes a movie title for a cue; ends an off the record section too early; a small model misses subtle cases |
+| Notes | Committed list shown as captions | Lines removed later by "strike that" are deleted and logged |
+| Kept out | Audit log of kinds and rules, never the words | The separate operator view sends private event text to its browser; do not use it as the public consent page |
 
 **What you see as a user:** a normal-looking meeting. Captions appear a few seconds late. If someone says "off the record", the status changes and their words vanish from the captions. If someone mentions a salary, a small card asks "Keep that out of the notes?" Click Insights to see what was kept out and why, and Why? on any item to see the exact rule that fired.
 
