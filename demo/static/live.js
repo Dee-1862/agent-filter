@@ -18,6 +18,13 @@
   const chips = new Map();   // segment id -> {id, category, seq, trail}; never any text
   let panelView = null, panelLastFocus = null, captionsOn = false, explainSel = null, explainItem = null;
   let capFollow = true, newCount = 0, pendingSeen = 0;
+  // Transcript bookkeeping. Ids and numbers only; the text of a kept-out line never reaches this page.
+  let insightsAt = Date.now(), waitingLines = 0, primed = false, announceTimer = null, announceNew = 0, announceOut = 0;
+  const expandedRows = new Set();   // kept-out row ids opened in place
+  const rowSeq = new Map();         // id -> seq of the approved line a removal replaced, so the placeholder keeps its place
+  const firstSeen = new Map();      // "l:id" / "k:id" -> seconds, when this browser first saw the row
+  const serverT = new Map();        // same keys -> seconds from the server's detail payload (preferred)
+  const knownRows = new Set();
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
   let speaking = new Set(), muted = new Map();
   const videoTracks = new Map(), videoMuted = new Set(), videoEls = new Map();
@@ -287,44 +294,140 @@
     renderCaptions();
   }
 
-  // ------------------------------------------------------------ Realtime captions (your approved lines + kept-out markers)
+  // ------------------------------------------------------------ Realtime transcript
+  // One chronological list ordered by server seq: your approved lines, plus text-free placeholders for what was
+  // kept out ("Kept out, Pay and HR") or removed after approval. A placeholder opens in place to say why.
+  function setInsights(next) { insights = next; insightsAt = Date.now(); }
+  function elapsed() { return Math.max(0, (Number(insights.now) || 0) + (Date.now() - insightsAt) / 1000); }
+  function rowTime(kind, id) {
+    const key = kind + ":" + id;
+    if (serverT.has(key)) return serverT.get(key);
+    if (!firstSeen.has(key)) firstSeen.set(key, elapsed());
+    return firstSeen.get(key);
+  }
+  function clock(t) {
+    const total = Math.max(0, Math.round(t)), pad = n => (n < 10 ? "0" : "") + n;
+    return pad(Math.floor(total / 60)) + ":" + pad(total % 60);
+  }
+  function isRemovalChip(chip) { return Views.actionOf(chip.trail).key === "removed_after_approval"; }
   function captionItems() {
     const items = [];
     let order = 0;
     for (const line of lines.values()) {
-      if (!line.removed && isMyLine(line)) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
+      const gone = chips.get(line.id);
+      if (!line.removed && isMyLine(line) && !(gone && isRemovalChip(gone))) items.push({ type: "line", seq: line.seq || 0, order: order++, line });
     }
-    for (const chip of chips.values()) items.push({ type: "chip", seq: chip.seq || 0, order: order++, chip });
+    for (const chip of chips.values()) {
+      const seq = rowSeq.has(chip.id) ? rowSeq.get(chip.id) : (chip.seq || 0);
+      items.push({ type: "chip", seq, order: order++, chip });
+    }
     items.sort((a, b) => (a.seq - b.seq) || (a.order - b.order));
     return items;
   }
+  const CHEVRON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
+  function lineRow(line) {
+    const row = element("div", "cap line");
+    row.dataset.id = String(line.id);
+    const meta = element("div", "cap-meta");
+    meta.append(element("span", "who", line.name || "You"), element("span", "time", clock(rowTime("l", line.id))));
+    const remove = element("button", "remove", "Remove");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remove line: ${line.text}`);
+    remove.disabled = finalized;
+    remove.onclick = () => removeLine(line.id, remove);
+    meta.append(remove);
+    row.append(meta, element("p", "words", line.text));
+    return row;
+  }
+  function keptRow(chip) {
+    const removal = isRemovalChip(chip), open = expandedRows.has(chip.id);
+    const row = element("div", "cap out" + (removal ? " removed" : "") + (open ? " open" : ""));
+    row.dataset.id = String(chip.id);
+    const label = removal ? "Removed after approval" : `Kept out, ${Views.shortLabel(chip.category)}`;
+    const time = clock(rowTime("k", chip.id));
+    const head = element("button", "out-head");
+    head.type = "button";
+    head.setAttribute("data-category", chip.category);
+    head.setAttribute("aria-expanded", String(open));
+    head.setAttribute("aria-controls", "why-" + chip.id);
+    head.setAttribute("aria-label", `${label}, ${time}. ${open ? "Hide" : "Show"} why.`);
+    const caret = element("span", "caret");
+    caret.innerHTML = CHEVRON_SVG;
+    head.append(element("span", "out-label", label), element("span", "time", time), caret);
+    head.onclick = () => {
+      if (expandedRows.has(chip.id)) expandedRows.delete(chip.id); else expandedRows.add(chip.id);
+      renderCaptions();
+      const box = $("captions");
+      const again = [...box.children].find(r => r.dataset && r.dataset.id === String(chip.id));
+      const button = again && again.querySelector(".out-head");
+      if (button) button.focus();
+    };
+    row.append(head);
+    if (open) {
+      const detail = element("div", "out-detail");
+      detail.id = "why-" + chip.id;
+      for (const [name, value] of Views.explainFacts(chip, insights.hold_seconds)) {
+        const fact = element("div", "fact");
+        fact.append(element("b", null, name), element("span", null, value));
+        detail.append(fact);
+      }
+      const more = element("button", "secondary out-more", "See the full explanation");
+      more.type = "button";
+      more.onclick = () => openInsights("how=" + encodeURIComponent(chip.category));
+      detail.append(more);
+      row.append(detail);
+    }
+    return row;
+  }
   let shownCaptions = 0;
+  function noteNewRows(items) {
+    let fresh = 0, out = 0;
+    for (const item of items) {
+      const key = item.type === "line" ? "l:" + item.line.id : "k:" + item.chip.id;
+      if (knownRows.has(key)) continue;
+      knownRows.add(key);
+      if (primed) { fresh++; if (item.type === "chip") out++; }
+    }
+    if (!fresh) return;
+    announceNew += fresh; announceOut += out;
+    if (announceTimer) return;
+    // One polite message per burst, counts only, never the words of a kept-out line.
+    announceTimer = setTimeout(() => {
+      announceTimer = null;
+      announce(`${announceNew} new ${announceNew === 1 ? "row" : "rows"} in the transcript${announceOut ? `, ${announceOut} kept out` : ""}.`);
+      announceNew = announceOut = 0;
+    }, 2000);
+  }
+  function renderTranscriptStatus() {
+    const paused = sensitivePaused && !finalized;
+    $("notes-off-row").classList.toggle("hidden", myNotesOn);
+    let message = "Your notes are off, nothing from you is transcribed.", action = "Turn on notes";
+    if (finalized) { message = "Your notes are finished, nothing more from you is transcribed."; action = ""; }
+    else if (paused) { message = "Your notes are paused, nothing from you is transcribed."; action = "Resume notes"; }
+    setIfChanged($("notes-off-text"), message);
+    $("notes-off-toggle").classList.toggle("hidden", !action);
+    if (action) setIfChanged($("notes-off-toggle"), action);
+    const waiting = myNotesOn ? waitingLines : 0;
+    $("cap-status").classList.toggle("hidden", waiting <= 0);
+    if (waiting > 0) setIfChanged($("cap-status"), `Listening, ${waiting} ${waiting === 1 ? "line" : "lines"} waiting`);
+  }
   function renderCaptions() {
     const box = $("captions");
     const items = captionItems();
+    const keep = box.scrollTop;
     box.replaceChildren();
     if (!items.length) {
-      box.append(element("p", "cap-empty", "Lines you approve appear here after a short safety hold. Turn notes on to start."));
+      box.append(element("p", "cap-empty", myNotesOn
+        ? "Listening. Lines you approve appear here after a short safety hold."
+        : "Nothing is transcribed while your notes are off."));
     }
-    for (const item of items) {
-      const row = element("div", "cap" + (item.type === "chip" ? " out" : ""));
-      if (item.type === "line") {
-        row.append(element("span", "who", item.line.name || "You"), element("span", "words", item.line.text));
-        const remove = element("button", "remove", "Remove");
-        remove.type = "button";
-        remove.setAttribute("aria-label", `Remove line: ${item.line.text}`);
-        remove.disabled = finalized;
-        remove.onclick = () => removeLine(item.line.id, remove);
-        row.append(remove);
-      } else {
-        row.append(Views.chip(item.chip.category, () => openMarker(item.chip)));
-      }
-      box.append(row);
-    }
+    for (const item of items) box.append(item.type === "line" ? lineRow(item.line) : keptRow(item.chip));
+    noteNewRows(items);
     if (items.length > shownCaptions && !capFollow) newCount += items.length - shownCaptions;
     shownCaptions = items.length;
-    if (capFollow) box.scrollTop = box.scrollHeight;
+    if (capFollow) box.scrollTop = box.scrollHeight; else box.scrollTop = keep;
     renderStageCaptions(items);
+    renderTranscriptStatus();
     renderLive();
   }
   function renderStageCaptions(items) {
@@ -360,10 +463,19 @@
   const PANEL_VIEWS = { agent: "panel-agent", insights: "view-insights", explain: "view-explain", people: "panel-people", info: "panel-info" };
   const PANEL_ROOT = { agent: "agent", insights: "agent", explain: "agent", people: "people", info: "info" };
   const PANEL_BUTTONS = { agent: "agent-button", people: "people-button", info: "info-button" };
-  function openMarker(chip) {
-    explainSel = chip.category;
-    explainItem = chip;
-    showPanel("explain");
+  // The detail page opens as a separate small window, so the meeting and the live panel stay where they are.
+  // The room path lets the server pick this meeting's cookie. A blocked pop-up falls back to a normal tab.
+  function insightsUrl(fragment) {
+    return (roomId ? `/m/${encodeURIComponent(roomId)}/insights` : "/insights") + (fragment ? "#" + fragment : "");
+  }
+  function openInsights(fragment) {
+    const url = insightsUrl(fragment);
+    let win = null;
+    try { win = window.open(url, "otr-insights", "popup=yes,width=520,height=760,noopener=no"); } catch (_) { win = null; }
+    if (win) { try { win.focus(); } catch (_) { } return; }
+    try { win = window.open(url, "_blank"); } catch (_) { win = null; }
+    showToast(win ? "Your browser blocked the pop-up window, so the insights page opened in a new tab."
+      : "Your browser blocked the pop-up. Allow pop-ups for this site, then try again.", "warn");
   }
   function renderInsightsView() {
     Views.renderInsights($("view-insights"), Object.assign({}, insights, {
@@ -406,6 +518,7 @@
     for (const [key, id] of Object.entries(PANEL_VIEWS)) $(id).classList.toggle("hidden", key !== name);
     setText($("panel-title"), PANEL_TITLES[name]);
     $("panel-back").classList.toggle("hidden", PANEL_ROOT[name] === name);
+    $("panel-popout").classList.toggle("hidden", PANEL_ROOT[name] !== "agent");
     renderPanelButtons();
     renderViews(true);
     if (name === "agent" && capFollow) { const box = $("captions"); box.scrollTop = box.scrollHeight; }
@@ -529,7 +642,10 @@
     if (typeof data.contributor_count === "number") contributorCount = data.contributor_count;
     if (Array.isArray(data.lines)) lines = indexLines(data.lines);
     if (data.redaction_counts) redactionCounts = data.redaction_counts;
-    if (data.insights) insights = data.insights;
+    if (data.insights) setInsights(data.insights);
+    if (Array.isArray(data.kept_out_events)) for (const e of data.kept_out_events) serverT.set("k:" + e.id, e.t);
+    if (data.line_times && typeof data.line_times === "object") for (const [id, t] of Object.entries(data.line_times)) serverT.set("l:" + id, t);
+    if (typeof data.waiting === "number" && (!diag || diagGone)) waitingLines = data.waiting;
     if (Array.isArray(data.kept_out)) setChips(data.kept_out);
     if (typeof data.delivery_email === "string") deliveryEmail = data.delivery_email;
     if (typeof data.email_opted_in === "boolean") emailOptedIn = data.email_opted_in;
@@ -582,9 +698,10 @@
         if (Array.isArray(message.lines)) lines = indexLines(message.lines);
         if (Array.isArray(message.kept_out)) chips.clear(), message.kept_out.forEach(c => chips.set(c.id, c));
         renderLines();
+        primed = true;   // rows that exist at connect time are not announced
       } else if (message.type === "status") {
         const { type, ...rest } = message;
-        insights = rest;
+        setInsights(rest);
         renderViews();
       } else if (message.type === "transcript") {
         let changed = false;
@@ -595,6 +712,7 @@
           }
           if (change.kind === "removed" && lines.delete(change.id)) changed = true;
           if (change.kind === "kept_out" && change.id != null) {
+            if (lines.has(change.id)) rowSeq.set(change.id, lines.get(change.id).seq);   // a removal keeps the line's place
             // Category key and generic trail only. The server never sends the text that was kept out.
             chips.set(change.id, { id: change.id, category: change.category, seq: change.seq, trail: change.trail });
             changed = true;
@@ -1025,6 +1143,9 @@
   function renderDiagnostics() {
     const block = $("engine");
     if (!block) return;
+    const known = diag && !diagGone && diag.me && typeof diag.me.waiting_lines === "number";
+    if (known) waitingLines = diag.me.waiting_lines;
+    renderTranscriptStatus();
     if (!diag || diagGone) { block.classList.add("hidden"); return; }
     block.classList.remove("hidden");
     const rows = engineModelRows(diag.models);
@@ -1563,6 +1684,8 @@
   $("info-button").onclick = () => togglePanel("info");
   $("panel-close").onclick = closePanel;
   $("panel-back").onclick = () => showPanel("agent");
+  $("panel-popout").onclick = () => openInsights(panelView === "explain" ? "how" + (explainSel ? "=" + encodeURIComponent(explainSel) : "") : "");
+  $("notes-off-toggle").onclick = toggleNotes;
   $("link-insights").onclick = () => showPanel("insights");
   $("link-explain").onclick = () => showPanel("explain");
   $("finalize-button").onclick = finalize;

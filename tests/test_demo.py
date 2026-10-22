@@ -165,7 +165,7 @@ class StubLiveSource:
     url = "ws://127.0.0.1:7880"
     room_name = "demo"
     api_key = "devkey"
-    api_secret = "secret"
+    api_secret = "otr-dev-secret-change-me-0123456789abcdef"
 
     def __init__(self):
         self.consent = {}

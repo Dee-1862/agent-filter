@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; media-src 'self' blob:">
+  <title>Insights · Off The Record</title>
+  <link rel="stylesheet" href="/static/views.css">
+  <link rel="stylesheet" href="/static/insights.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="brand-dot" aria-hidden="true"></span><strong>Off The Record</strong><span class="brand-sub">Insights and explanation</span></div>
+    <span id="conn" class="conn" role="status" aria-live="polite">Connecting</span>
+  </header>
+
+  <div id="banner" class="banner hidden" role="alert">Connection lost, retrying</div>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button id="tab-insights" class="tab on" type="button" role="tab" aria-selected="true" aria-controls="pane-insights">Insights</button>
+    <button id="tab-how" class="tab" type="button" role="tab" aria-selected="false" aria-controls="pane-how" tabindex="-1">How it decides</button>
+  </nav>
+
+  <main id="main">
+    <section id="gate" class="gate hidden" aria-labelledby="gate-title">
+      <h1 id="gate-title">Join the meeting first</h1>
+      <p id="gate-text">This window shows your own notes activity. Join a meeting in your browser, then open this window again from the Off The Record panel.</p>
+      <a class="primary" href="/">Go to the start page</a>
+    </section>
+
+    <div id="pane-insights" class="pane" role="tabpanel" aria-labelledby="tab-insights">
+      <p id="state-line" class="state-line"></p>
+      <div id="tiles" class="iv-tiles"></div>
+      <h2>Recording state over time</h2>
+      <div id="timeline" class="views-pane"></div>
+      <h2>What was kept out in this meeting</h2>
+      <p class="dim">One row for each line. Only kinds, rules, states and timing are listed. The words are never sent to this page.</p>
+      <div id="events"></div>
+      <h2>How it is running</h2>
+      <div id="running" class="running"></div>
+    </div>
+
+    <div id="pane-how" class="pane hidden" role="tabpanel" aria-labelledby="tab-how">
+      <h2>The path every line takes</h2>
+      <ol id="flow" class="flow"></ol>
+      <h2>What each kind means</h2>
+      <p class="dim">The examples are generic. They are not taken from this meeting.</p>
+      <div id="cards" class="cards"></div>
+    </div>
+  </main>
+
+  <script src="/static/categories.js"></script>
+  <script src="/static/views.js"></script>
+  <script src="/static/insights.js"></script>
+</body>
+</html>

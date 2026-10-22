@@ -127,6 +127,7 @@
         <div class="panel-head">
           <button id="panel-back" class="icon-button hidden" type="button" aria-label="Back" title="Back"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
           <h2 id="panel-title" tabindex="-1">Off The Record</h2>
+          <button id="panel-popout" class="icon-button hidden" type="button" aria-label="Open insights and explanation in a new window" title="Open insights and explanation in a new window"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3z"/></svg></button>
           <button id="panel-close" class="icon-button" type="button" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z"/></svg></button>
         </div>
         <div class="panel-body">
@@ -144,8 +145,13 @@
               <span id="notes-switch-label">Notes for me</span>
               <span class="switch-wrap"><span id="notes-label" class="switch-state">Off</span><button id="notes-button" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="notes-switch-label"><span class="switch-thumb"></span></button></span>
             </div>
+            <div id="notes-off-row" class="notes-off-row hidden">
+              <p id="notes-off-text">Your notes are off, nothing from you is transcribed.</p>
+              <button id="notes-off-toggle" class="secondary" type="button">Turn on notes</button>
+            </div>
             <div class="captions-wrap">
-              <div id="captions" class="captions" tabindex="0" aria-live="off" aria-label="Captions of your approved lines"></div>
+              <div id="captions" class="captions" tabindex="0" aria-live="off" aria-label="Transcript of your approved lines and what was kept out"></div>
+              <p id="cap-status" class="cap-status hidden" aria-live="off"></p>
               <button id="live-button" class="jump-chip hidden" type="button">Jump to latest<span id="live-count" class="live-count hidden">0</span></button>
             </div>
             <nav class="panel-links" aria-label="About your notes">
