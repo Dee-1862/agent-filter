@@ -7,7 +7,9 @@ Used by `python -m demo.server --source livekit`. The shared-view StreamRunner m
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
+import os
 import re
 import secrets
 import sys
@@ -32,6 +34,10 @@ SPOKEN_STOP_RE = re.compile(
     r"|i\s+(?:don't|do\s+not)\s+want\s+(?:this|that|my\s+voice|me)\s+(?:to\s+be\s+)?recorded\b)",
     re.I,
 )
+
+LINE_RE = re.compile(r"^([^:]{1,40}):\s*(.+)$")
+# Reason-code heads that may be reported (as a category only, never the code tail or any text).
+REASON_CATEGORIES = {"cue", "scope", "kw", "llm", "presidio", "retro", "confirm", "flush"}
 
 
 # ---------------------------------------------------------------- helpers
@@ -175,6 +181,8 @@ class LiveSession:
         self.pipes: dict[str, object] = {}
         self.sensitive_paused: set[str] = set()
         self.approved: dict[str, dict] = {}
+        # Text-free kept-out bookkeeping: identity -> {"count": n, "reasons": {category: n}}.
+        self.kept_out: dict[str, dict] = {}
         self.tasks: list[asyncio.Task] = []
         self.t0 = time.monotonic()
         if hasattr(source, "on_participant_left"):
@@ -192,6 +200,22 @@ class LiveSession:
         return {identity: {"name": name, "recording": bool(consent.get(identity, False)),
                            "sensitive_paused": identity in self.sensitive_paused}
                 for identity, name in self.names.items()}
+
+    def status_snapshot(self) -> dict:
+        """Text-free counts: approved lines and kept-out items per person, by reason category."""
+        return {"approved": len(self.approved),
+                "kept_out": {i: {"count": v["count"], "reasons": dict(v["reasons"])}
+                             for i, v in self.kept_out.items() if i in self.names}}
+
+    def publish_status(self):
+        self.messages.append({"type": "status", **self.status_snapshot()})
+
+    def _count_kept_out(self, identity: str, reason: str, fallback: str):
+        head = (reason or "").split(":", 1)[0]
+        cat = head if head in REASON_CATEGORIES else fallback
+        rec = self.kept_out.setdefault(identity, {"count": 0, "reasons": {}})
+        rec["count"] += 1
+        rec["reasons"][cat] = rec["reasons"].get(cat, 0) + 1
 
     def publish_participants(self):
         self.messages.append({"type": "participants", "participants": self.snapshot()})
@@ -211,6 +235,7 @@ class LiveSession:
     def leave(self, identity: str):
         self.set_consent(identity, False)
         self.names.pop(identity, None)
+        self.kept_out.pop(identity, None)
         for sid, owner in list(self.sessions.items()):
             if owner == identity:
                 del self.sessions[sid]
@@ -226,10 +251,16 @@ class LiveSession:
         # this prototype. Stop the source first, discard its private pipeline,
         # and publish only a text-free status. Other speakers keep recording.
         if any(event.kind == "pending_confirm" for event in events):
+            self._count_kept_out(identity, "", "sensitive")
             self.set_consent(identity, False, sensitive_pause=True)
+            self.publish_status()
             return
         safe = []
+        counted = False
         for event in events:
+            if event.kind in ("redacted", "retro_removed"):
+                self._count_kept_out(identity, event.reason, "other")
+                counted = True
             if event.kind == "committed" and self.source.consent_snapshot().get(identity, False):
                 line = {"id": event.segment_id, "speaker": identity, "name": self.names.get(identity, identity),
                         "text": event.text}
@@ -242,6 +273,8 @@ class LiveSession:
                 self.set_consent(identity, False)
         if safe:
             self.messages.append({"type": "transcript", "changes": safe})
+        if safe or counted:
+            self.publish_status()
 
     def push(self, segment: Segment):
         identity = segment.speaker
@@ -304,6 +337,11 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
 
     @app.get("/")
     async def index():
+        return FileResponse(STATIC / "index.html")
+
+    @app.get("/live")
+    @app.get("/live.html")
+    async def classic_page():
         return FileResponse(STATIC / "live.html")
 
     @app.get("/static/{asset}")
@@ -376,6 +414,7 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
             i = len(session.messages)
             yield f"data: {json.dumps({'type': 'participants', 'participants': session.snapshot()})}\n\n"
             yield f"data: {json.dumps({'type': 'snapshot', 'lines': list(session.approved.values())})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', **session.status_snapshot()})}\n\n"
             while True:
                 if request.cookies.get("otr_session", "") not in session.sessions:
                     return

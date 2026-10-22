@@ -134,6 +134,47 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .tile.speaking { box-shadow: 0 0 0 6px var(--c, var(--blue)); }
 }
+
+/* ---- consent mode (live voice) */
+.live-only { display: none; }
+body.live-mode .live-only { display: block; }
+body.live-mode .replay-only { display: none !important; }
+body.live-mode #mybar[hidden] { display: none !important; }
+#join { flex: 1; overflow-y: auto; padding: 4vh 20px 30px; }
+.card { max-width: 620px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 28px 30px; }
+.card h2 { margin: 0 0 8px; font-size: 28px; }
+.card p { color: var(--dim); margin: 6px 0 14px; }
+.card label.fld { display: block; font-weight: 650; margin: 14px 0 6px; }
+.card input[type=text] { width: 100%; font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.consent-check { display: flex; gap: 12px; align-items: flex-start; margin: 18px 0 6px; padding: 14px; border: 2px solid var(--line); border-radius: 12px; cursor: pointer; }
+.consent-check.on { border-color: var(--green); background: #3fb95014; }
+.consent-check input { width: 24px; height: 24px; margin: 2px 0 0; flex: none; accent-color: var(--green); }
+.consent-check b { display: block; }
+.consent-check span.st { display: block; color: var(--dim); font-size: 15px; }
+button.primary { background: var(--blue); color: #06101c; border-color: var(--blue); font-weight: 750; padding: 10px 22px; }
+.err { color: var(--red); min-height: 1.4em; font-weight: 650; }
+.fine { font-size: 14px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 18px; }
+#mybar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; }
+#mybar.rec-on { border-color: var(--green); }
+.switch { display: inline-flex; align-items: center; gap: 12px; font-weight: 700; padding: 8px 16px 8px 8px; border-radius: 999px; }
+.switch .track { width: 46px; height: 26px; border-radius: 999px; background: var(--grey); position: relative; flex: none; transition: background .15s; }
+.switch .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left .15s; }
+.switch[aria-checked=true] { border-color: var(--green); }
+.switch[aria-checked=true] .track { background: var(--green); }
+.switch[aria-checked=true] .knob { left: 23px; }
+.switch:disabled { opacity: .55; cursor: not-allowed; }
+.micgroup { display: flex; align-items: center; gap: 10px; }
+#meter { width: 120px; height: 12px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+#meter-fill { height: 100%; width: 0; background: var(--green); }
+#mute-btn[aria-pressed=true] { border-color: var(--red); color: var(--red); font-weight: 700; }
+#mic-msg, #consent-note { flex-basis: 100%; margin: 0; font-size: 15px; color: var(--dim); }
+#mic-msg:empty, #consent-note:empty { display: none; }
+#mic-msg.bad { color: var(--amber); font-weight: 650; }
+.tile .recl { font-size: 13px; color: var(--dim); }
+#banner button { margin-left: 12px; padding: 3px 12px; }
+.person-row { background: var(--panel2); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.person-row b { font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .switch .track, .switch .knob { transition: none !important; } }
 </style>
 </head>
 <body>
@@ -146,8 +187,39 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
   <button id="settings-btn" aria-haspopup="true" aria-expanded="false" aria-controls="settings-menu" aria-label="Settings">&#9881;</button>
 </header>
 <div id="banner" role="alert"></div>
+<div id="announce" class="sr" role="status" aria-live="polite"></div>
+
+<section id="join" hidden aria-labelledby="join-title">
+  <div class="card">
+    <h2 id="join-title">Join the meeting</h2>
+    <p>You join with your microphone so everyone in the room can hear you. The notetaker starts <strong>off</strong> for you; it only listens if you switch recording on.</p>
+    <label class="fld" for="name">Your display name</label>
+    <input id="name" type="text" maxlength="60" autocomplete="name" placeholder="Name">
+    <label class="consent-check" id="join-consent-box" for="join-consent">
+      <input id="join-consent" type="checkbox">
+      <span><b>Record my voice for the notes</b><span class="st" id="join-consent-state">Off: the notetaker will not listen to you. You can switch this on later.</span></span>
+    </label>
+    <p id="join-error" class="err" role="alert"></p>
+    <button id="join-btn" class="primary">Join meeting</button>
+    <p class="fine">Consent belongs to each person. You can turn recording off at any time, or say &quot;stop recording me&quot; and it stops for you. Only lines that pass the privacy checks ever reach the shared notes.</p>
+  </div>
+</section>
 
 <main id="meeting" aria-label="Meeting">
+  <div id="mybar" class="live-only" role="group" aria-label="Your microphone and recording" hidden>
+    <button id="consent-switch" class="switch" role="switch" aria-checked="false"><span class="track"><span class="knob"></span></span><span id="consent-label">Record my voice for the notes: OFF</span></button>
+    <div class="micgroup">
+      <button id="mute-btn" aria-pressed="false" title="Mute or unmute your microphone (m)">Mute</button>
+      <div id="meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="meter-fill"></div></div>
+    </div>
+    <button id="mic-retry" hidden>Try microphone again</button>
+    <button id="audio-btn" hidden>Turn on sound</button>
+    <button id="rejoin-btn" hidden>Rejoin</button>
+    <span class="spacer"></span>
+    <button id="leave-btn">Leave</button>
+    <p id="consent-note"></p>
+    <p id="mic-msg" role="status"></p>
+  </div>
   <div id="tiles" aria-label="Participants"><div class="empty">Waiting for the meeting to start...</div></div>
   <div id="pendcard" role="group" aria-label="Confirmation needed"></div>
   <div id="caption-wrap">
@@ -156,26 +228,27 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
 </main>
 
 <div id="settings-menu" hidden role="region" aria-label="Settings">
-  <h3>Hold</h3>
-  <div class="line"><label for="hold">Hold before notes</label><input id="hold" type="range" min="0" max="60" step="1" value="10"><b id="holdv">10 s</b></div>
+  <h3 class="replay-only">Hold</h3>
+  <div class="line replay-only"><label for="hold">Hold before notes</label><input id="hold" type="range" min="0" max="60" step="1" value="10"><b id="holdv">10 s</b></div>
   <h3>Display</h3>
-  <div class="line"><button id="present" title="Toggle presenter mode (p)">Presenter mode</button><button id="restart">Restart</button><button id="flush">Flush</button></div>
-  <h3>Type a line</h3>
-  <div class="line"><input id="spk" type="text" aria-label="Speaker name" placeholder="Speaker" value="Presenter" autocomplete="off"><input id="line" type="text" aria-label="Line to send" placeholder="Type a line, press Enter" autocomplete="off"><button id="send">Send</button></div>
-  <h3>Health</h3>
-  <div class="health" id="health">
+  <div class="line"><button id="present" title="Toggle presenter mode (p)">Presenter mode</button><button id="restart" class="replay-only">Restart</button><button id="flush" class="replay-only">Flush</button></div>
+  <h3 class="replay-only">Type a line</h3>
+  <div class="line replay-only"><input id="spk" type="text" aria-label="Speaker name" placeholder="Speaker" value="Presenter" autocomplete="off"><input id="line" type="text" aria-label="Line to send" placeholder="Type a line, press Enter" autocomplete="off"><button id="send">Send</button></div>
+  <h3 class="replay-only">Health</h3>
+  <div class="health replay-only" id="health">
     <div><span id="hsrc">-</span>: <b id="hsrcst">connecting</b> | pipeline <b id="hpl">-</b> | <span id="conn">connecting...</span></div>
     <div>state <b id="hstate">-</b> | queue <b id="hq">0</b> | last push <b id="hlat">-</b> | pushes <b id="hpush">0</b> | errors <b id="herr">0</b> | dropped <b id="hdrop">0</b></div>
     <div id="hlast"></div>
   </div>
-  <h3>Audit log (no private text)</h3>
-  <div id="audit"></div>
+  <h3 class="replay-only">Audit log (no private text)</h3>
+  <div id="audit" class="replay-only"></div>
 </div>
 
 <div class="scrim" id="insights-scrim" hidden></div>
 <aside id="insights-panel" role="dialog" aria-modal="true" aria-labelledby="insights-title" hidden>
   <div class="phead"><h2 id="insights-title" tabindex="-1">Insights</h2><button id="insights-close" aria-label="Close insights">Close</button></div>
   <div class="pbody">
+    <div class="replay-only">
     <h3>Counts</h3>
     <div class="counts">
       <div class="count c-ok"><b id="n-committed">0</b><span>committed</span></div>
@@ -190,6 +263,22 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     <div id="notes-list"></div>
     <h3>Kept out (no text shown)</h3>
     <div id="out-list"></div>
+    </div>
+    <div id="live-insights" class="live-only">
+      <h3>Counts</h3>
+      <div class="counts">
+        <div class="count c-ok"><b id="l-approved">0</b><span>in the notes</span></div>
+        <div class="count c-out"><b id="l-out">0</b><span>kept out</span></div>
+        <div class="count c-ok"><b id="l-rec">0</b><span>recording</span></div>
+        <div class="count"><b id="l-people">0</b><span>people</span></div>
+      </div>
+      <h3>People and recording state</h3>
+      <div id="live-people"></div>
+      <h3>Lines in the notes</h3>
+      <div id="live-lines"></div>
+      <h3>What this page can and cannot show</h3>
+      <p class="dim">Your browser only receives lines that were approved for the notes. Anything held back or kept out stays on the server and is discarded. Only counts and a coarse reason category are shared, never the words.</p>
+    </div>
   </div>
 </aside>
 
@@ -379,7 +468,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
   }
   function addCaption(seg, text) {
     var box = capBox();
-    var d = el("div", "cap"), w = el("span", "who", seg.speaker); w.style.color = colorOf(seg.speaker);
+    var d = el("div", "cap"), w = el("span", "who", seg.speaker); w.style.color = seg.color || colorOf(seg.speaker);
     var body = el("span", "body", text);
     d.appendChild(w); d.appendChild(body);
     var wb = whyBtn(seg.id); d.appendChild(wb);
@@ -533,7 +622,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
   $("settings-btn").onclick = function () {
     var m = $("settings-menu"), open = m.hidden;
     m.hidden = !open; $("settings-btn").setAttribute("aria-expanded", open ? "true" : "false");
-    if (open) $("hold").focus();
+    if (open) (liveMode ? $("present") : $("hold")).focus();
   };
   document.addEventListener("click", function (ev) {
     var m = $("settings-menu");
@@ -552,6 +641,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     return null;
   }
   function renderInsights() {
+    if (liveMode) { renderLiveInsights(); return; }
     var out = [], held = 0;
     order.forEach(function (sid) {
       var s = segs[sid];
@@ -611,6 +701,7 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
 
   // ------------------------------------------------------------------ Level 2: explain
   function openExplain(sid, opener) {
+    if (liveMode) { openLiveExplain(sid, opener); return; }
     var s = segs[sid] || ensureSeg(sid, "?");
     var body = $("explain-body"); body.textContent = "";
     var final = s.final || "held";
@@ -783,13 +874,440 @@ body.presenter .tile .av { width: 84px; height: 84px; font-size: 32px; }
     if (k === "p") { togglePresenter(); return; }
     if (k === "i" && !panelOpen("insights-panel")) { $("insights-btn").click(); return; }
     if (k === "l") { $("live-btn").click(); return; }
+    if (k === "m" && liveMode && room) { toggleMute(); return; }
     var ids = Object.keys(pending);
     if (!ids.length) return;
     if (k === "y") { answer(ids[0], true); ev.preventDefault(); }
     else if (k === "n") { answer(ids[0], false); ev.preventDefault(); }
   });
-  renderHealth(null); updateLive();
-  connect();
+  // ================================================================== consent mode (live voice)
+  // Used only when /api/config says mode === "livekit" (python -m demo.server --source livekit).
+  // The browser publishes the microphone through LiveKit; the server decides, per person, whether
+  // the notetaker listens. This page only ever receives approved lines plus text-free status.
+  var liveMode = false, room = null, me = null, myName = "", lkState = "ok";
+  var parts = {}, liveLines = {}, liveOrder = [], status = { approved: 0, kept_out: {} };
+  var micOk = false, muted = false, micMsgText = "", micBad = false, audioBlocked = false;
+  var serviceDown = false, sessionLost = false, expectOff = false, prevRecording = null, busy = false;
+  var speakingIds = {}, sse = null, sseRetry = null;
+  var meterCtx = null, meterTimer = null, meterNode = null, meterBuf = null, meterShown = -1;
+
+  var REASON_WORDS = {
+    cue: "said off the record", scope: "private stretch", kw: "sensitive keyword", llm: "judged sensitive",
+    presidio: "personal details", retro: "strike that", confirm: "answered", flush: "end of meeting",
+    sensitive: "sensitive topic pause", other: "other"
+  };
+
+  function announce(msg) {
+    var a = $("announce"); a.textContent = "";
+    setTimeout(function () { a.textContent = msg; }, 30);
+  }
+  function apiJson(path, body) {
+    var opt = { credentials: "same-origin" };
+    if (body !== undefined) { opt.method = "POST"; opt.headers = { "Content-Type": "application/json" }; opt.body = JSON.stringify(body); }
+    return fetch(path, opt).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
+        if (!r.ok) { var err = new Error((j && j.detail) || ("Request failed (" + r.status + ")")); err.status = r.status; throw err; }
+        return j;
+      });
+    });
+  }
+  function loadLk() {
+    return new Promise(function (resolve, reject) {
+      if (window.LivekitClient) { resolve(); return; }
+      var sc = document.createElement("script");
+      sc.src = "/static/livekit-client.umd.js";
+      sc.onload = function () { window.LivekitClient ? resolve() : reject(new Error("The LiveKit client library did not start.")); };
+      sc.onerror = function () { reject(new Error("Could not load the LiveKit client library.")); };
+      document.head.appendChild(sc);
+    });
+  }
+
+  // ---- banner
+  function refreshBanner() {
+    var b = $("banner"), msgs = [], bad = false;
+    if (serviceDown) { msgs.push("Notes capture is unavailable, so nobody is being recorded. You can still talk and listen."); bad = true; }
+    if (sessionLost) { msgs.push("Your session ended (the server may have restarted). Press Rejoin."); bad = true; }
+    else if (lkState === "disconnected") { msgs.push("You are disconnected from the audio room. Press Rejoin."); bad = true; }
+    else if (lkState === "reconnecting") msgs.push("Reconnecting to the audio room...");
+    if (!sessionLost && me && !sse_up) msgs.push("Reconnecting to the notes feed. Captions may be out of date.");
+    b.className = bad ? "" : "warn";
+    b.textContent = msgs.join("  ");
+    b.style.display = msgs.length ? "block" : "none";
+  }
+  var sse_up = false;
+
+  // ---- tiles
+  function liveTile(id, name) {
+    var d = el("div", "tile"), c = colorOf(id);
+    d.style.setProperty("--c", c); d.setAttribute("role", "group");
+    var mic = el("span", "mic"); mic.setAttribute("aria-hidden", "true");
+    var nm = el("div", "nm", name), rec = el("div", "recl");
+    d.appendChild(mic); d.appendChild(el("div", "av", initials(name))); d.appendChild(nm); d.appendChild(rec);
+    return { el: d, mic: mic, nm: nm, rec: rec };
+  }
+  function renderLiveTiles() {
+    var box = $("tiles"), ids = Object.keys(parts), e = box.querySelector(".empty");
+    if (e) e.remove();
+    Object.keys(tiles).forEach(function (id) { if (!(id in parts)) { tiles[id].el.remove(); delete tiles[id]; } });
+    ids.forEach(function (id) {
+      var p = parts[id], t = tiles[id];
+      if (!t) { t = tiles[id] = liveTile(id, p.name || id); box.appendChild(t.el); }
+      var rec = !!p.recording;
+      var label = rec ? "Recording" : p.sensitive_paused ? "Paused (sensitive)" : "Not recording";
+      var name = (p.name || id) + (id === me ? " (you)" : "");
+      t.mic.className = "mic" + (rec ? "" : p.sensitive_paused ? " wait" : " paused");
+      t.nm.textContent = name; t.rec.textContent = label;
+      var sp = !!speakingIds[id];
+      t.el.classList.toggle("speaking", sp);
+      t.el.setAttribute("aria-label", name + ", " + label + (sp ? ", speaking" : ""));
+    });
+    if (!ids.length) box.appendChild(el("div", "empty", "Nobody has joined yet."));
+  }
+
+  // ---- captions (approved lines only)
+  function lineSeg(l) { return { id: l.id, speaker: l.name || l.speaker, color: colorOf(l.speaker) }; }
+  function renderLiveCaptions() {
+    var box = $("captions"); box.textContent = ""; caps = {};
+    if (!liveOrder.length) box.appendChild(el("div", "cap-empty", "Captions appear here once lines are approved for the notes."));
+    liveOrder.forEach(function (id) { addCaption(lineSeg(liveLines[id]), liveLines[id].text); });
+  }
+  function liveTranscript(changes) {
+    changes.forEach(function (c) {
+      if (c.kind === "committed" && c.line && !liveLines[c.line.id]) {
+        liveLines[c.line.id] = c.line; liveOrder.push(c.line.id);
+        addCaption(lineSeg(c.line), c.line.text);
+        noteNew();
+      } else if (c.kind === "removed" && liveLines[c.id]) {
+        delete liveLines[c.id]; liveOrder = liveOrder.filter(function (x) { return x !== c.id; });
+        if (caps[c.id]) { caps[c.id].el.remove(); delete caps[c.id]; }
+        if (!liveOrder.length) renderLiveCaptions();
+      }
+    });
+  }
+
+  // ---- my consent + status
+  function setLivePill() {
+    var p = $("status-pill"), mine = me && parts[me];
+    var cls = "OFF", txt = "NOT RECORDING ME";
+    if (!me) txt = "NOT JOINED";
+    else if (mine && mine.recording) { cls = "ON"; txt = "RECORDING ME"; }
+    else if (mine && mine.sensitive_paused) { cls = "PENDING_CONFIRM"; txt = "PAUSED"; }
+    p.className = cls; p.textContent = txt;
+  }
+  function updateMyBar() {
+    var mine = me && parts[me], rec = !!(mine && mine.recording), paused = !!(mine && mine.sensitive_paused);
+    var sw = $("consent-switch");
+    sw.setAttribute("aria-checked", rec ? "true" : "false");
+    sw.disabled = busy || (!micOk && !rec);
+    $("consent-label").textContent = "Record my voice for the notes: " + (rec ? "ON" : "OFF");
+    $("mybar").classList.toggle("rec-on", rec);
+    var note = "";
+    if (!micOk) note = "Recording needs a working microphone.";
+    else if (rec && muted) note = "You are muted, so nothing is heard or recorded until you unmute.";
+    else if (rec) note = "The notetaker is listening to you. Say \"stop recording me\" or switch this off at any time.";
+    else if (paused) note = "Paused for sensitive content. The pending line was discarded. Switch recording on again when you are ready.";
+    else if (prevRecording === true && !expectOff) note = "Recording was turned off (a spoken stop request or a sensitive topic). Switch it on again when you want.";
+    else note = "The notetaker is not listening to you.";
+    $("consent-note").textContent = note;
+    if (prevRecording !== null && prevRecording !== rec) announce(rec ? "Recording you is on." : paused ? "Recording paused for sensitive content." : "Recording you is off.");
+    prevRecording = rec; if (!rec) expectOff = false;
+    setLivePill();
+  }
+  function setConsent(want) {
+    if (!me || busy) return Promise.resolve();
+    if (want && !micOk) { micMessage("Turn on a working microphone before recording.", true); return Promise.resolve(); }
+    busy = true; updateMyBar();
+    expectOff = !want;
+    return apiJson("/api/consent", { recording: want }).then(function () {
+      if (parts[me]) { parts[me].recording = want; if (want) parts[me].sensitive_paused = false; }
+      renderLiveTiles();
+    }).catch(function (err) {
+      expectOff = false;
+      micMessage("Could not change recording: " + err.message, true);
+    }).then(function () { busy = false; updateMyBar(); queueInsights(); });
+  }
+  $("consent-switch").onclick = function () {
+    var cur = !!(parts[me] && parts[me].recording);
+    setConsent(!cur);
+  };
+  $("join-consent").onchange = function () {
+    var on = this.checked;
+    $("join-consent-box").classList.toggle("on", on);
+    $("join-consent-state").textContent = on
+      ? "On: once you have joined and your microphone works, the notetaker listens to you. You can switch it off any time."
+      : "Off: the notetaker will not listen to you. You can switch this on later.";
+  };
+
+  // ---- microphone
+  function micMessage(msg, bad) { micMsgText = msg; micBad = !!bad; var m = $("mic-msg"); m.textContent = msg; m.className = bad ? "bad" : ""; }
+  function micFail(err) {
+    var name = (err && err.name) || "", text = String((err && err.message) || err || "");
+    var msg;
+    if (err === "insecure") msg = "This page cannot use the microphone because it is not secure. Open it at http://localhost or over https.";
+    else if (/NotAllowed|Permission/i.test(name + text)) msg = "Microphone access is blocked. Allow the microphone in your browser's site settings (the icon next to the address), then press Try microphone again. You can still listen.";
+    else if (/NotFound|DevicesNotFound|Overconstrained|Requested device not found/i.test(name + text)) msg = "No microphone was found. Plug one in or enable it in your system settings, then press Try microphone again. You can still listen.";
+    else if (/NotReadable|TrackStart|Could not start/i.test(name + text)) msg = "Your microphone is busy or unavailable (another app may be using it). Close that app, then press Try microphone again.";
+    else msg = "The microphone could not be started" + (text ? " (" + text + ")" : "") + ". Press Try microphone again.";
+    micOk = false; stopMeter();
+    micMessage(msg, true);
+    if (parts[me] && parts[me].recording) setConsent(false);
+    updateMicUi();
+  }
+  function updateMicUi() {
+    var mb = $("mute-btn");
+    mb.disabled = !micOk;
+    mb.textContent = muted ? "Unmute" : "Mute";
+    mb.setAttribute("aria-pressed", muted ? "true" : "false");
+    $("mic-retry").hidden = micOk || !room || lkState === "disconnected";
+    $("audio-btn").hidden = !audioBlocked;
+    updateMyBar();
+  }
+  function enableMic() {
+    if (!navigator.mediaDevices || !window.isSecureContext) { micFail("insecure"); return Promise.resolve(false); }
+    micMessage("", false);
+    return room.localParticipant.setMicrophoneEnabled(true).then(function () {
+      micOk = true; muted = false; startMeter(); updateMicUi(); return true;
+    }, function (err) { micFail(err); return false; });
+  }
+  function toggleMute() {
+    if (!micOk || !room) return;
+    var wantOn = muted;
+    room.localParticipant.setMicrophoneEnabled(wantOn).then(function () {
+      muted = !wantOn; if (wantOn) startMeter(); else setMeter(0);
+      updateMicUi(); announce(muted ? "Microphone muted." : "Microphone on.");
+    }, function (err) { micFail(err); });
+  }
+  $("mute-btn").onclick = toggleMute;
+  $("mic-retry").onclick = function () { enableMic(); };
+  $("audio-btn").onclick = function () { if (room) room.startAudio().then(function () { audioBlocked = !room.canPlaybackAudio; updateMicUi(); }, function () {}); };
+
+  function setMeter(v) {
+    v = Math.max(0, Math.min(100, Math.round(v)));
+    $("meter-fill").style.width = v + "%";
+    var r = Math.round(v / 10) * 10;
+    if (r !== meterShown) { meterShown = r; $("meter").setAttribute("aria-valuenow", String(r)); }
+  }
+  function stopMeter() {
+    clearInterval(meterTimer); meterTimer = null;
+    if (meterCtx) { try { meterCtx.close(); } catch (e) {} meterCtx = null; }
+    meterNode = null; setMeter(0);
+  }
+  function startMeter() {
+    stopMeter();
+    try {
+      var L = window.LivekitClient, pub = room.localParticipant.getTrackPublication(L.Track.Source.Microphone);
+      var tr = pub && pub.track && pub.track.mediaStreamTrack, AC = window.AudioContext || window.webkitAudioContext;
+      if (!tr || !AC) return;
+      meterCtx = new AC();
+      var src = meterCtx.createMediaStreamSource(new MediaStream([tr]));
+      meterNode = meterCtx.createAnalyser(); meterNode.fftSize = 512; src.connect(meterNode);
+      meterBuf = new Uint8Array(meterNode.fftSize);
+      meterTimer = setInterval(function () {
+        if (!meterNode || muted) { setMeter(0); return; }
+        meterNode.getByteTimeDomainData(meterBuf);
+        var sum = 0; for (var i = 0; i < meterBuf.length; i++) { var x = (meterBuf[i] - 128) / 128; sum += x * x; }
+        setMeter(Math.sqrt(sum / meterBuf.length) * 400);
+      }, 80);
+    } catch (e) { console.error(e); }
+  }
+
+  // ---- LiveKit room
+  function wireRoom(r) {
+    var E = LivekitClient.RoomEvent;
+    r.on(E.TrackSubscribed, function (track) {
+      if (track.kind === LivekitClient.Track.Kind.Audio) {
+        var m = track.attach(); m.dataset.livekitAudio = "true"; document.body.appendChild(m);
+      }
+    });
+    r.on(E.TrackUnsubscribed, function (track) { track.detach().forEach(function (m) { m.remove(); }); });
+    r.on(E.ActiveSpeakersChanged, function (list) {
+      speakingIds = {}; list.forEach(function (p) { speakingIds[p.identity] = true; });
+      renderLiveTiles();
+    });
+    r.on(E.Reconnecting, function () { lkState = "reconnecting"; refreshBanner(); });
+    r.on(E.Reconnected, function () { lkState = "ok"; refreshBanner(); });
+    r.on(E.Disconnected, function () {
+      lkState = "disconnected"; speakingIds = {}; renderLiveTiles(); stopMeter();
+      $("rejoin-btn").hidden = false; micOk = false; updateMicUi(); refreshBanner();
+    });
+    r.on(E.MediaDevicesError, function (err) { micFail(err); });
+    r.on(E.AudioPlaybackStatusChanged, function () { audioBlocked = !r.canPlaybackAudio; updateMicUi(); });
+  }
+
+  // ---- SSE
+  function liveStream() {
+    if (sse) sse.close();
+    clearTimeout(sseRetry);
+    sse = new EventSource("/stream");
+    sse.onopen = function () { sse_up = true; refreshBanner(); };
+    sse.onmessage = function (ev) { try { liveHandle(JSON.parse(ev.data)); } catch (err) { console.error(err); } };
+    sse.onerror = function () {
+      sse_up = false; refreshBanner();
+      if (sse && sse.readyState === 2) {   // the browser gave up: most likely 401 (session gone)
+        apiJson("/api/me").then(function () { sseRetry = setTimeout(liveStream, 1500); },
+          function (err) {
+            if (err.status === 401) { sessionLost = true; $("rejoin-btn").hidden = false; refreshBanner(); }
+            else sseRetry = setTimeout(liveStream, 1500);
+          });
+      }
+    };
+  }
+  function liveHandle(m) {
+    if (m.type === "participants") { parts = m.participants || {}; renderLiveTiles(); updateMyBar(); queueInsights(); }
+    else if (m.type === "snapshot") {
+      liveLines = {}; liveOrder = [];
+      (m.lines || []).forEach(function (l) { liveLines[l.id] = l; liveOrder.push(l.id); });
+      renderLiveCaptions(); queueInsights();
+    }
+    else if (m.type === "transcript") { liveTranscript(m.changes || []); queueInsights(); }
+    else if (m.type === "status") { status = { approved: m.approved || 0, kept_out: m.kept_out || {} }; queueInsights(); }
+    else if (m.type === "service") { serviceDown = true; refreshBanner(); announce("Notes capture is unavailable."); }
+  }
+
+  // ---- insights + why (consent mode: counts and categories only)
+  function keptTotal() { var n = 0; Object.keys(status.kept_out).forEach(function (i) { n += status.kept_out[i].count; }); return n; }
+  function reasonText(rs) {
+    return Object.keys(rs || {}).map(function (k) { return (REASON_WORDS[k] || k) + " x" + rs[k]; }).join(", ");
+  }
+  function renderLiveInsights() {
+    var ids = Object.keys(parts), nrec = ids.filter(function (i) { return parts[i].recording; }).length;
+    $("l-approved").textContent = liveOrder.length; $("l-out").textContent = keptTotal();
+    $("l-rec").textContent = nrec; $("l-people").textContent = ids.length;
+    var pl = $("live-people"); pl.textContent = "";
+    if (!ids.length) pl.appendChild(el("div", "empty", "Nobody has joined yet."));
+    ids.forEach(function (i) {
+      var p = parts[i], d = el("div", "person-row");
+      var st = p.recording ? "recording" : p.sensitive_paused ? "paused for a sensitive topic" : "not recording";
+      var w = el("b", null, (p.name || i) + (i === me ? " (you)" : "")); w.style.color = colorOf(i);
+      d.appendChild(w); d.appendChild(el("span", null, "  " + st));
+      var k = status.kept_out[i];
+      if (k && k.count) d.appendChild(el("div", "dim", k.count + " kept out: " + reasonText(k.reasons)));
+      pl.appendChild(d);
+    });
+    var ll = $("live-lines"); ll.textContent = "";
+    if (!liveOrder.length) ll.appendChild(el("div", "empty", "Nothing approved yet."));
+    liveOrder.forEach(function (id) {
+      var l = liveLines[id], d = el("div", "item"), w = el("span", "who", l.name || l.speaker);
+      w.style.color = colorOf(l.speaker);
+      d.appendChild(w); d.appendChild(el("span", null, l.text));
+      var b = whyBtn(id); b.setAttribute("aria-label", "Why is this line in the notes?"); d.appendChild(b);
+      ll.appendChild(d);
+    });
+  }
+  function openLiveExplain(id, opener) {
+    var l = liveLines[id], body = $("explain-body"); body.textContent = "";
+    $("explain-title").textContent = "Why is this in the notes?";
+    if (!l) { body.appendChild(el("p", null, "This line is no longer in the notes.")); showPanel("explain-panel", "explain-scrim", opener, "explain-title"); return; }
+    var who = l.name || l.speaker;
+    var h = el("p", null, who + "'s line is in the shared notes."); h.style.fontWeight = "650"; body.appendChild(h);
+    body.appendChild(el("h3", null, "What had to be true"));
+    var ul = el("ul", "trail");
+    [["Recording was on for " + who, "Only people who switched recording on are transcribed. Everyone else is never listened to by the notetaker."],
+     ["It passed the privacy checks", "Cue phrases like \"off the record\", sensitive keywords and personal-details masking all ran before the line was released."],
+     ["It waited out the hold window", "Lines wait briefly so a later \"strike that\" can still remove them."]].forEach(function (r) {
+      var li = el("li"); li.appendChild(el("b", null, r[0])); li.appendChild(el("span", null, r[1])); ul.appendChild(li);
+    });
+    body.appendChild(ul);
+    body.appendChild(el("h3", null, "What you cannot see here"));
+    var k = status.kept_out[l.speaker];
+    body.appendChild(el("p", "dim", "Text that was held or kept out is never sent to your browser, so there is nothing to reveal. "
+      + (k && k.count ? who + " has " + k.count + " item(s) kept out so far (" + reasonText(k.reasons) + "), shown as counts only." : who + " has nothing kept out so far.")));
+    showPanel("explain-panel", "explain-scrim", opener, "explain-title");
+  }
+
+  // ---- join / leave
+  function showMeetingView(roomName) {
+    $("join").hidden = true; $("meeting").hidden = false; $("mybar").hidden = false;
+    $("captions").setAttribute("aria-live", "polite"); $("captions").setAttribute("aria-relevant", "additions");
+    $("tiles").textContent = ""; $("tiles").appendChild(el("div", "empty", "Waiting for people..."));
+    $("rejoin-btn").hidden = true;
+    announce("Joined room " + roomName + ". Recording is off for you.");
+  }
+  function cleanupRoom() {
+    stopMeter();
+    if (sse) { sse.close(); sse = null; } clearTimeout(sseRetry); sse_up = false;
+    if (room) { try { room.disconnect(); } catch (e) {} room = null; }
+    Array.prototype.forEach.call(document.querySelectorAll("audio[data-livekit-audio]"), function (a) { a.remove(); });
+  }
+  function resetLiveState() {
+    parts = {}; liveLines = {}; liveOrder = []; status = { approved: 0, kept_out: {} };
+    micOk = false; muted = false; serviceDown = false; sessionLost = false; lkState = "ok";
+    expectOff = false; prevRecording = null; speakingIds = {}; audioBlocked = false;
+    Object.keys(tiles).forEach(function (k) { delete tiles[k]; });
+    caps = {}; micMessage("", false);
+  }
+  function doJoin() {
+    var name = $("name").value.trim(), jb = $("join-btn"), err = $("join-error");
+    err.textContent = "";
+    if (!name) { err.textContent = "Please enter a display name."; $("name").focus(); return Promise.resolve(); }
+    if (jb.disabled) return Promise.resolve();
+    jb.disabled = true; jb.textContent = "Joining...";
+    var wantConsent = $("join-consent").checked, cfg = null;
+    myName = name;
+    try { localStorage.setItem("otr-name", name); } catch (e) {}
+    resetLiveState();
+    return apiJson("/api/config").then(function (c) { cfg = c; return loadLk(); }).then(function () {
+      return apiJson("/api/join", { name: name });
+    }).then(function (access) {
+      me = access.identity;
+      room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+      wireRoom(room);
+      return room.connect(cfg.url, access.token);
+    }).then(function () {
+      try { room.startAudio().then(function () { audioBlocked = !room.canPlaybackAudio; updateMicUi(); }, function () { audioBlocked = true; updateMicUi(); }); } catch (e) {}
+      showMeetingView(cfg.room);
+      renderLiveCaptions(); liveStream(); refreshBanner(); updateMyBar();
+      return enableMic();
+    }).then(function (ok) {
+      $("consent-switch").focus();
+      if (wantConsent && ok) return setConsent(true);
+      if (wantConsent && !ok) micMessage(micMsgText + " Recording was left off.", true);
+    }).catch(function (e) {
+      err.textContent = "Could not join: " + (e && e.message ? e.message : e);
+      var had = me; cleanupRoom(); me = null;
+      if (had) apiJson("/api/leave", {}).catch(function () {});
+      $("join").hidden = false; $("meeting").hidden = true; setLivePill();
+    }).then(function () { jb.disabled = false; jb.textContent = "Join meeting"; });
+  }
+  function leave(reload) {
+    var p = me ? apiJson("/api/leave", {}).catch(function () {}) : Promise.resolve();
+    cleanupRoom();
+    return p.then(function () { if (reload) location.reload(); });
+  }
+  $("join-btn").onclick = doJoin;
+  $("name").onkeydown = function (e) { if (e.key === "Enter") doJoin(); };
+  $("leave-btn").onclick = function () { leave(true); };
+  $("rejoin-btn").onclick = function () {
+    leave(false).then(function () {
+      me = null; $("meeting").hidden = true; $("mybar").hidden = true; $("join").hidden = false;
+      $("name").value = myName; $("join-consent").checked = false; $("join-consent").onchange();
+      $("banner").style.display = "none"; setLivePill();
+      $("join-error").textContent = "You left the room. Check your name and press Join meeting to come back. Recording is off until you switch it on.";
+      $("join-btn").focus();
+    });
+  };
+  window.addEventListener("pagehide", function () {
+    if (liveMode && me && navigator.sendBeacon) { try { navigator.sendBeacon("/api/leave"); } catch (e) {} }
+  });
+
+  function enterLiveMode() {
+    liveMode = true; replaying = false;
+    document.body.classList.add("live-mode");
+    $("meeting").hidden = true; $("join").hidden = false;
+    $("tiles").textContent = "";
+    setLivePill(); refreshBanner();
+    try { var n = localStorage.getItem("otr-name"); if (n) $("name").value = n; } catch (e) {}
+    loadLk().catch(function () {});
+    $("name").focus();
+  }
+  function startReplay() { renderHealth(null); updateLive(); connect(); }
+  function init() {
+    fetch("/api/config", { credentials: "same-origin" }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (c) { if (c && c.mode === "livekit") enterLiveMode(); else startReplay(); })
+      .catch(startReplay);
+  }
+  init();
 })();
 </script>
 </body>

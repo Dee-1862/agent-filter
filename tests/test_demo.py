@@ -232,7 +232,10 @@ def test_live_spoken_stop_ignores_quoted_or_negated_mentions(spoken):
 def test_live_endpoints_never_offer_replay_controls_or_raw_state():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as client:
-        assert "Your voice, your choice" in client.get("/").text
+        home = client.get("/").text
+        assert "Record my voice for the notes" in home and 'id="join-consent"' in home
+        assert "Your voice, your choice" in client.get("/live").text
+        assert "Your voice, your choice" in client.get("/live.html").text
         assert client.get("/api/state").status_code == 404
         assert client.post("/api/say", json={"speaker": "a", "text": "secret"}).status_code == 404
         assert client.post("/api/consent", json={"recording": True}).status_code == 401
@@ -301,3 +304,47 @@ def test_live_sensitive_confirmation_endpoint_is_absent():
     with TestClient(app) as client:
         assert client.post("/api/confirm", json={"segment_id": "sensitive", "keep_out": False}).status_code == 404
         assert client.get("/api/private").status_code == 404
+
+
+def test_live_config_and_replay_mode_detection():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as client:
+        cfg = client.get("/api/config").json()
+        assert cfg["mode"] == "livekit" and cfg["room"] == "demo"
+        assert client.get("/static/livekit-client.umd.js").status_code == 200
+        assert client.get("/static/not-a-file.js").status_code == 404
+    # one index.html serves every mode; non-consent modes have no /api/config, so the page falls back to replay
+    with TestClient(create_app("fake", autostart=False)) as client:
+        assert client.get("/api/config").status_code == 404
+        assert 'id="join-btn"' in client.get("/").text
+
+
+def test_index_has_voice_in_controls():
+    html = (Path(__file__).resolve().parent.parent / "demo" / "static" / "index.html").read_text(encoding="utf-8")
+    for marker in ('id="join"', 'id="join-consent"', 'id="consent-switch"', 'role="switch"', 'id="mute-btn"',
+                   'id="meter"', "setMicrophoneEnabled", "ActiveSpeakersChanged", "/api/consent", "/api/join",
+                   "/api/leave", "/api/me", 'id="mic-retry"', "prefers-reduced-motion"):
+        assert marker in html, marker
+    # consent is never pre-ticked and the page never calls the replay-only confirm endpoint in consent mode
+    assert 'id="join-consent" type="checkbox" checked' not in html
+
+
+def test_live_status_is_text_free_and_counts_kept_out():
+    src = StubLiveSource()
+    live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
+    live.names.update({"alice": "Alice", "bob": "Bob"})
+    live.set_consent("alice", True)
+    live.set_consent("bob", True)
+    live.push(Segment("s1", "alice", "Her salary is 150,000", 0, 0))   # sensitive hold -> pause
+    snap = live.status_snapshot()
+    assert snap["kept_out"]["alice"]["count"] == 1
+    assert snap["kept_out"]["alice"]["reasons"] == {"sensitive": 1}
+    assert "bob" not in snap["kept_out"]
+    live.push(Segment("b1", "bob", "Agenda item one", 0, 0))
+    live._publish_events("bob", live.pipes["bob"].tick(1))
+    assert live.status_snapshot()["approved"] == 1
+    blob = json.dumps([m for m in live.messages if m["type"] == "status"])
+    assert "150,000" not in blob and "salary" not in blob.lower()
+    assert any(m["type"] == "status" for m in live.messages)
+    live.leave("alice")
+    assert "alice" not in live.status_snapshot()["kept_out"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import math
 import re
+import threading
 from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
@@ -33,11 +34,15 @@ def stem(w: str) -> str:
 
 
 def content_stems(text: str) -> list[str]:
-    toks = re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))
+    toks = re.findall(r"[A-Za-z0-9']+", text.replace("’", "'"))
     out = []
-    for t in toks:
+    for raw in toks:
+        t = raw.lower()
         if t.endswith("'s") and t not in _CONTRACTIONS:
             t = t[:-2]                       # possessive: "elena's" -> "elena"
+        if len(t) == 2 and raw.isupper() and raw.isalpha() and t not in _STOP:
+            out.append(t)                    # acronym: "QA", "HR", "PM" are real topic words
+            continue
         if t in _STOP or t in _CONTRACTIONS or len(t) <= 2 or t.endswith(("n't", "'ll", "'re", "'ve", "'d", "'m")):
             continue
         out.append(stem(t))
@@ -123,6 +128,13 @@ class Cue:
     remainder: str = ""             # text after an end cue
     count: int = 0                  # retro: "the last two things" -> 2 (0 = not given)
     fuzzy: bool = False             # matched only after ASR-noise repair
+    weak: bool = False              # structured match with partial evidence: ask the LLM when available
+    accept_alone: bool = True       # a weak cue may still be acted on when no LLM can confirm it
+    gate: bool = False              # no cue found, but the text has a cheap cue-related signal
+    source: str = "regex"           # 'regex' | 'structured' | 'llm'
+    span: tuple = ()                # (start, end) of the retract phrase in the text it was found in
+    corrected: bool = False         # retract cue carries a correction marker ("I misspoke")
+    keep_text: str = ""             # correction case: the utterance with the retract clause removed
 
 
 def _is_false_alarm(text: str, m: re.Match) -> bool:
@@ -245,7 +257,8 @@ def _detect_strict(t: str) -> Cue:
             g = cm.group(1).lower()
             count = _NUMW.get(g) or int(g)
             topic = ""        # "the last two things" is positional, not a topic
-        return Cue("retro", "retro", topic, count=count)
+        end = m.end() + (tm.end(1) if tm else 0)
+        return Cue("retro", "retro", topic, count=count, span=(m.start(), end))
     m = _START.search(t)
     e = _END.search(t)
     if m and e and e.start() <= m.start() < e.end():
@@ -259,10 +272,260 @@ def _detect_strict(t: str) -> Cue:
     return Cue()
 
 
+# ======================================================================================
+# Structured intent detector (generalises beyond fixed phrase lists)
+#
+# A cue is not matched as one fixed phrase but composed from independent features found in
+# one sentence:
+#   start   = OBJECT (notes / minutes / record / transcript / "write ... down")
+#             + NEGATION-EXCLUSION (keep ... out, leave out, skip, omit, "not in", "don't write")
+#             + FRAME (can we / let's / please / I'd rather) or TARGET (this / that / part / bit)
+#   end     = a RESUME verb phrase about the record ("we can write things down again",
+#             "back on the record", "okay, resume", "start taking notes again")
+#   retract = a RETRACT verb (scratch / strike / disregard / forget / take back ...) + a
+#             speech-act reference (the bit / what I said / that) [+ "about <topic>"],
+#             or a correction marker ("I misspoke")
+# Evidence is graded: all three start features = certain; OBJECT+NEGATION only = weak (the LLM
+# is asked when there is one; without an LLM only weak cues with a strong negation are acted on).
+# ASR noise: word-level fuzzy canonicalisation of the cue vocabulary runs as a second chance.
+# ======================================================================================
+_CANON = ["notes", "minutes", "record", "recording", "transcript", "scratch", "retract", "disregard",
+          "forget", "delete", "remove", "resume", "confidential", "written", "exclude", "omit",
+          "misspoke", "correction", "summary", "redact", "pause", "withdraw", "mention"]
+_CANON_EXACT = {"nodes": "notes", "nots": "notes", "noats": "notes", "mints": "minutes", "recored": "record",
+                "recrod": "record", "reckord": "record", "scrach": "scratch", "skratch": "scratch",
+                "misspoken": "misspoke", "mispoke": "misspoke", "mis-spoke": "misspoke",
+                "keap": "keep", "kepp": "keep", "keeb": "keep", "keeep": "keep", "leev": "leave",
+                "skipp": "skip", "ommit": "omit", "exlude": "exclude"}
+_CANON_SKIP = {"recorder", "recorders", "remote", "removal", "remover", "noted", "notice", "notion", "notable",
+               "recoded", "recorded", "pausing", "paused", "mentions", "mentioned", "minute", "deleted",
+               "removed", "removes", "forgot", "forgive", "forgave", "forgets", "summary", "summaries",
+               "written", "wrote", "resumed", "resumes", "scratched", "scratches"}
+
+
+def canon_words(text: str) -> tuple[str, bool]:
+    """Word-level ASR repair of the cue vocabulary ('recored' -> 'record', 'nodes' -> 'notes')."""
+    changed = False
+
+    def fix(m: re.Match) -> str:
+        nonlocal changed
+        w = m.group(0)
+        lw = w.lower()
+        if lw in _CANON_EXACT:
+            changed = True
+            return _CANON_EXACT[lw]
+        if len(lw) < 5 or lw in _CANON or lw in _CANON_SKIP:
+            return w
+        best, score = None, 0.0
+        for c in _CANON:
+            if c[0] != lw[0] or abs(len(c) - len(lw)) > 2:
+                continue
+            r = difflib.SequenceMatcher(None, c, lw).ratio()
+            if r > score:
+                best, score = c, r
+        if best and score >= 0.84:
+            changed = True
+            return best
+        return w
+
+    return re.sub(r"[A-Za-z][A-Za-z\-]*", fix, text), changed
+
+
+_SENT = re.compile(r"[^.!?;\n]+[.!?;]*")
+_Q_START = re.compile(r"^\W*(?:did|was|were|has|have|had|who|what|why|how|when|where|which|does|do)\b", re.I)
+_FRAME = re.compile(
+    r"\b(?:can|could|may|might|shall|should|would|will)\s+(?:we|you|i|everyone|someone|y'?all|u)\b|\blet'?s\b|"
+    r"\blet\s+us\b|\bplease\b|\bpls\b|\bkindly\b|\bwould\s+you\s+mind\b|"
+    r"\bi(?:'d|\s+would|\s+will)\s+(?:rather|prefer|like|appreciate|ask)\b|\bi\s+(?:want|need|prefer|ask)\b|"
+    r"\bwe\s+(?:should|need\s+to|must|ought)\b|\bhow\s+about\b|\bdo\s+me\s+a\s+favou?r\b|\bif\s+you\s+don'?t\s+mind\b", re.I)
+_TARGET = re.compile(
+    r"\b(?:this|that|it|these|those|the\s+(?:next|following|rest|last|upcoming)|part|bit|section|portion|stuff|"
+    r"conversation|discussion|topic|piece|bits|what\s+i\s+say|what\s+follows)\b", re.I)
+_OBJ = re.compile(r"\b(?:notes?|minutes|records?|recording|recorded|transcripts?|transcription|summary|"
+                  r"write[\s\-]?up|written|logs?|minuted|noted)\b", re.I)
+_OBJ_DOWN = re.compile(r"\b(?:write|writing|jot|type|put|note|log|put\s+it|take)\b(?:\W+\w+){0,3}?\W+down\b", re.I)
+_OBJ_NOTES = r"(?:notes?|minutes|record|transcript|summary|write[\s\-]?up|log)"
+# (regex, polarity_guard). A guard means "preceded by not / never / n't" flips the meaning.
+_NEG_STRONG = [
+    (re.compile(r"\b(?:keep|keeping|leave|leaving)\b(?:\W+\w+){0,6}?\W+(?:out|off)\b", re.I), True),
+    (re.compile(r"\b(?:skip|skipping|omit|omitting|exclude|excluding|redact|redacting|pause|suspend|hide|hiding|"
+                r"hold\s+off)\b", re.I), True),
+    (re.compile(r"\b(?:stop|stopping)\b(?:\W+\w+){0,2}?\W+(?:notes?|taking|recording|writing|minut\w+|transcri\w+)\b",
+                re.I), True),
+    (re.compile(rf"\bout\s+of\s+(?:the\s+|our\s+|any\s+)?{_OBJ_NOTES}\b", re.I), True),
+    (re.compile(r"\boff\s+(?:the\s+)?(?:notes|minutes|transcript|write[\s\-]?up)\b", re.I), True),
+    (re.compile(r"(?:\b(?:not|never|no|dont)|n't)\b(?:\W+\w+){0,2}?\W+(?:write|record|note|minute|jot|log|transcribe|"
+                r"document|capture|type|put|include|mention|list|take|taking|keep|writing|recording)\b", re.I), False),
+]
+_NEG_GENERIC = [
+    (re.compile(rf"(?:\b(?:not|never|no)|n't)\b(?:\W+\w+){{0,2}}?\W+(?:in|into|on|from|for)\s+(?:\w+\s+)?(?:the\s+|our\s+|any\s+)?"
+                rf"{_OBJ_NOTES}\b", re.I), False),
+    (re.compile(r"(?:\b(?:not|never)|n't)\s+(?:\w+\s+){0,2}(?:written|recorded|noted|minuted|logged|transcribed|"
+                r"captured)\b", re.I), False),
+]
+_FLIP = re.compile(r"(?:\bnot|n't|\bnever|\bno\s+need\s+to|\bwithout|\bdont)\W+(?:\w+\W+)?$", re.I)
+
+_END_PATS = [
+    re.compile(r"\b(?:write|writing|record|recording|note|noting|minute|minuting|jot|transcribe|transcribing|log|"
+               r"take\s+notes|taking\s+notes)(?:\s+(?:things|it|this|stuff|everything|anything|down|up|the|notes?|"
+               r"minutes|meeting|official(?:ly)?|normally|again|as\s+usual)){0,4}?\s+(?:again|now|as\s+usual)\b", re.I),
+    re.compile(r"\b(?:you|we)\s+(?:can|could|may)\s+(?:go\s+ahead\s+and\s+|start\s+|begin\s+)?"
+               r"(?:writing|recording|taking\s+notes|noting|minuting)\b", re.I),
+    re.compile(r"\b(?:go\s+ahead\s+and|feel\s+free\s+to)\s+(?:write|record|take\s+notes|minute|note)\b", re.I),
+    re.compile(r"\bback\s+(?:on|for|to|in|at)\s+(?:the\s+)?(?:record|notes|minutes|transcript|official)\b", re.I),
+    re.compile(r"\b(?:resume|resuming|restart|continue|unpause|reactivate)\b(?:\s+\w+){0,3}?\s+"
+               r"(?:notes|note[\s\-]?taking|recording|minutes|transcript|writing|record)\b", re.I),
+    re.compile(r"^\W*(?:(?:ok(?:ay)?|alright|all\s+right|right|so|good)\W+)*(?:resume|unpause)\W*$", re.I),
+    re.compile(r"\b(?:notes|recording|record|minutes)\s+(?:are|is)\s+(?:back\s+on|on\s+again|rolling\s+again|live\s+again)\b",
+               re.I),
+    re.compile(r"\b(?:we're|we\s+are|you're|you\s+are|i'm)\s+(?:now\s+)?(?:back\s+)?(?:on|in)\s+(?:the\s+)?record\b",
+               re.I),
+]
+_END_NEG = re.compile(r"(?:\bnot|n't|\bnever|\bstop|\bwithout|\bdont|\bdon't)\W+(?:\w+\W+){0,2}$", re.I)
+
+_R_VERB = (r"(?:scratch|strike|disregard|ignore|forget|delete|remove|erase|retract|withdraw|take\s+back|take\s+out|"
+           r"cross\s+out|never\s*mind|cancel|undo|unsay)")
+_SPEECH = re.compile(r"\b(?:said|says|mentioned|told|bit|part|thing|line|comment|remark|statement|point|earlier|"
+                     r"number|figure|stuff|claim|update|estimate|sentence|that|those)\b", re.I)
+_R_ABOUT = re.compile(rf"\b{_R_VERB}\b(?P<fill>(?:\s+[\w']+){{0,6}}?)\s+(?:about|on|regarding|re|concerning|around)"
+                      rf"\s+(?P<topic>[^,.;!?]+)", re.I)
+_R_NOUN = re.compile(rf"\b{_R_VERB}\b\s+(?:the\s+|that\s+|my\s+|those\s+)?(?P<topic>(?:[\w']+\s+){{1,3}}?)"
+                     rf"(?:bit|part|thing|line|comment|remark|statement|point|figure|number|claim|update|estimate|"
+                     rf"sentence)\b", re.I)
+_CORR = re.compile(r"\b(?:i\s+mis[\s\-]?spoke|that\s+was\s+wrong|i\s+got\s+that\s+wrong|let\s+me\s+correct(?:\s+that)?|"
+                   r"i\s+said\s+it\s+wrong|my\s+mistake|i\s+was\s+wrong|correction)\b", re.I)
+_CORR_ONLY = re.compile(r"\b(?:i\s+mis[\s\-]?spoke|that\s+was\s+wrong|i\s+got\s+that\s+wrong|let\s+me\s+correct(?:\s+that)?|"
+                        r"correction)\b", re.I)
+_TOPIC_CUT = re.compile(r"\b(?:i\s+mis[\s\-]?spoke|because|since|i\s+meant|i\s+was|it\s+was|it's|they|he|she|"
+                        r"which|but|actually)\b", re.I)
+_TOPIC_DROP = {"the", "my", "that", "a", "an", "our", "this", "those", "what", "i", "said", "about", "on", "just"}
+
+
+def _inside_quotes(t: str, pos: int) -> bool:
+    return t[:pos].count('"') % 2 == 1 or t[:pos].count("“") > t[:pos].count("”")
+
+
+def _neg_hit(s: str, rules) -> bool:
+    for rx, guard in rules:
+        for m in rx.finditer(s):
+            if guard and _FLIP.search(s[max(0, m.start() - 30): m.start()]):
+                continue
+            return True
+    return False
+
+
+def _structured_start(t: str) -> Optional[Cue]:
+    for s, off in ((m.group(0), m.start()) for m in _SENT.finditer(t)):
+        if _Q_START.match(s) or _inside_quotes(t, off):
+            continue
+        if not (_OBJ.search(s) or _OBJ_DOWN.search(s)):
+            continue
+        strong, generic = _neg_hit(s, _NEG_STRONG), _neg_hit(s, _NEG_GENERIC)
+        if not (strong or generic):
+            continue
+        certain = bool(_FRAME.search(s) or _TARGET.search(s))
+        return Cue("start", "intent_start", weak=not certain, accept_alone=certain or strong, source="structured")
+    return None
+
+
+def _structured_end(t: str) -> Optional[Cue]:
+    for s, off in ((m.group(0), m.start()) for m in _SENT.finditer(t)):
+        if _Q_START.match(s) or _inside_quotes(t, off):
+            continue
+        for rx in _END_PATS:
+            m = rx.search(s)
+            if m and not _END_NEG.search(s[max(0, m.start() - 24): m.start()]):
+                rem = (s[m.end():] + t[off + len(s):]).strip(" ,.;!?")
+                return Cue("end", "intent_end", remainder=rem, source="structured")
+    return None
+
+
+def _clean_topic(raw: str) -> str:
+    raw = _TOPIC_CUT.split(raw)[0]
+    words = re.findall(r"[\w'\-]+", raw)
+    while words and words[0].lower() in _TOPIC_DROP:
+        words.pop(0)
+    return " ".join(words[:6])
+
+
+def _structured_retract(t: str) -> Optional[Cue]:
+    for rx in (_R_ABOUT, _R_NOUN):
+        for m in rx.finditer(t):
+            if _FLIP.search(t[max(0, m.start() - 24): m.start()]):
+                continue
+            corr = bool(_CORR.search(t))
+            if rx is _R_ABOUT and not (corr or _SPEECH.search(m.group("fill") or "")):
+                continue                       # "forget about the deadline": not a retraction
+            topic = _clean_topic(m.group("topic"))
+            if not topic:
+                continue
+            if rx is _R_ABOUT:
+                cut = _TOPIC_CUT.search(m.group("topic"))
+                end = m.start("topic") + (cut.start() if cut else len(m.group("topic").rstrip()))
+            else:
+                end = m.end()
+            return Cue("retro", "intent_retract", topic=topic, source="structured", span=(m.start(), end))
+    cm = _CORR_ONLY.search(t)
+    if cm:
+        tm = re.search(r"(?:misspoke|wrong|correct(?:ion)?)\s+(?:about|on|regarding|with)\s+([^,.;!?]+)", t, re.I)
+        return Cue("retro", "intent_correction", topic=_clean_topic(tm.group(1)) if tm else "",
+                   weak=True, accept_alone=True, source="structured", span=(cm.start(), cm.end()))
+    return None
+
+
+def _tidy(s: str) -> str:
+    s = re.sub(r"\s+([,.;!?])", r"\1", s)
+    s = re.sub(r"([,;])(?:\s*[,;])+", r"\1", s)
+    s = re.sub(r"([.!?])\s*[,;]\s*", r"\1 ", s)
+    s = re.sub(r"(^|[.!?]\s+)[,;\s]+", r"\1", s)
+    return re.sub(r"\s{2,}", " ", s).strip(" ,;")
+
+
+def _annotate_correction(cue: Cue, t: str) -> Cue:
+    """Retraction policy hook: when the retract line also carries a correction ("scratch the bit
+    about QA, I misspoke, they sign off Monday"), compute the utterance minus the retract clause.
+    The pipeline keeps that remainder as a normal public line (the correction is information)."""
+    if cue.kind != "retro" or not _CORR.search(t):
+        return cue
+    cue.corrected = True
+    rest = t
+    if cue.span:
+        a, b = cue.span
+        rest = rest[:a] + " " + rest[b:]
+    rest = _CORR.sub(" ", rest)
+    cue.keep_text = _tidy(rest)
+    return cue
+
+
+_GATE = re.compile(
+    r"\b(?:notes?|minutes|records?|recording|transcripts?|confidential|between\s+us|between\s+you\s+and\s+me|"
+    r"don'?t\s+share|do\s+not\s+share|not\s+share|written|write[\s\-]?up|write\s+(?:\w+\s+){0,2}down|"
+    r"misspoke|mis-spoke|scratch|retract|disregard|take\s+back|take\s+out|never\s*mind|unofficial|"
+    r"off\s+the\s+books|hush|keep\s+(?:this|that|it)\s+(?:quiet|private|secret)|our\s+secret|"
+    r"(?:strike|forget|ignore)\s+(?:that|what|the))\b", re.I)
+
+
+def gate_signal(text: str) -> bool:
+    """Cheap lexical signal that an utterance might be about the record itself."""
+    return bool(_GATE.search(text))
+
+
+def detect_structured(t: str) -> Cue:
+    """Composable-feature detector on normalised text. Priority: retract, start, end."""
+    for fn in (_structured_retract, _structured_start, _structured_end):
+        c = fn(t)
+        if c is not None:
+            return _annotate_correction(c, t)
+    return Cue()
+
+
 def detect(text: str) -> Cue:
-    """Cue detection on one utterance: strict regexes first, then ASR-noise repair."""
+    """Cue detection on one utterance: strict regexes, ASR-noise repair, then the structured
+    feature detector (also on word-canonicalised text). Cheap, no LLM."""
     t = _norm(text)
     cue = _detect_strict(t)
+    if cue.kind == "retro":
+        return _annotate_correction(cue, t)
     if cue.kind is not None or cue.false_alarm:
         return cue
     fixed, changed = repair_asr(t)
@@ -270,8 +533,73 @@ def detect(text: str) -> Cue:
         c2 = _detect_strict(fixed)
         if c2.kind is not None:
             c2.fuzzy = True
-            return c2
+            return _annotate_correction(c2, fixed) if c2.kind == "retro" else c2
+    c3 = detect_structured(fixed)
+    if c3.kind is None:
+        canon, ch2 = canon_words(fixed)
+        if ch2:
+            c3 = detect_structured(canon)
+            c3.fuzzy = True
+    elif changed:
+        c3.fuzzy = True
+    if c3.kind is not None:
+        return c3
+    cue.gate = gate_signal(t)
     return cue
+
+
+# ------------------------------------------------------------------ LLM cue-intent fallback
+CUE_PROMPT = """Does this meeting utterance ask to stop, resume, or retract note-taking (the written record)?
+Utterance: "{text}"
+Note-taking is currently: {state}.
+- start: asks that what is said now / next / in this same sentence be kept out of the notes
+- end: says note-taking can resume
+- retract: withdraws or corrects an earlier statement (give the topic)
+- none: anything else
+Answer JSON only: {{"intent":"start|end|retract|none","topic":"<topic or empty>"}}"""
+
+
+def call_with_timeout(fn, timeout: float):
+    """Run fn() in a daemon thread. Returns (ok, value); a hang or exception gives (False, None)."""
+    box: dict = {}
+
+    def run():
+        try:
+            box["v"] = fn()
+        except Exception as e:      # noqa: BLE001
+            box["e"] = e
+
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    th.join(timeout)
+    if th.is_alive() or "e" in box:
+        return False, None
+    return True, box.get("v")
+
+
+def parse_cue_intent(reply) -> Optional[dict]:
+    obj = extract_json(reply if isinstance(reply, str) else "")
+    if not isinstance(obj, dict):
+        return None
+    intent = str(obj.get("intent", "")).strip().lower()
+    if intent not in ("start", "end", "retract", "none"):
+        return None
+    return {"intent": intent, "topic": str(obj.get("topic") or "").strip()}
+
+
+def merge_llm_intent(cue: Cue, res: dict, text: str) -> Cue:
+    """Combine the structured/regex cue (possibly empty/weak) with the LLM's verdict."""
+    intent = res["intent"]
+    if intent == "none":
+        return Cue(gate=cue.gate) if cue.weak else cue
+    if intent == "start":
+        return Cue("start", "llm_start", source="llm")
+    if intent == "end":
+        return Cue("end", "llm_end", source="llm", remainder=cue.remainder if cue.kind == "end" else "")
+    topic = res["topic"] or (cue.topic if cue.kind == "retro" else "")
+    c = Cue("retro", "llm_retract", topic=_clean_topic(topic) if topic else "", source="llm",
+            span=cue.span if cue.kind == "retro" else ())
+    return _annotate_correction(c, _norm(text))
 
 
 _CATEGORY_WORDS = {
