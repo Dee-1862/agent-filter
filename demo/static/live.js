@@ -523,11 +523,11 @@
     if (!data) return;
     if (data.identity) me = data.identity;
     if (data.participants) participants = data.participants;
-    if (Array.isArray(data.lines)) lines = indexLines(data.lines);
     if (typeof data.finalized === "boolean") finalized = data.finalized;
     if (typeof data.ready_for_final === "boolean") readyForFinal = data.ready_for_final;
     if (typeof data.finalized_count === "number") finalizedCount = data.finalized_count;
     if (typeof data.contributor_count === "number") contributorCount = data.contributor_count;
+    if (Array.isArray(data.lines)) lines = indexLines(data.lines);
     if (data.redaction_counts) redactionCounts = data.redaction_counts;
     if (data.insights) insights = data.insights;
     if (Array.isArray(data.kept_out)) setChips(data.kept_out);
@@ -1377,6 +1377,8 @@
     $("end-dialog").classList.remove("hidden");
     $("end-backdrop").classList.remove("hidden");
     $("end-email-review").classList.add("hidden");
+    $("end-without-email").classList.remove("hidden");
+    $("end-confirm").classList.add("hidden");
     setText($("end-summary"), "Checking whether the final transcript is ready…");
     setText($("end-error"), "");
     $("end-cancel").focus();
@@ -1409,12 +1411,13 @@
       endNeedsCopy = fullLink.length > 1800;
       endCopied = !endNeedsCopy;
       $("end-mail-limit").classList.toggle("hidden", !endNeedsCopy);
-      $("end-copy-transcript").classList.toggle("hidden", !endNeedsCopy);
       const link = $("end-email-link");
       link.href = endNeedsCopy ? prefix : fullLink;
       link.classList.toggle("disabled", endNeedsCopy);
       link.setAttribute("aria-disabled", String(endNeedsCopy));
       $("end-email-review").classList.remove("hidden");
+      $("end-without-email").classList.add("hidden");
+      $("end-confirm").classList.remove("hidden");
     } catch (error) {
       if (error.status === 409) setText($("end-summary"), "The final transcript is still waiting for contributors to finish. You can keep the meeting open or end without email.");
       else {
@@ -1572,19 +1575,22 @@
   $("end-keep-open").onclick = closeEndDialog;
   $("end-backdrop").onclick = closeEndDialog;
   $("end-without-email").onclick = endMeeting;
+  $("end-confirm").onclick = endMeeting;
   $("end-copy-transcript").onclick = async () => {
     try {
       await copyText(endEmailBody);
       endCopied = true;
       $("end-email-link").classList.remove("disabled");
       $("end-email-link").setAttribute("aria-disabled", "false");
-      setText($("end-mail-limit"), "Copied. Open the addressed draft, then paste and send it in your mail app.");
+      $("end-mail-limit").classList.remove("hidden");
+      setText($("end-mail-limit"), endNeedsCopy
+        ? "Copied. Open the addressed draft, then paste and send it in your mail app. End the meeting here when you're ready."
+        : "Copied. You can paste the transcript if your mail app does not open. End the meeting here when you're ready.");
     } catch (error) { setText($("end-error"), `Could not copy transcript: ${error.message}`); }
   };
   $("end-email-link").onclick = event => {
     if (endNeedsCopy && !endCopied) { event.preventDefault(); return; }
-    // The user's click opens a local mail app draft; the server never sends email.
-    setTimeout(endMeeting, 0);
+    // Opening a mail app can fail silently, so ending the meeting requires a separate click.
   };
   $("leave-button").onclick = async () => {
     if (role === "host" && roomId) await showEndDialog();

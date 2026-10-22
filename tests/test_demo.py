@@ -328,6 +328,65 @@ def test_meeting_guest_can_cancel_pending_request(monkeypatch):
         assert guest.get("/api/meetings/" + room + "/status").status_code == 401
 
 
+def test_public_demo_meeting_limit_releases_slot_on_end(monkeypatch):
+    monkeypatch.setenv("OTR_MAX_ACTIVE_MEETINGS", "1")
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    body = {"name": "Host", "email": "host@example.test"}
+    with TestClient(app) as host, TestClient(app) as other:
+        first = host.post("/api/meetings", json=body)
+        assert first.status_code == 200
+        assert other.post("/api/meetings", json=body).status_code == 429
+        assert len(app.state.meetings) == 1
+        assert host.post("/api/meetings/" + first.json()["room_id"] + "/end").status_code == 200
+        assert other.post("/api/meetings", json=body).status_code == 200
+
+
+def test_public_demo_pending_request_limit_frees_slots(monkeypatch):
+    monkeypatch.setenv("OTR_MAX_PENDING_JOIN_REQUESTS", "1")
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host, TestClient(app) as first, TestClient(app) as second:
+        room = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()["room_id"]
+        endpoint = "/api/meetings/" + room + "/request"
+        body = {"name": "Guest", "email": "g@example.test"}
+        requested = first.post(endpoint, json=body)
+        assert requested.status_code == 200
+        assert second.post(endpoint, json=body).status_code == 429
+        assert len(host.get("/api/meetings/" + room + "/status").json()["pending"]) == 1
+        assert first.post("/api/meetings/" + room + "/cancel").status_code == 200
+        requested = second.post(endpoint, json=body)
+        assert requested.status_code == 200
+        assert host.post("/api/meetings/" + room + "/deny",
+                         json={"request_id": requested.json()["request_id"]}).status_code == 200
+        assert first.post(endpoint, json=body).status_code == 200
+
+
+def test_me_summary_omits_approved_text_without_changing_full_view():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host:
+        created = host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"}).json()
+        live = app.state.meetings[created["room_id"]]["session"]
+        live.approved["line-1"] = {"id": "line-1", "name": "Host", "text": "Approved private line"}
+        live.line_owner["line-1"] = created["identity"]
+        full = host.get("/api/me").json()
+        summary = host.get("/api/me?summary=1").json()
+        assert full["lines"][0]["text"] == "Approved private line"
+        assert "lines" not in summary
+        assert summary == {key: value for key, value in full.items() if key != "lines"}
+        assert "Approved private line" not in json.dumps(summary)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/notes/remove", {"id": "line-1"}),
+    ("/api/notes/finalize", {}),
+    ("/api/leave", {}),
+])
+def test_live_mutations_reject_foreign_origin(path, body):
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as host:
+        host.post("/api/meetings", json={"name": "Host", "email": "h@example.test"})
+        assert host.post(path, json=body, headers={"origin": "https://evil.example"}).status_code == 403
+
+
 def test_meeting_cookies_keep_host_sessions_separate_across_tabs():
     app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
     with TestClient(app) as browser:
@@ -343,6 +402,44 @@ def test_meeting_cookies_keep_host_sessions_separate_across_tabs():
         assert browser.post("/api/leave", headers=first_page).status_code == 200
         assert browser.get("/api/meetings/" + first_id + "/status").status_code == 401
         assert browser.get("/api/meetings/" + second_id + "/status").status_code == 200
+
+
+def test_public_frontend_origin_is_explicitly_allowlisted(monkeypatch):
+    public = "https://consentmeeting.vercel.app"
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as browser:
+        body = {"name": "Host", "email": "host@example.test"}
+        assert browser.post("/api/meetings", json=body, headers={"origin": public}).status_code == 403
+        monkeypatch.setenv("OTR_PUBLIC_ORIGIN", public)
+        created = browser.post("/api/meetings", json=body, headers={"origin": public})
+        assert created.status_code == 200
+        assert created.json()["join_url"].startswith(public + "/m/")
+        room = created.json()["room_id"]
+        assert browser.post("/api/meetings/" + room + "/end",
+                            headers={"origin": public + ".evil"}).status_code == 403
+        assert browser.post("/api/meetings/" + room + "/end",
+                            headers={"origin": "https://other.example"}).status_code == 403
+        assert browser.get("/api/meetings/" + room + "/status").status_code == 200
+        assert browser.post("/api/meetings/" + room + "/end",
+                            headers={"origin": public}).status_code == 200
+
+
+def test_public_frontend_referer_selects_room_specific_cookie(monkeypatch):
+    public = "https://consentmeeting.vercel.app"
+    monkeypatch.setenv("OTR_PUBLIC_ORIGIN", public)
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as browser:
+        first = browser.post("/api/meetings", json={"name": "First", "email": "one@example.test"}).json()
+        second = browser.post("/api/meetings", json={"name": "Second", "email": "two@example.test"}).json()
+        first_page = {"referer": public + "/m/" + first["room_id"] + "?view=notes"}
+        second_page = {"referer": public + "/m/" + second["room_id"]}
+        assert browser.get("/api/me", headers=first_page).json()["identity"] == first["identity"]
+        assert browser.get("/api/me", headers=second_page).json()["identity"] == second["identity"]
+        assert browser.get("/api/me", headers={"referer": "http://["}).status_code == 200
+        assert browser.post("/api/consent", json={"recording": True},
+                            headers={**first_page, "origin": public}).status_code == 200
+        assert app.state.meetings[first["room_id"]]["session"].source.consent_snapshot()[first["identity"]] is True
+        assert app.state.meetings[second["room_id"]]["session"].source.consent_snapshot()[second["identity"]] is False
 
 
 def test_host_end_purges_room_and_revokes_guest_access():
