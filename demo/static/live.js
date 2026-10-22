@@ -8,9 +8,7 @@
 
   let room = null, me = null, eventSource = null;
   let participants = {};
-  let lines = new Map();
   let finalized = false, readyForFinal = false, finalizedCount = null, contributorCount = null;
-  let redactionCounts = null;
   let myNotesOn = false, sensitivePaused = false, sensitiveSeen = false;
   let speaking = new Set(), muted = new Map();
   const videoTracks = new Map(), videoMuted = new Set();
@@ -137,17 +135,6 @@
     const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
     return ((parts[0] || "?")[0] + (parts[1] ? parts[1][0] : "")).toUpperCase();
   }
-  function isMyLine(line) {
-    if (!me) return true;
-    const owner = line.speaker ?? line.identity ?? "";
-    return !owner || owner === me;
-  }
-  function indexLines(arr) {
-    const map = new Map();
-    for (const line of arr || []) if (line && line.id != null) map.set(line.id, line);
-    return map;
-  }
-
   function announce(message) { setText($("note-state-live"), message); }
   function setConnection(label, cls) {
     setText($("connection"), label);
@@ -255,27 +242,6 @@
     for (const identity of Object.keys(tileEls)) updateVideoTile(identity);
   }
 
-  function renderLines() {
-    const box = $("my-lines");
-    box.replaceChildren();
-    const mine = [...lines.values()].filter(line => !line.removed && isMyLine(line));
-    $("my-lines-empty").classList.toggle("hidden", mine.length > 0);
-    const badge = $("drawer-badge");
-    badge.classList.toggle("hidden", !mine.length);
-    setText(badge, String(mine.length));
-    for (const line of mine) {
-      const li = element("li", "line");
-      li.append(element("span", "words", line.text));
-      const remove = element("button", null, "✕");
-      remove.type = "button";
-      remove.setAttribute("aria-label", `Remove line: ${line.text}`);
-      remove.disabled = finalized;
-      remove.onclick = () => removeLine(line.id, remove);
-      li.append(remove);
-      box.append(li);
-    }
-  }
-
   function renderNotesControl() {
     const button = $("notes-button");
     const paused = sensitivePaused && !finalized;
@@ -283,25 +249,16 @@
     button.classList.toggle("paused", paused);
     button.disabled = finalized;
     button.setAttribute("aria-pressed", String(myNotesOn));
-    if (finalized) setText($("notes-label"), "Notes finished");
-    else if (paused) setText($("notes-label"), "Notes paused — restart");
-    else if (myNotesOn) setText($("notes-label"), "Stop notes for me");
-    else setText($("notes-label"), "Notes off");
+    const label = finalized ? "Notes finished" : myNotesOn ? "Turn off notes" : "Turn on notes";
+    setText($("notes-label"), label);
+    button.setAttribute("aria-label", label);
+    button.title = label;
     const shortStatus = $("capture-status");
     shortStatus.className = "capture-status" + (paused ? " paused" : myNotesOn ? " on" : "");
     if (finalized) setText(shortStatus, "Your notes are finished.");
     else if (paused) setText(shortStatus, "Your notes paused. Pending text was discarded.");
     else if (myNotesOn) setText(shortStatus, "Your audio is being transcribed locally for notes.");
     else setText(shortStatus, "Your notes are off. Others can still hear you.");
-  }
-
-  function renderRedactionCounts() {
-    const node = $("my-redaction-counts");
-    if (!redactionCounts) { node.classList.add("hidden"); return; }
-    const suppressed = Number(redactionCounts.suppressed) || 0;
-    const removed = Number(redactionCounts.removed) || 0;
-    setText(node, `For you: ${suppressed} kept out before the draft · ${removed} removed from the draft. No withheld words are shown.`);
-    node.classList.remove("hidden");
   }
 
   function renderFinalReport(data) {
@@ -328,20 +285,8 @@
     const explanation = $("note-state-explainer");
     if (finalized) setText(explanation, "Your notes are finished. Your speech can no longer be added to the transcript.");
     else if (paused) setText(explanation, "The local filter paused your notes and discarded the pending text. Nothing new is added until you restart notes yourself.");
-    else if (myNotesOn) setText(explanation, "The local meeting host is transcribing your audio. Approved lines appear below after a short safety hold.");
+    else if (myNotesOn) setText(explanation, "The meeting host is transcribing your audio for notes.");
     else setText(explanation, "Notes are off for you. The call still sends your audio to other people when your microphone is on.");
-
-    const list = $("drawer-people");
-    list.replaceChildren();
-    for (const [identity, p] of Object.entries(participants)) {
-      const on = notesOn(p);
-      const li = element("li");
-      li.append(element("span", "person-name", `${p.name || identity}${identity === me ? " (you)" : ""}`));
-      const status = element("span", "person-notes" + (on ? " on" : ""), on ? "Notes on" : "Notes off");
-      status.prepend(element("span", "dot"));
-      li.append(status);
-      list.append(li);
-    }
 
     const status = $("finalize-status");
     $("finalize-button").classList.toggle("hidden", finalized);
@@ -352,7 +297,6 @@
       $("delivery-email").value = deliveryEmail;
       $("email-opt-in").checked = emailOptedIn;
     }
-    renderRedactionCounts();
     if (!readyForFinal) {
       $("copy-result").className = "waiting";
       setText($("copy-result"), "");
@@ -361,12 +305,11 @@
     else if (finalized) setText(status, finalizedCount != null && contributorCount != null
       ? `Waiting for other contributors — ${finalizedCount} of ${contributorCount} finished.`
       : "Waiting for other contributors to finish their notes.");
-    else setText(status, "Review or remove lines above, then finish your notes. Finishing keeps notes off.");
+    else setText(status, "Finish your notes when you are ready. Finishing keeps notes off.");
   }
 
   function renderAll() {
     renderTiles();
-    renderLines();
     renderNotesControl();
     renderDrawer();
   }
@@ -375,12 +318,10 @@
     if (!data) return;
     if (data.identity) me = data.identity;
     if (data.participants) participants = data.participants;
-    if (Array.isArray(data.lines)) lines = indexLines(data.lines);
     if (typeof data.finalized === "boolean") finalized = data.finalized;
     if (typeof data.ready_for_final === "boolean") readyForFinal = data.ready_for_final;
     if (typeof data.finalized_count === "number") finalizedCount = data.finalized_count;
     if (typeof data.contributor_count === "number") contributorCount = data.contributor_count;
-    if (data.redaction_counts) redactionCounts = data.redaction_counts;
     if (typeof data.delivery_email === "string") deliveryEmail = data.delivery_email;
     if (typeof data.email_opted_in === "boolean") emailOptedIn = data.email_opted_in;
     const mine = participants[me] || {};
@@ -421,23 +362,7 @@
       try { message = JSON.parse(event.data); } catch (_) { return; }
       if (message.type === "participants") applyMe({ participants: message.participants });
       else if (message.type === "service") setConnection(message.status, "warn");
-      else if (message.type === "snapshot") {
-        if (Array.isArray(message.lines)) lines = indexLines(message.lines);
-        renderLines();
-      } else if (message.type === "transcript") {
-        let changed = false;
-        for (const change of message.changes || []) {
-          if (change.kind === "committed" && change.line && isMyLine(change.line)) {
-            lines.set(change.line.id, change.line);
-            changed = true;
-          }
-          if (change.kind === "removed" && lines.delete(change.id)) changed = true;
-        }
-        if (changed) renderLines();
-      } else if (message.type === "redaction_counts" && message.redaction_counts) {
-        redactionCounts = message.redaction_counts;
-        renderRedactionCounts();
-      }
+      // The compact meeting view does not render interim transcript events.
       mergeProgress(message);
       refreshMe(false);
     };
@@ -589,19 +514,6 @@
       showToast(`<strong>Couldn't update notes.</strong> ${escapeHtml(error.message)}`, "err");
     } finally {
       button.disabled = false;
-    }
-  }
-
-  async function removeLine(id, removeButton) {
-    removeButton.disabled = true;
-    try {
-      await post("/api/notes/remove", { id });
-      lines.delete(id);
-      renderLines();
-      announce("Line removed.");
-    } catch (error) {
-      showToast(`<strong>Couldn't remove the line.</strong> ${escapeHtml(error.message)}`, "err");
-      removeButton.disabled = false;
     }
   }
 

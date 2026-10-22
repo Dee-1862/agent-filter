@@ -97,8 +97,8 @@ body:has(#meeting:not(.hidden)) #site-header { display: none; }
 .muted-badge { position: absolute; bottom: -3px; right: -3px; z-index: 2; background: #5f6368; color: white; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; border: 2px solid #3c4043; }
 .muted-badge svg { width: 13px; height: 13px; }
 .tile-notes { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 6px; border-radius: 5px; background: rgba(0,0,0,.55); padding: 5px 9px; color: #e8eaed; font-size: 12px; }
-.tile-notes .dot, .people .dot { width: 7px; height: 7px; border-radius: 50%; background: #bdc1c6; }
-.tile-notes.on .dot, .people .person-notes.on .dot { background: #81c995; }
+.tile-notes .dot { width: 7px; height: 7px; border-radius: 50%; background: #bdc1c6; }
+.tile-notes.on .dot { background: #81c995; }
 .tile-notes.on { color: #81c995; }
 .tile-info { width: 100%; position: relative; z-index: 2; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .tile-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px #202124; }
@@ -138,7 +138,6 @@ body:has(#meeting:not(.hidden)) #site-header { display: none; }
 .footer-action { background: transparent; color: #e8eaed; border: 0; min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; white-space: nowrap; }
 .footer-action:hover { background: #3c4043; }
 .footer-action svg { width: 22px; height: 22px; }
-.badge { background: #81c995; color: #202124; min-width: 17px; height: 17px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; padding: 0 4px; }
 
 /* Notes drawer */
 .backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.35); }
@@ -155,17 +154,7 @@ body:has(#meeting:not(.hidden)) #site-header { display: none; }
 .note-state-card h3 { margin-bottom: 5px; }
 .note-state-card p, .drawer-hint { color: #5f6368; font-size: 13px; line-height: 1.5; margin: 0 0 11px; }
 .note-state-card p { margin: 0; }
-.redaction-counts { background: #f8f9fa; border-left: 3px solid #1a73e8; padding: 9px 12px; border-radius: 4px; color: #3c4043; font-size: 13px; margin: 10px 0 0; }
-.lines, .people { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.line { display: flex; gap: 8px; background: #f8f9fa; border-radius: 8px; padding: 10px; }
-.line .words { flex: 1; word-break: break-word; }
-.line button { border: 0; color: #5f6368; background: transparent; }
-.line button:hover { color: #b3261e; }
-.empty, .waiting { color: #5f6368; font-size: 13px; margin: 0; }
-.people li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f1f3f4; }
-.person-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.person-notes { color: #5f6368; display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; }
-.person-notes.on { color: #188038; }
+.waiting { color: #5f6368; font-size: 13px; margin: 0; }
 .where-run { border-top: 1px solid #e8eaed; padding-top: 16px; }
 .where-run summary { cursor: pointer; font-weight: 600; }
 .where-run p { color: #5f6368; font-size: 13px; }

@@ -110,9 +110,9 @@
       </button>
       <button id="camera-button" class="control camera-off" type="button" aria-pressed="false" aria-label="Turn on camera" title="Turn on camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18 10.48 22 7v10l-4-3.48V17a2 2 0 0 1-2 2H4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3.48ZM4 7v10h12V7H4Z"/></svg><span id="camera-label">Turn on camera</span></button>
       <span class="divider" aria-hidden="true"></span>
-      <button id="notes-button" class="control" aria-pressed="false">
+      <button id="notes-button" class="control" aria-pressed="false" aria-label="Turn on notes" title="Turn on notes">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2m-4 13h-6v-2h6m0-4h-6V8h6Z"/></svg>
-        <span id="notes-label">Notes off</span>
+        <span id="notes-label">Turn on notes</span>
       </button>
       <span class="divider" aria-hidden="true"></span>
       <button id="leave-button" class="control leave">
@@ -122,7 +122,7 @@
     </div>
     <div class="footer-right">
       <button id="share-meeting-link-button" class="footer-action hidden" type="button" aria-label="Copy meeting link" title="Copy meeting link"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 5h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3h2v3h12V7h-3V5ZM5 3h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v9h9V5H5Z"/></svg><span>Copy link</span></button>
-      <button id="drawer-button" class="footer-action" aria-expanded="false" aria-controls="notes-drawer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 4h16v16H4V4Zm2 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Z"/></svg><span>My notes</span><span id="drawer-badge" class="badge hidden" aria-hidden="true">0</span></button>
+      <button id="drawer-button" class="footer-action" aria-expanded="false" aria-controls="notes-drawer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 4h16v16H4V4Zm2 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Z"/></svg><span>My notes</span></button>
     </div>
   </footer>
 
@@ -143,27 +143,12 @@
         <h3 id="note-state-title">Your note status</h3>
         <p id="note-state-explainer">Notes are off for you. The call still sends your audio to other people when your microphone is on.</p>
       </section>
-      <section class="drawer-section" aria-labelledby="lines-heading">
-        <h3 id="lines-heading">My live transcript</h3>
-        <p class="drawer-hint">Only your own approved lines appear here during the call, after a short safety hold. You can remove a line before finishing.</p>
-        <p id="my-lines-empty" class="empty">No approved lines yet.</p>
-        <ol id="my-lines" class="lines"></ol>
-      </section>
-      <section class="drawer-section" aria-labelledby="protection-heading">
-        <h3 id="protection-heading">What gets kept out?</h3>
-        <p class="drawer-hint">The local filter tries to keep sensitive speech out and acts on stop or remove requests. It may miss things, so check your lines and remove anything you do not want kept. Withheld words are never shown here.</p>
-        <p id="my-redaction-counts" class="redaction-counts hidden"></p>
-      </section>
-      <section class="drawer-section" aria-labelledby="people-heading">
-        <h3 id="people-heading">People</h3>
-        <ul id="drawer-people" class="people"></ul>
-      </section>
       <details class="where-run">
         <summary>How does audio become notes?</summary>
         <ol>
           <li>Your microphone controls who hears you in the call. Notes are a separate choice.</li>
           <li>With your notes on, the local meeting host transcribes your speech and holds each line briefly while the local filter checks it.</li>
-          <li>Only approved lines appear in your private live transcript. You can remove them before finishing.</li>
+          <li>The local filter keeps sensitive lines out of the final transcript and acts on stop or remove requests.</li>
           <li>After everyone finishes, someone can explicitly copy the combined final transcript. The final report shows counts, never withheld words.</li>
         </ol>
         <p>Speech recognition, filtering, and the LiveKit room run on the local host serving this page. No cloud service is involved.</p>
