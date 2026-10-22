@@ -57,3 +57,10 @@ python -m pytest tests/test_bench.py -q
 - `python -m bench.import_confaide <confaide_clone>` expects `benchmark/tier_4.jsonl` (field names are best-effort; see docstring).
 - `python -m bench.import_qmsum <QMSum_clone>` expects `data/ALL/test/*.json`; splices synthetic private spans into real QMSum windows.
 Both write a separate jsonl; pass it with `--bench`.
+
+## Held-out set, B+, causal modes, new metrics (added)
+
+- `bench/heldout/` holds a SEALED 36-item set and a noisy-ASR variant; see `bench/heldout/README.md`. Engine code must not be tuned on it.
+- `python -m bench.run_eval --set dev|heldout|heldout_noisy|all` (results: `results*.json`, `.md`, and a leak vs omit scatter `.png`).
+- Systems: `A`, `B`, `B+` (contextual-integrity extract-then-judge), `B/causal`, `B+/causal` (each segment decided with text only up to `t_end + hold`, the same lag as C), `C`. Without `--llm`, B and B+ are labelled `-stub` heuristics; the stubs are forward-only scanners, so their hindsight and causal variants differ only when a retraction arrives later than the hold window.
+- Metrics: item-level Leak, Omit-Public, Leak-or-Omit (ConfAIde Table 4 style), Conveyance, Wilson 95% intervals, exact McNemar between systems (b, c, p, risk difference), cluster counts, per-stage log for C from `Pipeline.audit_log()`. Per-case cells with n < 10 are descriptive only.
