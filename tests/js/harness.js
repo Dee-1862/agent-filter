@@ -3,11 +3,11 @@
  *
  *   node tests/js/harness.js        (exit code 0 = all checks passed)
  *
- * It exercises Lance Streuber's meeting page (live.html/live.js): create meeting, share link, request to join,
- * admit, presence ("Not connected yet"), the My notes drawer, and the features added to it in his style (device check
- * and in-call device menu, close-talk capture constraints, the notes-engine row from /api/diagnostics, inline
- * kept-out rows that expand in place, the pop-out button), plus the operator console (index.html) and the privacy
- * contract on the pages: a planted secret never reaches the DOM and "Reveal text" exists only in the console.
+ * It exercises: the lobby / admission flow (host and guest), the single Meet-style side panel in consent mode
+ * (Off The Record, What was kept out, How it decides, People, Meeting details), the three views of the operator
+ * console, and the privacy contract on the page:
+ * a planted secret never reaches the DOM, Insights has only category rows, and "Reveal text" exists
+ * only in the operator console.
  */
 "use strict";
 const fs = require("fs");
@@ -224,16 +224,14 @@ function makeEnv(html, opts) {
     push(msg) { if (this.onmessage) this.onmessage({ data: JSON.stringify(msg), lastEventId: "" }); }
   }
   class Participant {
-    constructor() { this.isMicrophoneEnabled = false; this.isCameraEnabled = false; this.throws = false; }
+    constructor() { this.isMicrophoneEnabled = false; this.isCameraEnabled = false; }
     async setMicrophoneEnabled(v) { this.isMicrophoneEnabled = v; }
     async setCameraEnabled(v) { this.isCameraEnabled = v; }
     getTrackPublication() { return null; }
   }
   const rooms = [];
   class Room {
-    constructor(options) { this.options = options; this.switched = []; this.handlers = {}; this.localParticipant = new Participant(); this.canPlaybackAudio = true; this.remoteParticipants = new Map(); rooms.push(this); }
-    getActiveDevice() { return ""; }
-    async switchActiveDevice(kind, id) { this.switched = [kind, id]; return true; }
+    constructor() { this.handlers = {}; this.localParticipant = new Participant(); this.canPlaybackAudio = true; rooms.push(this); }
     on(ev, fn) { this.handlers[ev] = fn; return this; }
     async connect(url, token) { this.url = url; this.token = token; }
     async disconnect() { this.disconnected = true; }
@@ -266,24 +264,13 @@ function makeEnv(html, opts) {
     Map, Set, String, Number, Boolean, Error, RegExp, Symbol, Proxy, parseInt, parseFloat, isNaN, URL, URLSearchParams,
     encodeURIComponent, decodeURIComponent, performance, globalThis: undefined,
     fetch: fetchStub, EventSource: FakeES, requestAnimationFrame: fn => setTimeout(fn, 0),
-    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
-    navigator: { clipboard: { writeText: async () => {} }, sendBeacon() {}, mediaDevices: {
-      _opened: [],
-      async enumerateDevices() { return opts.devices || []; },
-      async getUserMedia(c) {
-        const kind = c.audio ? "audio" : "video";
-        this._opened.push(kind);
-        const track = { kind, readyState: "live", stop() {}, getSettings: () => ({ deviceId: "mic1" }) };
-        return { getTracks: () => [track], getAudioTracks: () => (kind === "audio" ? [track] : []) };
-      },
-      addEventListener() {} } },
-    sessionStorage: { getItem: () => null, setItem: () => {} }, _opened: [],
+    localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
+    navigator: { clipboard: { writeText: async () => {} }, mediaDevices: {}, sendBeacon() {} },
     location: { origin: "http://127.0.0.1:8000", pathname: opts.pathname || "/", search: "", href: "", reload() {} },
     history: { replaceState() {} },
     LivekitClient, isSecureContext: true, AudioContext: undefined,
   };
   sandbox.window = sandbox; sandbox.globalThis = sandbox;
-  sandbox.open = (...args) => { sandbox._opened.push(args); return {}; };
   sandbox.window.isSecureContext = true;
   const ctx = vm.createContext(sandbox);
   return { doc, ctx, calls, sources, rooms, store, sandbox, run(code, name) { vm.runInContext(code, ctx, { filename: name }); } };
@@ -312,181 +299,11 @@ const text = el => el.textContent;
 const visible = el => { for (let n = el; n; n = n.parentNode) { if (n.hidden || (n.classList && n.classList.contains("hidden"))) return false; } return true; };
 const all = (env, pred) => env.doc.body.all().filter(pred);
 
-// ------------------------------------------------------------------ scenario 1: Lance's meeting page, host + lobby + drawer
+// ------------------------------------------------------------------ scenario 1: consent page, host + lobby + three views
 async function consentHost() {
   const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
-  const insights = { approved: 1, kept_out: { pay_hr: 1 }, total: 1, removed: 0,
-    timeline: [{ t: 0, state: "off" }, { t: 1.2, state: "recording" }], now: 40, hold_seconds: 10 };
-  // Text-free detail, as the server sends it. The extra `text` fields are a hostile server: the page must ignore them.
-  let keptEvents = [], notesOn = false;
-  const meBody = () => ({ identity: "person-host", participants: { "person-host": { name: "Hana", recording: notesOn } },
-    kept_out: [], kept_out_events: keptEvents, line_times: {}, waiting: 0, insights, redaction_counts: { suppressed: 0, removed: 0, total: 0 },
-    finalized: false, ready_for_final: false, finalized_count: 0, contributor_count: 1 });
-  const env = makeEnv(html, {
-    pathname: "/",
-    routes: {
-      "POST /api/meetings": { room_id: "room1", join_url: "http://127.0.0.1:8000/m/room1", identity: "person-host", name: "Hana",
-        role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "room1" },
-      "GET /api/me?summary=1": meBody,
-      "GET /api/diagnostics": { models: { whisper: { name: "base.en", loaded: true, rtf: 0.21 },
-        llm: { name: "qwen", reachable: true, warm: true }, presidio: { model: "en_core", available: true } },
-        me: { subscribed: true, notes_on: true, state: "hearing_you", audio_level: 0.5, waiting_lines: 0 }, hold_seconds: 10 },
-      "GET /api/meetings/room1/status": { status: "admitted", role: "host", identity: "person-host", name: "Hana", token: "tok",
-        url: "ws://127.0.0.1:7880", room: "room1",
-        pending: [{ request_id: "r1", name: "Guest Gail", email: "gail@example.com" }] },
-      "POST /api/meetings/room1/admit": { ok: true },
-      "POST /api/consent": { identity: "person-host", recording: true },
-    },
-    devices: [
-      { kind: "audioinput", deviceId: "mic1", label: "Fake Microphone" }, { kind: "audioinput", deviceId: "mic2", label: "Desk Microphone" },
-      { kind: "videoinput", deviceId: "cam1", label: "Fake Camera" }, { kind: "audiooutput", deviceId: "spk1", label: "Fake Speaker" },
-    ],
-  });
-  loadScripts(env, html);
-  const $ = id => env.doc.getElementById(id);
-  check(visible($("home-screen")) && !visible($("meeting")), "home screen first, meeting hidden");
-  $("create-button").click();
-  check(visible($("host-setup")), "create opens host setup");
-  $("host-name").value = "Hana"; $("host-email").value = "hana@example.com";
-  $("host-create-button").click();
-  await sleep(30);
-  check(visible($("share-screen")) && $("share-link").value.endsWith("/m/room1"), "share screen shows the meeting link");
-  check(env.calls.some(c => c.url === "/api/meetings" && c.body.name === "Hana"), "host created the meeting");
-
-  // device check before joining sits on the share screen, with selectors that list the devices
-  check(visible($("device-check")) && $("share-screen").contains($("device-check")), "the device check is on the share screen");
-  await $("check-devices-button").click(); await sleep(30);
-  check(visible($("device-check-live")), "Check devices opens the live check");
-  check($("check-mic").all().length === 2 && $("check-cam").all().length === 1, "microphone and camera selectors list the devices");
-  check(env.sandbox.navigator.mediaDevices._opened.includes("audio") && env.sandbox.navigator.mediaDevices._opened.includes("video"),
-    "the check opened the microphone and the camera");
-
-  $("share-join-button").click();
-  await sleep(60);
-  check(visible($("meeting")) && visible($("control-bar")), "meeting and control bar shown after entering");
-  check(text($("notes-label")) === "Turn on notes", "notes switch labels the action while notes are off");
-  check(env.rooms.length === 1 && env.rooms[0].token === "tok", "joined the LiveKit room with the server-issued token");
-  const opts = env.rooms[0].options || {};
-  check(opts.audioCaptureDefaults && opts.audioCaptureDefaults.autoGainControl === false
-    && opts.audioCaptureDefaults.noiseSuppression === true && opts.audioCaptureDefaults.echoCancellation === true,
-    "close-talk capture constraints are set on the room");
-  check(!visible($("device-check")), "the device check is released once the call starts");
-  check(visible($("host-lobby")), "host sees the lobby");
-  await sleep(10);
-  check(text($("lobby-list")).includes("Guest Gail"), "lobby lists the waiting guest");
-  const admitBtn = $("lobby-list").all().find(e => e.tagName === "BUTTON" && text(e) === "Admit");
-  admitBtn.click(); await sleep(20);
-  check(env.calls.some(c => c.url === "/api/meetings/room1/admit" && c.body.request_id === "r1"), "host admitted the guest");
-
-  // his page, not the side-panel design
-  check(!$("side-panel") && !$("view-tabs") && !$("captions") && !$("agent-button") && !$("people-button"),
-    "no side panel, tab bar or caption stage");
-  check(env.calls.some(c => c.url === "/api/me?summary=1") && !env.calls.some(c => c.url === "/api/me"),
-    "the page asks for the text-free summary of /api/me");
-
-  const es = env.sources[0];
-  check(es && es.url === "/stream", "stream opened");
-  notesOn = true;
-  es.push({ type: "participants", participants: { "person-host": { name: "Hana", recording: true },
-    "person-gail": { name: "Gail", recording: false } } });
-  await sleep(10);
-  const tiles = $("tile-grid").all().filter(e => String(e.className).split(" ").includes("tile"));
-  check(tiles.length === 2, "two tiles, one per participant");
-  const gail = tiles.find(t => text(t).includes("Gail"));
-  check(gail && String(gail.className).includes("not-connected") && text(gail).includes("Not connected yet"),
-    "a person who is admitted but not in the call yet shows Not connected yet");
-  check(text($("notes-label")) === "Turn off notes", "notes switch shows notes on after the participant update");
-
-  // open the notes drawer: his notes view first, our rows added
-  $("drawer-button").click();
-  check(!$("notes-drawer").hidden && text($("drawer-title")) === "My notes", "My notes drawer opens");
-  check(text($("note-state-explainer")).includes("transcribing your audio") && visible($("finalize-button")),
-    "his note status and Finish my notes are still the first thing in the drawer");
-  // the diagnostics row polls /api/diagnostics and says what the engine hears
-  check(env.calls.some(c => c.url === "/api/diagnostics"), "diagnostics endpoint polled");
-  check(visible($("engine")) && text($("engine-input")) === "The notes engine is hearing you", "diagnostics row says the notes engine is hearing you");
-  check(text($("engine-models")).includes("Whisper base.en: ready") && text($("engine-models")).includes("Local model qwen: ready"),
-    "diagnostics row lists the model status");
-
-  check(visible($("kept-out-empty")) && $("kept-out-list").children.length === 0, "no kept-out rows yet");
-  keptEvents = [
-    { id: "u1", seq: 1, t: 12.3, category: "pay_hr", family: "kw", before: "ON", after: "PENDING_CONFIRM", held_s: 2.4,
-      action: "kept_out", code: "kw:pay_hr", text: SECRET },
-    { id: "u2", seq: 2, t: 31, category: "retracted", family: "retro", before: "ON", after: "ON", held_s: 0,
-      action: "removed_after_approval", code: "retro:retracted", text: SECRET },
-  ];
-  es.push({ type: "status", ...insights, text: SECRET });
-  await sleep(30);
-  const rows = $("kept-out-list").children;
-  check(rows.length === 2, "two placeholder rows after kept-out events");
-  check(text(rows[0]).startsWith("Kept out, Pay and HR") && text(rows[1]).startsWith("Removed, Retracted"), "rows name the action and the kind: " + text($("kept-out-list")));
-  check(!visible($("kept-out-empty")), "the empty hint is hidden once there are rows");
-  check(!text(env.doc.body).includes(SECRET), "the planted secret never reaches the page");
-  const toggle = rows[0].querySelector("button");
-  check(toggle.getAttribute("aria-expanded") === "false" && !text(rows[0]).includes("Keyword rule"), "rows start collapsed");
-  toggle.click();
-  const open = text($("kept-out-list").children[0]);
-  check($("kept-out-list").children[0].querySelector("button").getAttribute("aria-expanded") === "true", "clicking a row expands it in place");
-  check(open.includes("Pay and HR") && open.includes("Keyword rule") && open.includes("Recording") && open.includes("Waiting for your answer")
-    && open.includes("2.4 s") && open.includes("Kept out before approval"), "the opened row has why, rule family, states, hold and action: " + open);
-  check(!open.includes(SECRET) && !open.includes("150,000"), "the opened row has no private text");
-  check(!text($("kept-out-list").children[1]).includes("Retraction"), "only the clicked row expands");
-  $("kept-out-list").children[0].querySelector("button").click();
-  check($("kept-out-list").children[0].querySelector("button").getAttribute("aria-expanded") === "false", "clicking again collapses it");
-
-  // pop-out
-  $("popout-button").click();
-  check(env.sandbox._opened.length === 1 && env.sandbox._opened[0].join("|") === "/insights|otr-insights|popup=yes,width=520,height=760",
-    "the pop-out button opens /insights in a popup window");
-  $("drawer-close").click();
-
-  // the Realtime, Insights and How it decides views: a separate panel next to the drawer, not a replacement for it
-  check(!visible($("views-panel")), "the views panel starts closed");
-  es.push({ type: "transcript", changes: [{ kind: "committed", owner: "person-host",
-    line: { id: "l1", speaker: "person-host", name: "Hana", text: "Plan the launch", seq: 0 } }] });
-  $("views-button").click();
-  check(visible($("views-panel")) && $("views-button").getAttribute("aria-expanded") === "true", "Views opens the panel");
-  const rt = text($("rt-list"));
-  check(rt.includes("Plan the launch") && rt.includes("Kept out, Pay and HR") && rt.includes("Removed, Retracted"), "Realtime lists the line and the kept-out rows: " + rt);
-  check(!rt.includes(SECRET), "Realtime has no kept-out text");
-  $("rt-list").all().find(e => e.tagName === "BUTTON" && text(e).includes("Pay and HR")).click();
-  check(text($("rt-list")).includes("Keyword rule") && text($("rt-list")).includes("2.4 s"), "a Realtime row opens in place with its trail");
-  $("vtab-insights").click();
-  const ins = text($("vp-insights"));
-  check(visible($("vp-insights")) && !visible($("vp-realtime")) && ins.includes("Pay and HR") && ins.includes("Pay and HR x1"), "Insights tab shows counts by kind: " + ins.slice(0, 120));
-  check(!ins.includes("Plan the launch") && !ins.includes(SECRET) && $("vp-insights").all().filter(e => e.tagName === "LI").length === 7, "Insights has only the seven kind rows");
-  $("vtab-explain").click();
-  check(text($("vp-explain")).includes("Contact details masked") && !text($("vp-explain")).includes("Reveal text"), "How it decides lists every kind, no reveal");
-  await sleep(300);
-  $("drawer-button").click();
-  check(!$("notes-drawer").hidden && visible($("views-panel")) && env.doc.body.classList.contains("drawer-open"), "the drawer opens next to the views panel");
-  $("drawer-close").click();
-  $("views-close").click();
-  check(!visible($("views-panel")), "the views panel closes");
-
-  // in-call device menu
-  $("devices-button").click(); await sleep(30);
-  check(visible($("device-menu")) && $("devices-button").getAttribute("aria-expanded") === "true", "Devices opens the device menu");
-  check($("menu-mic").all().filter(e => e.tagName === "BUTTON").length === 2
-    && $("menu-cam").all().filter(e => e.tagName === "BUTTON").length === 1, "the menu lists the microphones and the camera");
-  const desk = $("menu-mic").all().find(e => e.tagName === "BUTTON" && text(e).includes("Desk Microphone"));
-  desk.click(); await sleep(20);
-  check(env.rooms[0].switched.join() === "audioinput,mic2", "choosing a microphone switches the room's active device");
-  env.doc.dispatch("keydown", { key: "Escape", target: env.doc.body });
-  check(!visible($("device-menu")), "Escape closes the device menu");
-
-  // consent / mic / camera controls
-  $("notes-button").click(); await sleep(20);
-  check(env.calls.some(c => c.url === "/api/consent" && c.body.recording === false), "Notes button posts the opposite consent choice");
-  check(!env.calls.some(c => c.url === "/api/confirm"), "consent page never calls /api/confirm");
-  $("camera-button").click(); await sleep(20);
-  check(env.rooms[0].localParticipant.isCameraEnabled === true, "camera button turns the camera on");
-  return env;
-}
-
-// ------------------------------------------------------------------ scenario 1b: /meet page (Realtime, Insights, Explainability), host + lobby + three views
-async function meetPage() {
-  const html = fs.readFileSync(path.join(STATIC, "meet.html"), "utf8");
+  let recordingOn = false;
+  let approvedLines = [];
   const insights = { approved: 1, kept_out: { pay_hr: 1, off_record: 2 }, total: 3, removed: 0,
     timeline: [{ t: 0, state: "off" }, { t: 1.2, state: "recording" }, { t: 20, state: "off_record" }], now: 40, hold_seconds: 10 };
   const env = makeEnv(html, {
@@ -626,16 +443,12 @@ async function meetPage() {
     "Legal and confidential business", "Contact details masked", "Other sensitive"]) check(ex.includes(label), "explain lists " + label);
   check(!$("view-explain").all().some(e => text(e).includes("Reveal text")), "no Reveal text in consent mode");
   $("panel-back").click();
-  // a kept-out row opens in place and shows the trail, text free
   $("captions").all().find(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr").click();
-  const trail = text($("captions"));
+  check(visible($("view-explain")), "opening the marker goes to How it decides");
+  const trail = text($("view-explain"));
   check(trail.includes("Keyword rule") && trail.includes("Recording") && trail.includes("Waiting for your answer") && trail.includes("2.4 s"),
-    "opening a kept-out row shows rule family, state before/after and hold timing");
+    "marker trail shows rule family, state before/after and hold timing");
   check(!trail.includes(SECRET) && !trail.includes("150,000"), "trail has no private text");
-  $("link-explain").click();
-  check(visible($("view-explain")), "How it decides opens from the panel");
-  const cardPay = $("view-explain").all().find(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr" && e.tagName === "BUTTON");
-  cardPay.click();
   check($("view-explain").all().some(e => e.getAttribute && e.getAttribute("data-category") === "pay_hr" && e.getAttribute("aria-pressed") === "true"), "the category is selected");
   const cardOff = $("view-explain").all().find(e => e.getAttribute && e.getAttribute("data-category") === "off_record" && e.tagName === "BUTTON");
   cardOff.click();
@@ -736,6 +549,67 @@ async function consentHostExpired() {
   }
 }
 
+// A LiveKit token can outlive the local server session after a backend restart.
+async function consentStaleSession() {
+  const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
+  const access = { room_id: "room1", join_url: "http://127.0.0.1:8000/m/room1", identity: "person-host",
+    name: "Hana", role: "host", token: "tok", url: "ws://127.0.0.1:7880", room: "room1" };
+  for (const meResponse of [
+    { status: 401, json: { detail: "Join the meeting first" } },
+    { identity: "another-person", participants: {}, lines: [] },
+  ]) {
+    const env = makeEnv(html, { routes: {
+      "POST /api/meetings": access,
+      "GET /api/me": meResponse,
+    } });
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana"; $("host-email").value = "hana@example.com";
+    $("host-create-button").click(); await sleep(10);
+    $("share-join-button").click(); await sleep(20);
+    check(env.rooms.length === 0 && !visible($("meeting")), "stale or mismatched host access never connects LiveKit");
+    check(text($("share-error")).includes("Start or request a new meeting")
+      && !text($("share-error")).includes("Join the meeting first"), "stale join gives a useful next step");
+    check(text($("share-join-button")) === "Start a new meeting", "stale host gets a new-meeting action");
+    $("share-join-button").click();
+    check(env.sandbox.location.href === "/", "stale host can return home to start again");
+    check(!env.calls.some(c => c.url === "/api/consent"), "stale join never changes consent");
+  }
+
+  for (const expiredBy of ["notes", "refresh"]) {
+    let meCalls = 0;
+    const env = makeEnv(html, { routes: {
+      "POST /api/meetings": access,
+      "GET /api/me": () => {
+        meCalls++;
+        return expiredBy === "refresh" && meCalls > 2
+          ? { status: 401, json: { detail: "Join the meeting first" } }
+          : { identity: "person-host", participants: { "person-host": { name: "Hana", recording: false } }, lines: [], kept_out: [] };
+      },
+      "GET /api/meetings/room1/status": { status: "admitted", role: "host", identity: "person-host", pending: [] },
+      "POST /api/consent": { status: 401, json: { detail: "Join the meeting first" } },
+    } });
+    loadScripts(env, html);
+    const $ = id => env.doc.getElementById(id);
+    $("create-button").click();
+    $("host-name").value = "Hana"; $("host-email").value = "hana@example.com";
+    $("host-create-button").click(); await sleep(10);
+    $("share-join-button").click(); await sleep(30);
+    check(visible($("meeting")) && env.rooms.length === 1, `host joins before ${expiredBy} expires`);
+    if (expiredBy === "notes") { $("notes-control").click(); await sleep(15); }
+    else { env.sources[0].push({ type: "participants", participants: { "person-host": { name: "Hana", recording: false } } }); await sleep(1600); }
+    check(text($("transcript-status")).includes("Leave this call") && !$("transcript-status").classList.contains("hidden")
+      && $("notes-control").disabled && $("notes-button").disabled,
+    `${expiredBy} session loss explains expiry and disables notes`);
+    check(!text($("toast-text")).includes("Join the meeting first"), `${expiredBy} failure hides raw backend auth error`);
+    $("leave-button").click(); await sleep(10);
+    check(text($("end-without-email")) === "Leave this call", `${expiredBy} expiry offers local exit`);
+    $("end-without-email").click(); await sleep(10);
+    check(env.rooms[0].disconnected && env.sandbox.location.href === "/", `${expiredBy} expiry exits without server session`);
+  }
+}
+
 // ------------------------------------------------------------------ scenario 2: guest waits, then is admitted
 async function consentGuest() {
   const html = fs.readFileSync(path.join(STATIC, "live.html"), "utf8");
@@ -823,9 +697,9 @@ async function operatorConsole() {
 (async () => {
   try {
     await consentHost();
-    await meetPage();
     await consentCreateFailure();
     await consentHostExpired();
+    await consentStaleSession();
     await consentGuest();
     await operatorConsole();
   } catch (e) {

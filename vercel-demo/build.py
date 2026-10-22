@@ -7,7 +7,6 @@ The backend URL is public configuration, never a secret.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -37,13 +36,11 @@ def replace_required(source: str, old: str, new: str) -> str:
     return source.replace(old, new)
 
 
-def build(origin: str, proxy: bool | None = None) -> None:
-    """proxy=True (default when OTR_EDGE_KEY is set in the environment) routes /api/* through
+def build(origin: str, proxy: bool = False) -> None:
+    """proxy=True routes /api/* through
     api/proxy.js, which adds the edge key. The key itself is never written here: set BACKEND_URL
     and OTR_EDGE_KEY in the Vercel project. proxy=False keeps the raw external rewrite."""
     origin = backend_origin(origin)
-    if proxy is None:
-        proxy = bool(os.environ.get("OTR_EDGE_KEY"))
     assets = OUTPUT / "static"
     assets.mkdir(parents=True, exist_ok=True)
 
@@ -109,4 +106,4 @@ if __name__ == "__main__":
     flags = [a for a in sys.argv[1:] if a.startswith("--")]
     if len(args) != 1 or any(f not in ("--proxy", "--no-proxy") for f in flags):
         raise SystemExit("Usage: python vercel-demo/build.py https://public-backend.example [--proxy|--no-proxy]")
-    build(args[0], True if "--proxy" in flags else False if "--no-proxy" in flags else None)
+    build(args[0], "--proxy" in flags)
