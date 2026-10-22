@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ._items_a import ITEMS_A
 from ._items_b import ITEMS_B
+from ._items_c import ITEMS_C
 
 OUT = Path(__file__).with_name("otr_bench.jsonl")
 PREFIX = {"explicit_start_end": "ese", "explicit_start_implicit_end": "esi",
@@ -21,7 +22,7 @@ PREFIX = {"explicit_start_end": "ese", "explicit_start_implicit_end": "esi",
 def build() -> list[dict]:
     counters: dict[str, int] = {}
     out = []
-    for it in ITEMS_A + ITEMS_B:
+    for it in ITEMS_A + ITEMS_B + ITEMS_C:
         ct = it["case"]
         counters[ct] = counters.get(ct, 0) + 1
         iid = f"{PREFIX[ct]}-{counters[ct]:02d}"

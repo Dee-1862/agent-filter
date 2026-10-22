@@ -20,6 +20,10 @@ told tell talk talked mention mentioned ok okay um uh like know think going gonn
 earlier before forget strike scratch delete remove disregard ignore take back please""".split())
 
 
+_CONTRACTIONS = {"let's", "that's", "it's", "what's", "here's", "there's", "he's", "she's", "who's",
+                 "how's", "where's", "when's", "one's"}
+
+
 def stem(w: str) -> str:
     w = w.lower()
     for suf in ("ing", "ed", "es", "ly", "s"):
@@ -30,7 +34,14 @@ def stem(w: str) -> str:
 
 def content_stems(text: str) -> list[str]:
     toks = re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))
-    return [stem(t) for t in toks if t not in _STOP and len(t) > 2]
+    out = []
+    for t in toks:
+        if t.endswith("'s") and t not in _CONTRACTIONS:
+            t = t[:-2]                       # possessive: "elena's" -> "elena"
+        if t in _STOP or t in _CONTRACTIONS or len(t) <= 2 or t.endswith(("n't", "'ll", "'re", "'ve", "'d", "'m")):
+            continue
+        out.append(stem(t))
+    return out
 
 
 def tfidf_overlap(topic: str, candidates: dict[str, str]) -> dict[str, float]:
@@ -57,6 +68,10 @@ _START = re.compile(
     r"|(?:please\s+)?(?:do\s*n[o']?t|do\s+not|don't)\s+(?:write|put|jot|note)\s+(?:this|that|it)\s+(?:down|in\s+the\s+notes)"
     r"|(?:keep|leave)\s+(?:this|that|it)\s+out\s+of\s+the\s+(?:notes|minutes|record)"
     r"|not\s+for\s+the\s+(?:notes|minutes|record)"
+    r"|(?:i'?d|i\s+would)\s+rather\s+(?:this|that|it)\s+(?:not\s+)?(?:go|be\s+put|be\s+written)\s+(?:in|into|down)\s*(?:the\s+)?(?:notes|minutes|record)?"
+    r"|hold\s+off\s+(?:on\s+)?(?:writing|noting|recording|taking\s+notes)"
+    r"|(?:stop|pause)\s+(?:the\s+)?(?:recording|notes|note[\s\-]?taking|transcript)"
+    r"|(?:please\s+)?(?:do\s*n[o']?t|do\s+not|don't)\s+(?:take\s+notes|record|transcribe|minute)\b"
     r"|(?:just\s+|strictly\s+)?between\s+(?:us|you\s+and\s+me|ourselves))\b", re.I)
 _END = re.compile(
     r"\b(?:(?:ok(?:ay)?[,.]?\s+|alright[,.]?\s+)?(?:we(?:'re|\s+are)\s+)?back\s+on\s+the\s+record"
@@ -67,6 +82,8 @@ _END = re.compile(
     r"|that(?:'s|\s+is)\s+(?:all\s+)?(?:the\s+)?off[\s\-]+the[\s\-]+record\s+(?:part|stuff)\s+(?:done|over)"
     r"|(?:that(?:'s|\s+is)|this\s+is|and)\s+(?:the\s+)?end\s+of\s+(?:the\s+)?off[\s\-]+(?:the[\s\-]+)?record(?:\s+(?:part|stuff|bit))?"
     r"|off[\s\-]+the[\s\-]+record\s+(?:part\s+|bit\s+)?(?:is\s+)?(?:over|done|finished|ended)"
+    r"|(?:you\s+can\s+|we\s+can\s+|let's\s+)?(?:start|resume|continue|restart)\s+(?:taking\s+|the\s+)?(?:official\s+)?(?:notes|recording|minutes)(?:\s+again)?"
+    r"|that(?:'s|\s+is)\s+(?:all|it)\s+(?:of\s+|for\s+)?(?:the\s+)?(?:sensitive|private|confidential)\s+(?:part|stuff|bit)"
     r"|(?:we(?:'re|\s+are)|i(?:'m|\s+am))\s+(?:now\s+)?on\s+the\s+record)\b", re.I)
 _RETRO = re.compile(
     r"\b(?:strike\s+that|scratch\s+that|disregard\s+that|take\s+that\s+out|"
@@ -221,6 +238,9 @@ def _detect_strict(t: str) -> Cue:
             topic = tm.group(1).strip()
         cm = _COUNT.search(t)
         count = 0
+        if not cm and re.search(r"\b(?:both|those\s+two)\b", t, re.I):
+            count = 2
+            topic = ""
         if cm:
             g = cm.group(1).lower()
             count = _NUMW.get(g) or int(g)
@@ -254,6 +274,23 @@ def detect(text: str) -> Cue:
     return cue
 
 
+_CATEGORY_WORDS = {
+    "health": ("health", "medical", "medication", "illness", "diagnosis", "condition", "doctor", "therapy"),
+    "salary": ("salary", "salaries", "pay", "compensation", "raise", "bonus", "money", "offer"),
+    "hr": ("performance", "firing", "disciplinary", "complaint", "hr"),
+    "legal": ("lawsuit", "legal", "lawyer", "settlement", "visa", "immigration"),
+    "layoffs": ("layoffs", "layoff", "reorg", "severance", "redundancies"),
+}
+
+
+def _topic_category(topic: str) -> str:
+    words = set(re.findall(r"[a-z]+", topic.lower()))
+    for cat, ws in _CATEGORY_WORDS.items():
+        if words & set(ws):
+            return cat
+    return ""
+
+
 # ------------------------------------------------------------ retro resolution
 RETRO_PROMPT = """A meeting participant said: "{cue}"
 They want earlier statements about that topic removed from the notes.
@@ -285,6 +322,13 @@ def resolve_retro(topic: str, cue_text: str, candidates: list[tuple[str, str, st
         return [candidates[-1][0]], "previous"
     scores = tfidf_overlap(topic, {i: t for i, _, t in candidates})
     if not scores:
+        # the topic may name a category ("my health", "the salary stuff") rather than repeat words
+        cat = _topic_category(topic)
+        if cat:
+            from .llm import keyword_sensitivity
+            ids = [i for i, _, t in candidates if keyword_sensitivity(t) == (True, cat)]
+            if ids:
+                return ids, "category"
         return [], "overlap"
     top = max(scores.values())
     return [i for i, _, _ in candidates if scores.get(i, 0) >= 0.5 * top], "overlap"

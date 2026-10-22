@@ -2,8 +2,12 @@
 
 Small benchmark for "off the record" handling in meeting notes (PRD section 1.7).
 
-**Honest status: this is early evidence only.** The current set is 40 hand-written, synthetic
-meeting snippets (8 per case type, 8-20 segments each, `source = "synthetic"`). It was written
+**Honest status: this is early evidence only.** The current set is 47 hand-written, synthetic
+meeting snippets (8-10 per case type, 8-20 segments each, `source = "synthetic"`); the last 7
+(`_items_c.py`) mimic live-ASR text (lower case, no punctuation, garbled cues such as "of the
+record", "strike dat", "back on da record"). The cue heuristics in `otr/` were developed while
+reading these items, so they are a dev set, not a test set: a separate 9-item check written
+afterwards (not committed) gave C 53% leak vs A 53% before gaps found there were fixed. It was written
 by the same team that built the systems, so it is biased toward the phrasing we anticipated.
 ConfAIde and QMSum were not available when it was built; importers exist (below) but have not
 been run. With n=8 per case type, differences of a few percentage points are noise. Only about
@@ -35,7 +39,7 @@ are not scored either way. `false_alarm` items have empty `private_ids`.
 
 - **A**: cue regexes (explicit scope, ends only at an explicit end cue) + regex PII + sensitive keywords.
 - **B**: one LLM pass returning kept ids as JSON. Without an LLM it runs **B-stub**, a crude heuristic stand-in; B-stub numbers say nothing about a real LLM baseline.
-- **C**: `otr.pipeline.Pipeline`, simulated clock from each segment's `t_start`, `pending_confirm` auto-answered `keep_out=True` ("user says yes"), then `flush()`.
+- **C**: `otr.pipeline.Pipeline`, replayed as a live stream: each segment is pushed at its `t_end`, the clock is ticked there, and after the last segment the clock runs to `t_end + hold_seconds` (so `tick()` releases held text) before `flush()`. `pending_confirm` is auto-answered `keep_out=True` ("user says yes"). C also reports the **committed-leak rate** (private segments ever committed, even if retro-removed later): this is what `--hold-seconds` changes; the final-notes leak rate is the same for any hold because committed text can still be retro-removed.
 
 ## Run
 

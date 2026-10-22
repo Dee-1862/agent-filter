@@ -84,3 +84,21 @@ def test_system_b_llm_parsing(items):
             return "sure: " + json.dumps({"keep": keep})
 
     assert [s.id for s in systems.run_B(it, Fake())] == keep
+
+
+def test_system_c_runs_streaming_and_hold_matters_for_committed_leaks(items):
+    """C is replayed as a live stream (now = t_end, clock ticked past the end). Final-notes leaks
+    do not depend on hold, but text committed before a retroactive cue arrives does."""
+    ret = [i for i in items if i["case_type"] == "retroactive"]
+    short = evaluate(systems.run_C, ret, hold_seconds=0.0)["breakdown"]["ALL"]
+    long_ = evaluate(systems.run_C, ret, hold_seconds=30.0)["breakdown"]["ALL"]
+    assert long_["committed_leak_rate"] < short["committed_leak_rate"]
+    assert long_["leak_rate"] <= long_["committed_leak_rate"]
+    notes = systems.run_C(ret[0], None, hold_seconds=30.0)
+    assert hasattr(notes, "ever_committed_ids")
+
+
+def test_noisy_asr_items_present(items):
+    noisy = [i for i in items if any(k in s["text"] for s in i["segments"]
+                                     for k in ("da record", "of the record", "awf the record", "strike dat", "scratch dat"))]
+    assert len(noisy) >= 5 and all(i["source"] == "synthetic" for i in noisy)

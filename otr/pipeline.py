@@ -57,6 +57,7 @@ class Pipeline:
         self._seen: set[str] = set()
         self._log: list[_Rec] = []
         self._recs: dict[str, _Rec] = {}
+        self._utter: list[list] = []     # [t_start, seq, id, is_meta] of recent utterances, time ordered
 
     # ------------------------------------------------------------ public API
     @property
@@ -82,6 +83,7 @@ class Pipeline:
             ev = self._release(self._now)
             self._seq += 1
             rec = _Rec(seg=seg, seq=self._seq, arrival=self._now)
+            self._note_utterance(rec)
             plan = self._plan_replay(rec)
             self._insert_log(rec)
             if plan is None:
@@ -111,24 +113,38 @@ class Pipeline:
             else:
                 ev.append(self._commit(item, "confirm:keep_in"))
             followers = [i for i in self.buf.items() if i.after_pending == segment_id]
+            others_pending = bool(self.buf.pending_items())
+            if self.sm.state == PENDING and not others_pending:
+                ev += self._to_state(ON, item, "confirm")
+            if keep_out and not others_pending:
+                # the thread this line belongs to stays out until it provably moves on
+                self.sm.begin_soft_scope(item.seg.text, item.seg.t_start)
             for f in followers:
                 f.after_pending = None
                 self._lock_rec(f.seg.id)
-                if keep_out and (classify_sensitivity(self.llm, f.seg.text)[0]
-                                 or cd.tfidf_overlap(item.seg.text, {"x": f.seg.text})):
+                if not keep_out:
+                    continue
+                if self.sm.soft:
+                    ev += self._off_step(f, f.seg.text, f.seg.t_start)
+                elif (classify_sensitivity(self.llm, f.seg.text)[0]
+                      or cd.tfidf_overlap(item.seg.text, {"x": f.seg.text})):
                     self.buf.remove(f.seg.id)
                     ev.append(self._ev("redacted", f, reason="confirm:related"))
-            if self.sm.state == PENDING and not self.buf.pending_items():
-                ev += self._to_state(ON, item, "confirm")
             return ev
 
     def flush(self) -> list[Event]:
         with self._lock:
             ev: list[Event] = []
-            for it in self.buf.tentative_items():      # scope never provably ended: fail safe
+            # Undecided OFF-scope lines at end of meeting. Two or more consecutive off-topic lines is
+            # real drift evidence: release them (sensitivity check still applies). One is not: fail safe.
+            drifted = self.sm.streak >= 2
+            for it in self.buf.tentative_items():
                 it.tentative = False
-                self.buf.remove(it.seg.id)
-                ev.append(self._ev("redacted", it, reason="flush:unresolved_scope"))
+                if drifted:
+                    ev += self._check_implicit(it)
+                else:
+                    self.buf.remove(it.seg.id)
+                    ev.append(self._ev("redacted", it, reason="flush:unresolved_scope"))
             for it in self.buf.drain():
                 ev.append(self._commit(it, "flush"))
             for it in self.buf.pending_items():      # unanswered question: fail safe, keep out
@@ -184,6 +200,20 @@ class Pipeline:
             pos -= 1
         self._log.insert(pos, rec)
         self._recs[rec.seg.id] = rec
+
+    def _note_utterance(self, rec: _Rec):
+        key = [rec.seg.t_start, rec.seq, rec.seg.id, False, rec.seg.speaker,
+               len(cd.content_stems(rec.seg.text)), rec.seg.t_end]
+        pos = len(self._utter)
+        while pos > 0 and self._utter[pos - 1][:2] > key[:2]:
+            pos -= 1
+        self._utter.insert(pos, key)
+        del self._utter[:-200]
+
+    def _mark_meta(self, sid: str):
+        for u in self._utter:
+            if u[2] == sid:
+                u[3] = True
 
     def _prune_log(self):
         keep = []
@@ -255,39 +285,51 @@ class Pipeline:
         sm = self.sm
         if cue.kind == "retro":
             ev += self._handle_retro(rec, cue)
+            if sm.soft:
+                sm.end_scope()      # the participants are retracting the thread: it is handled
         elif cue.kind == "start":
             ev += self._settle_tentatives(release=False, reason="cue:" + cue.name)
             ev += self._to_state(OFF, item, "cue:" + cue.name)
             sm.start_scope(seg.text, seg.t_start)
             ev += self._suppress(item, "cue:" + cue.name)
-        elif cue.kind == "end" and sm.state == OFF:
+        elif cue.kind == "end" and sm.in_scope:
             ev += self._settle_tentatives(release=False, reason="scope:off")
             ev += self._to_state(ON, item, "cue:scope_end")
+            sm.end_scope()
             if len(cd.content_stems(cue.remainder)) >= 3:
                 item.seg = replace(item.seg, text=redact_pii(cue.remainder, self.use_presidio)[0])
             else:
                 self.buf.remove(item.seg.id)
                 ev.append(self._ev("redacted", item, reason="cue:scope_end_meta"))
-        elif sm.state == OFF:
-            verdict, why = sm.assess(seg.text, seg.t_start, self.llm)
-            if verdict == CONTINUE:
-                for t in self.buf.tentative_items():
-                    sm.note_suppressed(t.seg.text)
-                ev += self._settle_tentatives(release=False, reason="scope:off")
-                ev += self._suppress(item, "scope:off")
-            elif verdict == TENTATIVE:
-                item.tentative = True          # held, undecided; resolved by later utterances
-            else:                              # END
-                release = (why == "drift")     # sustained drift: the streak itself was public chat
-                ev += self._settle_tentatives(release=False, reason="scope:off") if not release else []
-                ev += self._to_state(ON, item, "implicit_end:" + why)
-                if release:
-                    ev += self._settle_tentatives(release=True, reason="")
-                ev += self._check_implicit(item)
+        elif sm.in_scope:
+            ev += self._off_step(item, seg.text, seg.t_start)
         elif sm.state == PENDING:
             pend = self.buf.pending_items()
             item.after_pending = pend[0].seg.id if pend else None
         else:
+            ev += self._check_implicit(item)
+        return ev
+
+    def _off_step(self, item: Item, text: str, t: float) -> list[Event]:
+        """One utterance arriving inside a kept-out scope (no explicit cue in it)."""
+        sm = self.sm
+        ev: list[Event] = []
+        verdict, why = sm.assess(text, t, self.llm)
+        if verdict == CONTINUE:
+            for tent in self.buf.tentative_items():
+                sm.note_suppressed(tent.seg.text)
+            ev += self._settle_tentatives(release=False, reason="scope:off")
+            ev += self._suppress(item, "scope:off")
+        elif verdict == TENTATIVE:
+            item.tentative = True          # held, undecided; resolved by later utterances
+        else:                              # END
+            release = (why == "drift")     # sustained drift: the streak itself was public chat
+            if not release:
+                ev += self._settle_tentatives(release=False, reason="scope:off")
+            ev += self._to_state(ON, item, "implicit_end:" + why)
+            sm.end_scope()
+            if release:
+                ev += self._settle_tentatives(release=True, reason="")
             ev += self._check_implicit(item)
         return ev
 
@@ -313,15 +355,25 @@ class Pipeline:
         ev.append(self._ev("pending_confirm", item, reason=f"{src}:{cat}"))
         return ev
 
-    def _self_correction_target(self, pool: list[Item], cue_seg: Segment) -> list[str]:
-        """Rule for a bare "strike that": the previous utterance by the SAME speaker if it ended
-        within `strike_window` seconds of the cue; else the most recent utterance by anyone within
-        the window; else nothing (an ordinary correction must not delete unrelated old text)."""
-        recent = [i for i in pool if cue_seg.t_start - i.seg.t_end <= self.strike_window]
-        for i in reversed(recent):
-            if i.seg.speaker == cue_seg.speaker:
-                return [i.seg.id]
-        return [recent[-1].seg.id] if recent else []
+    def _self_correction_target(self, pool: list[Item], cue_seg: Segment, seq: int) -> list[str]:
+        """Rule for a bare "strike that" (no topic, no count). Look at the latest line (a short
+        backchannel from ANOTHER speaker such as "right" is skipped). Remove it only if
+          * it is by the SAME speaker and ended within `strike_window` s of the cue, or
+          * it is by another speaker and ended within strike_window/2 s (a moderator reacting to
+            what was just said).
+        Otherwise remove nothing: an ordinary self-correction ("the meeting is Tuesday, strike
+        that, Wednesday") must not delete unrelated older text."""
+        key = (cue_seg.t_start, seq)
+        in_pool = {i.seg.id for i in pool}
+        for u in reversed(self._utter):
+            if (u[0], u[1]) >= key or u[3]:
+                continue                       # later than the cue, or a cue line itself
+            if u[4] != cue_seg.speaker and u[5] < 2:
+                continue                       # other speaker's backchannel ("right", "got it")
+            limit = self.strike_window if u[4] == cue_seg.speaker else self.strike_window / 2
+            # if that line was already kept out (suppressed/redacted) there is nothing left to strike
+            return [u[2]] if (cue_seg.t_start - u[6] <= limit and u[2] in in_pool) else []
+        return []
 
     def _handle_retro(self, rec: _Rec, cue: cd.Cue) -> list[Event]:
         item, seg = rec.item, rec.seg
@@ -334,10 +386,15 @@ class Pipeline:
         by_id = {i.seg.id: i for i in pool}
         cands = [(i.seg.id, i.seg.speaker, i.seg.text) for i in pool]
         if cue.count:
-            ids, method = [i.seg.id for i in pool[-cue.count:]], "count"
+            # "the last two things I said" counts spoken utterances, including ones already suppressed
+            self._mark_meta(seg.id)
+            key = (seg.t_start, rec.seq)
+            spoken = [u[2] for u in self._utter if (u[0], u[1]) < key and not u[3]][-cue.count:]
+            ids, method = [i for i in spoken if i in by_id], "count"
         else:
+            self._mark_meta(seg.id)
             ids, method = cd.resolve_retro(cue.topic, seg.text, cands, self.llm,
-                                           previous=self._self_correction_target(pool, seg))
+                                           previous=self._self_correction_target(pool, seg, rec.seq))
         for sid in ids:
             t = by_id[sid]
             if t in self._notes:

@@ -26,16 +26,22 @@ from .llm import extract_json
 ON, OFF, PENDING = "ON", "OFF", "PENDING_CONFIRM"
 
 DRIFT_STREAK = 3
+MIN_STEMS = 2       # fewer content words than this is too short to judge (backchannel: "agreed", "right")
 GRACE = 2        # the first substantive utterances after a start cue always belong to the scope
 SCOPE_TIMEOUT = 90.0
+OFFTOPIC_RATIO = 1 / 3   # share of an utterance's content words found in the scope text to still count as on-topic
 
 CONTINUE, TENTATIVE, END = "continue", "tentative", "end"
 
 _SHIFT = re.compile(
-    r"^\W*(?:anyway|anyways|moving on|let's move on|let's get back|back to (?:the )?(?:agenda|topic|meeting|task)|"
+    r"^\W*(?:(?:ok(?:ay)?|alright|all right|right|so|well|great|thanks|thank you|good)[,.!]?\s+)*"
+    r"(?:anyway|anyways|moving on|let's move on|let's get back|back to|"
     r"next (?:topic|item|up|agenda)|on another note|switching gears|changing (?:the )?subject|"
     r"on (?:the )?(?:topic|subject) of|now (?:let's|for|on to)|let's (?:talk|turn|look|discuss|go) (?:about|to|at|over)|"
-    r"ok(?:ay)?,?\s+so|alright,?\s+(?:so|let's)|so,? (?:the )?(?:next|agenda))", re.I)
+    r"so,? (?:the )?(?:next|agenda))", re.I)
+# weaker pivots ("ok so ...") are common inside private talk, so they only count once the
+# initial grace period after the start cue is over
+_WEAK_SHIFT = re.compile(r"^\W*(?:ok(?:ay)?|alright|all right|right|well|so)[,.!]?\s+(?:so\b|let's\b)", re.I)
 
 # words that belong to the cue itself, not to the private topic
 _CUE_WORDS = {"off", "record", "second", "minute", "moment", "quick", "please", "hold"}
@@ -59,6 +65,7 @@ class StateMachine:
         self._streak = 0
         self._last_t = None
         self._grace = 0
+        self.soft = False        # implicit-sensitive thread being kept out while state reads ON
         self.last_end_reason = ""
 
     def set(self, new: str, reason: str = "") -> bool:
@@ -71,10 +78,28 @@ class StateMachine:
             self._streak = 0
             self._grace = GRACE
         elif new == ON:
-            self._scope_vocab.clear()
-            self._scope_text.clear()
-            self._streak = 0
+            self.end_scope()
         return True
+
+    @property
+    def in_scope(self) -> bool:
+        """True while utterances are being kept out: explicit OFF scope or a confirmed-sensitive thread."""
+        return self.state == OFF or self.soft
+
+    def end_scope(self):
+        self.soft = False
+        self._scope_vocab.clear()
+        self._scope_text.clear()
+        self._streak = 0
+        self._last_t = None
+
+    def begin_soft_scope(self, text: str, t: float):
+        """After the user confirms an implicit-sensitive line should stay out of the notes, the
+        conversation about it is kept out too until it provably moves on (same end rules as OFF).
+        The reported state stays ON: this is not an 'off the record' announcement."""
+        self.soft = True
+        self._streak = 0
+        self.start_scope(text, t, grace=1)
 
     # --- OFF scope tracking -------------------------------------------------
     def note_suppressed(self, text: str, t: float = None):
@@ -88,9 +113,10 @@ class StateMachine:
         if t is not None:
             self._last_t = t if self._last_t is None else max(self._last_t, t)
 
-    def start_scope(self, text: str, t: float):
+    def start_scope(self, text: str, t: float, grace: int = GRACE):
         """Called with the cue utterance that opened (or re-opened) the scope."""
-        self._grace = GRACE
+        self._grace = grace
+        self._last_t = None
         self.note_suppressed(text, t)
 
     def _overlap(self, stems: list[str]) -> int:
@@ -122,14 +148,16 @@ class StateMachine:
 
         if self._last_t is not None and t - self._last_t > self.scope_timeout:
             return END, "timeout"
-        if self._grace > 0 and len(uniq) >= 3:
+        strong = bool(_SHIFT.search(text))
+        weak = bool(_WEAK_SHIFT.search(text))
+        if self._grace > 0 and len(uniq) >= MIN_STEMS and not (strong and overlap == 0):
             self._grace -= 1
             self.note_suppressed(text, t)
             return CONTINUE, ""
-        if _SHIFT.search(text) and overlap == 0 and uniq:
+        if (strong or weak) and overlap == 0 and uniq:
             return END, "pivot"
-        if len(uniq) >= 3:
-            if overlap == 0:
+        if len(uniq) >= MIN_STEMS:
+            if overlap / len(uniq) <= OFFTOPIC_RATIO:    # at most one in three content words shared
                 self._streak += 1
                 if self._streak >= self.drift_streak:
                     return END, "drift"
@@ -145,3 +173,8 @@ class StateMachine:
     def topic_changed(self, text: str, llm=None, t: float = 0.0) -> bool:
         """Back-compat boolean wrapper around assess()."""
         return self.assess(text, t, llm)[0] == END
+
+    @property
+    def streak(self) -> int:
+        """Consecutive off-topic utterances seen so far in the current scope."""
+        return self._streak

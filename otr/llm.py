@@ -81,33 +81,38 @@ Utterance: "{text}"
 
 Reply with JSON only: {{"sensitive": true|false, "category": "<category or none>"}}"""
 
-_POSS = r"\b(?:my|his|her|their|your|\w+'s)"
+_POSS = r"\b(?:my|his|her|their|your|(?!(?:let|that|it|what|there|here|he|she|who|how|where|when)'s\b)\w+'s)"
 _AMT = r"(?:\$\s?\d[\d,.]*\s?(?:k|m|thousand|million)?\b|\d[\d,.]*\s?(?:k\b|thousand|grand|million))"
 
 _KEYWORDS: dict[str, list[str]] = {
     "health": [r"diagnos", r"cancer", r"chemo", r"surgery", r"medication", r"prescri", r"therapy",
                r"therapist", r"depress", r"anxiety", r"pregnan", r"medical", r"illness",
-               r"hospital", r"tumou?r", r"\bdoctor", r"mental health", r"rehab", r"\bdiabet"],
+               r"hospital", r"tumou?r", r"\bhiv\b", r"\bxanax", r"antidepress", r"\baddict", r"\bsobriety", r"\bbiops", r"panic attack", r"parental leave", r"maternity", r"paternity", r"\bdoctor", r"mental health", r"rehab", r"\bdiabet"],
     # Salary keywords need person-directed or confidential framing (a possessive, an amount, a
     # named person, "give him a raise"). A bare "salary calculator we launched" is public.
     "salary": [rf"{_POSS}\s+(?:\w+\s+){{0,2}}(?:salary|salaries|pay|bonus|bonuses|compensation|comp|raise)\b",
                rf"\b(?:salary|salaries|bonus|bonuses|raise|compensation|pay)\b[^.?!]{{0,25}}{_AMT}",
-               rf"{_AMT}[^.?!]{{0,20}}\b(?:salary|salaries|bonus|raise|compensation|base pay|a year)\b",
+               rf"{_AMT}[^.?!]{{0,20}}\b(?:salary|salaries|bonus|raise|compensation|base pay)\b",
                r"\bpay raise\b", r"\b(?:underpaid|overpaid)\b",
                r"\b(?:give|giving|gave|get|getting|got|deserves?|wants?|asked?|asking|denied|promised?)\s+"
                r"(?:for\s+)?(?:\w+\s+){0,2}(?:a\s+|the\s+)?raise\b",
                r"\bcompensation\s+(?:for|of)\s+(?-i:[A-Z][a-z]+)", r"\bcompensation\s+package\b",
                rf"\b(?:is|are|am|was|were|being|getting|gets)\s+(?:only\s+|being\s+)?paid\s+(?:{_AMT}|less|more|way|much|too)",
                rf"\b(?:makes?|earns?|earning|making)\s+{_AMT}",
-               rf"\boffer\b[^.?!]{{0,30}}{_AMT}", r"\boffer\b.*\$",
+               rf"\boffer(?:ed|s)?\b[^.?!]{{0,30}}{_AMT}", r"\boffer(?:ed|s)?\b.*\$",
                r"equity grant", r"\bpay cut"],
-    "hr": [r"performance review", r"\bpip\b", r"improvement plan", r"harass", r"disciplin",
-           r"\bhr\b", r"human resources", r"\bterminat", r"get(ting)? fired", r"\bfire (him|her|them)\b",
+    "hr": [r"performance review", r"\bpip\b", r"improvement plan", r"performance plan", r"harass", r"disciplin",
+           r"\b(?:to|with|from|told|tell|telling|inform(?:ed)?|involve[ds]?|call(?:ed)?)\s+(?:the\s+)?hr\b",
+           r"\bhr\s+(?:complaint|investigation|case|file|issue|doesn't|does not|will|knows?|found|wants?|asked|said|told|sent|needs?|requires?)\b",
+           r"human resources", r"wrongful(ly)? terminat", r"\bterminat\w*\s+(him|her|them|his|\w+'s)\b",
+           r"get(ting)? fired", r"\bwas fired\b", r"\bbeen fired\b", r"\bfire (him|her|them)\b",
            r"\bgrievance", r"underperform", r"written warning"],
     "legal": [r"lawsuit", r"\bsue\b", r"\bsued\b", r"settlement", r"subpoena", r"attorney",
               r"\blawyer", r"investigation", r"immigration", r"\bvisa status"],
+    "personal": [r"\bdivorc", r"\bcustody\b", r"\bevict", r"\bbankrupt", r"\bfuneral"],
     "layoffs": [r"layoff", r"laid off", r"lay off", r"redundanc", r"\breorg", r"downsiz",
-                r"headcount reduction", r"severance", r"shut(ting)? down the (team|office)"],
+                r"headcount reduction", r"severance",
+                r"\bcut(ting)?\s+\d+\s+(positions|jobs|roles|people)", r"\b(site|plant|office)\s+(closes|is closing|will close)\b", r"shut(ting)? down the (team|office)"],
 }
 _KW_RE = {c: [re.compile(p, re.I) for p in ps] for c, ps in _KEYWORDS.items()}
 
