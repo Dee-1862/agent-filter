@@ -12,6 +12,7 @@ import asyncio
 import copy
 import importlib
 import json
+import math
 import os
 import re
 import secrets
@@ -376,6 +377,35 @@ class LiveSession:
             return {"type": "status", **self.insights_for(viewer)}
         return message
 
+    def diagnostics_for(self, identity: str) -> dict:
+        """The caller's own capture health: numbers and short status words only, never text."""
+        src = self.source
+        notes_on = bool(src.consent_snapshot().get(identity, False))
+        d = src.diagnostics() if hasattr(src, "diagnostics") else {"bot": {"state": "n/a", "error": ""}, "participants": {}}
+        bot, mine = d["bot"], d["participants"].get(identity, {})
+        rms = float(mine.get("rms") or 0.0)
+        age = mine.get("last_frame_age_s")
+        floor = float(mine.get("noise_floor") or 0.0)
+        subscribed = bool(mine.get("subscribed", False))
+        error = bot.get("error") or None
+        if bot.get("state") == "failed":
+            state = "error"
+        elif not notes_on or not subscribed:
+            state = "not_subscribed"
+        elif not mine.get("frames") or age is None or age > 2.0:
+            state = "waiting_for_audio"
+        elif rms >= max(200.0, 2.5 * floor):
+            state = "hearing_you"
+        else:
+            state = "silent"
+        if state != "error":
+            error = None
+        # dBFS mapped -60..0 to 0..1 (speech at rms 2000 is about 0.6)
+        level = 0.0 if rms < 1 else max(0.0, min(1.0, (20 * math.log10(rms / 32768.0) + 60.0) / 60.0))
+        return {"subscribed": subscribed, "notes_on": notes_on, "audio_rms": round(rms, 1),
+                "audio_level": round(level, 3), "last_frame_age_s": age,
+                "stt_last_activity_age_s": mine.get("stt_last_age_s"), "state": state, "error": error}
+
     def publish_participants(self):
         self.messages.append({"type": "participants", "participants": self.snapshot()})
 
@@ -534,12 +564,17 @@ class LiveSession:
 
 
 
-def warm_llm(llm):
+def warm_llm(llm, state: dict | None = None):
     """Load the local model in a background thread so the first real decision is not a cold start."""
     if llm is None or not hasattr(llm, "warmup"):
         return None
     import threading
-    thread = threading.Thread(target=llm.warmup, name="llm-warmup", daemon=True)
+
+    def work():
+        secs = llm.warmup()
+        if state is not None:
+            state["warm"] = state["reachable"] = secs != float("inf")
+    thread = threading.Thread(target=work, name="llm-warmup", daemon=True)
     thread.start()
     return thread
 
@@ -550,12 +585,21 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
         from otr.ingest.livekit_source import LiveKitSource
         live_source = LiveKitSource()
     session = LiveSession(cls, kind, live_source, hold_seconds=hold_seconds, llm=llm)
+    llm_state = {"warm": False, "reachable": False}
 
     @asynccontextmanager
     async def lifespan(app):
         if autostart:
             session.start()
-            warm_llm(llm)
+            warm_llm(llm, llm_state)
+            if hasattr(live_source, "preload"):
+                # Load and warm Whisper now so the first sentence does not pay for it.
+                async def preload():
+                    try:
+                        await live_source.preload()
+                    except Exception as exc:  # noqa: BLE001 - surfaced through /api/diagnostics
+                        print(f"[demo] speech model failed to load: {exc}", file=sys.stderr)
+                app.state.preload = asyncio.create_task(preload())
         yield
         session.stop()
         for room in meetings.values():
@@ -895,6 +939,47 @@ def create_live_app(cls, kind, live_source=None, hold_seconds=10.0, autostart=Tr
                 "ready_for_final": live.ready_for_final(),
                 "finalized_count": sum(1 for o in owners if o in live.finalized),
                 "contributor_count": len(owners)}, headers={"Cache-Control": "no-store"})
+
+    def model_info() -> dict:
+        stats = getattr(getattr(live_source, "_transcribe", None), "stats", None) or {}
+        try:
+            from otr import pii
+            ok = pii.presidio_available()
+            presidio = {"model": pii.presidio_model() if ok else None, "available": bool(ok)}
+        except Exception:  # noqa: BLE001
+            presidio = {"model": None, "available": False}
+        return {"whisper": {"name": getattr(live_source, "model", None),
+                            "loaded": getattr(live_source, "_transcribe", None) is not None,
+                            "load_seconds": stats.get("load_seconds"), "rtf": stats.get("rtf")},
+                "llm": {"name": getattr(llm, "model", None), "reachable": llm_state["reachable"],
+                        "warm": llm_state["warm"]},
+                "presidio": presidio}
+
+    @app.get("/api/diagnostics")
+    async def diagnostics(request: Request):
+        """Capture health, text-free. A signed-in caller sees only their own audio status;
+        a loopback caller without a session (scripts/mic_check.py) sees status for everyone,
+        still numbers and state words only."""
+        headers = {"Cache-Control": "no-store"}
+        try:
+            _, live, identity = room_for(request)
+        except HTTPException:
+            if not (request.client and request.client.host in ("127.0.0.1", "::1", "localhost")):
+                raise
+            people = {}
+            for lv in [session, *[m["session"] for m in meetings.values()]]:
+                src_diag = lv.source.diagnostics() if hasattr(lv.source, "diagnostics") else {"bot": {}, "participants": {}}
+                for ident in lv.names:
+                    me = lv.diagnostics_for(ident)
+                    me["name"] = lv.names[ident]
+                    me["room"] = getattr(lv.source, "room_name", "")
+                    me["bot"] = src_diag["bot"]
+                    people[ident] = me
+            return JSONResponse({"models": model_info(), "hold_seconds": hold_seconds,
+                                 "bot": session.source.diagnostics()["bot"] if hasattr(session.source, "diagnostics") else {},
+                                 "participants": people}, headers=headers)
+        return JSONResponse({"models": model_info(), "me": live.diagnostics_for(identity),
+                             "hold_seconds": live.hold_seconds}, headers=headers)
 
     @app.post("/api/consent")
     async def consent(request: Request, body: dict):
