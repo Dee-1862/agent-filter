@@ -355,3 +355,23 @@ export boundary visible.
 
 Impact on foundation: adds an optional final export path to A-008; logged in
 C-019.
+
+### A-010 · 2026-10-22 · Shareable Wi-Fi link with local meeting runtime · accepted
+
+What: The first deployment target is a link that guests on the same Wi-Fi can
+open without installing a certificate. Use `meeting.lancestreuber.com` with a
+publicly trusted certificate, while the meeting page, LiveKit media, speech
+recognition, filtering, and room state continue to run on the host computer.
+Public DNS and certificate validation may use internet services; meeting audio,
+transcripts, consent records, and model inputs must not pass through them.
+Internet-wide guest access is optional for this version. Do not move the
+meeting runtime to Vercel just to obtain a hosted URL or use its free tier.
+Check that the hostname resolves and the media ports work from a guest device
+before claiming the link is ready.
+
+Why: A normal browser-trusted link removes the certificate-install step for
+guests. Serving the active meeting through Vercel would move processing to
+remote infrastructure and would not remove the need for a LiveKit media host.
+
+Impact on foundation: narrows the first deployment target and clarifies the
+local-data boundary; logged in C-020.

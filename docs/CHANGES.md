@@ -17,6 +17,13 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
+## 2026-10-22 · C-020 · Shareable Wi-Fi hostname without hosted meeting processing
+- Type: addendum
+- Touches: PRD 2.7 (A-010), SECURE_LAN.md
+- What changed: Set `meeting.lancestreuber.com` as the first shareable Wi-Fi hostname with a browser-trusted certificate. Keep the meeting app, LiveKit, and local models on the host computer. Internet-wide access is optional; Vercel is not part of this runtime.
+- Why: Lance wants a link guests can open without installing a certificate while keeping meeting data local and avoiding Vercel usage.
+- Decided by: Lance in the 2026-10-22 conversation
+
 ## 2026-10-22 · C-019 · Optional email draft for the final transcript
 - Type: addendum
 - Touches: PRD 2.7 (A-009), LOCAL_PRIVACY.md

@@ -45,8 +45,16 @@ produces a link usable only on the host machine. A second device needs a
 reachable local address, a browser-trusted HTTPS origin for microphone/camera
 access, and production-length LiveKit credentials before this demo can be
 shared on a network. The current localhost preview is not a remote invite.
-See [SECURE_LAN.md](SECURE_LAN.md) for a local HTTPS/WSS launch path and the
-certificate trust step needed on each device.
+See [SECURE_LAN.md](SECURE_LAN.md) for the local HTTPS/WSS launch paths. Its
+default local-certificate mode requires trust on each guest device; the
+public-certificate mode does not.
+
+The planned no-install guest link uses `meeting.lancestreuber.com` and a
+browser-trusted certificate while the app and LiveKit stay on the meeting host.
+Namecheap DNS and certificate validation handle the hostname and proof of
+domain control, not meeting content. Vercel does not serve this meeting app,
+process its media, or consume its hosting allowance. A DNS record and trusted
+certificate are still required before that link can be used.
 
 Model weights are downloaded before a meeting into the ignored `models/`
 directory. At runtime, `load_whisper` requires local weights and refuses to
