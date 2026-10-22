@@ -199,13 +199,13 @@
       <label for="end-transcript">Official final transcript</label>
       <textarea id="end-transcript" readonly rows="8"></textarea>
       <p id="end-redactions" class="end-report"></p>
-      <p class="end-disclosure">Opening your mail app may sync this final transcript as a draft. This app never sends email. Review it in your mail app and send it yourself.</p>
+      <p class="end-disclosure">Opening your mail app may sync this final transcript as a draft. Review and send it there yourself. This meeting stays open until you click End meeting below.</p>
       <p id="end-mail-limit" class="end-mail-limit hidden">The transcript is too long for an email link. Copy it first, then paste it into the addressed draft.</p>
-      <button id="end-copy-transcript" class="secondary hidden" type="button">Copy transcript</button>
-      <a id="end-email-link" class="primary draft-link" href="#">Open email draft and end meeting</a>
+      <button id="end-copy-transcript" class="secondary" type="button">Copy transcript</button>
+      <a id="end-email-link" class="primary draft-link" href="#">Open email draft</a>
     </div>
     <p id="end-error" class="error" role="alert"></p>
-    <div class="end-actions"><button id="end-without-email" class="secondary" type="button">End without email</button><button id="end-keep-open" class="secondary" type="button">Keep meeting open</button></div>
+    <div class="end-actions"><button id="end-without-email" class="secondary" type="button">End without email</button><button id="end-confirm" class="primary hidden" type="button">End meeting</button><button id="end-keep-open" class="secondary" type="button">Keep meeting open</button></div>
   </section>
 
   <div id="toast" class="toast" role="status">
