@@ -381,8 +381,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     leak = chart_sealed(a.out)
     print("  v2 sealed item leak:", {k: f"{v:.0%}" for k, v in leak.items()})
-    best, rows = chart_subtype(a.out)
-    print(f"  v2 dev best baseline: {best}; subtypes with n >= 8: {len(rows)}")
+    # chart_subtype(a.out) skipped: leak_by_subtype.png is no longer published
     pts = chart_sweep(a.out)
     print("  sweep (hold s, retro committed %, all committed %):", [(p[0], round(p[1]), round(p[2])) for p in pts])
     chart_published(a.out)

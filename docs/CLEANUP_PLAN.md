@@ -51,8 +51,6 @@ Decisions: **keep**, **merge** (fold into another file), **archive** (move under
 | `.docs-keeper-state.json` | archive | Machine state that only STATUS.md used |
 | `WORK_SPLIT.md` | archive | Early two-person plan; ownership now lives in README "Contributing" |
 | `research/draft_a.md`, `draft_b.md`, `critique_of_a.md`, `critique_of_b.md` | archive | Inputs to RESEARCH.md, which is the merged and checked result |
-| `images/ui/before-home.png`, `before-incall.png`, `before-insights.png` | archive | Screenshots of the removed earlier design; not linked anywhere |
-| `images/ui/after-*.png` (5 files) | keep | Close to the current design; reference for UI_STYLE.md |
 | `images/media/` (empty, untracked) | delete | Empty folder |
 | Output folders of the three person recorder (screenshots under `images/`, videos and proof JSON) | not touched | Being written by the recorder work in progress |
 | `CLEANUP_PLAN.md` (this file), `RESULTS.md`, `images/charts/` | new | Plan, results write-up and charts |

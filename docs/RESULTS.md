@@ -12,15 +12,7 @@ OTR-Bench v2 uses real meeting turns from QMSum (AMI, ICSI and parliamentary com
 
 Caveat: the inserted private lines and their labels were written by language models and were not reviewed by people; B-stub and B+-stub are heuristic stand-ins, not real language models or products.
 
-## 2. Where it helps and where it does not
-
-![Leak by case subtype on v2 dev](images/charts/leak_by_subtype.png)
-
-Each row is one kind of private moment, with at least 8 items. Against B+-stub (the baseline with the lowest overall leak on dev), C does best when someone says "off the record" and the scope ends implicitly (esie short: 2 of 12 leaked against 12 of 12), on health remarks, and on "strike that" about a topic. It does no better on phone numbers or similar details split across two lines (12 of 12 leaked for both) or on long stretches of reactions, and it is worse on unannounced salary talk (8 of 8 against 7 of 8).
-
-Caveat: this is the dev split, where the pipeline was developed, so the gaps here may be optimistic; most rows have 8 to 17 items.
-
-## 3. What the hold buys
+## 2. What the hold buys
 
 ![Hold time against private lines ever committed](images/charts/hold_sweep.png)
 
@@ -28,7 +20,7 @@ Every line waits in a hold buffer before it can be written to the notes, so that
 
 Caveat: this sweep ran on the old 47-item synthetic set, which was written with the cue lists in view; it shows that the mechanism works as designed, not how often it works in real speech. The 1% final leak on that set came from tuning on the same items and is not a result.
 
-## 4. Context: published leak rates for language models
+## 3. Context: published leak rates for language models
 
 ![Published leak rates from ConfAIde and PrivacyLens](images/charts/published_llm_leak.png)
 
@@ -36,7 +28,7 @@ These are other papers' numbers, shown for context only. In ConfAIde, GPT-4 and 
 
 Caveat: these benchmarks, models and metrics differ from OTR-Bench, so the bars cannot be compared with our leak rates; newer models with better prompting do much better (see [RESEARCH.md](RESEARCH.md), bottom line item 2).
 
-## 5. What other notetakers document
+## 4. What other notetakers document
 
 ![Capability grid from COMPETITORS.md](images/charts/capability_grid.png)
 
@@ -44,7 +36,7 @@ The grid summarises what each product's own pages say, as recorded in [COMPETITO
 
 Caveat: "not found" means not described on the pages read, which is not proof that a product lacks it, and nothing was tested; for OTR, "yes" means the feature is built, and sections 1 to 3 show how well it works.
 
-## 6. Other records
+## 5. Other records
 
 | Check | Result | Source |
 |---|---|---|
