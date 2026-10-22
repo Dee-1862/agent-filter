@@ -26,6 +26,7 @@ from .llm import extract_json
 ON, OFF, PENDING = "ON", "OFF", "PENDING_CONFIRM"
 
 DRIFT_STREAK = 3
+GRACE = 2        # the first substantive utterances after a start cue always belong to the scope
 SCOPE_TIMEOUT = 90.0
 
 CONTINUE, TENTATIVE, END = "continue", "tentative", "end"
@@ -57,6 +58,7 @@ class StateMachine:
         self._scope_text: list[str] = []
         self._streak = 0
         self._last_t = None
+        self._grace = 0
         self.last_end_reason = ""
 
     def set(self, new: str, reason: str = "") -> bool:
@@ -67,6 +69,7 @@ class StateMachine:
         self.history.append((new, reason))
         if new == OFF:
             self._streak = 0
+            self._grace = GRACE
         elif new == ON:
             self._scope_vocab.clear()
             self._scope_text.clear()
@@ -87,6 +90,7 @@ class StateMachine:
 
     def start_scope(self, text: str, t: float):
         """Called with the cue utterance that opened (or re-opened) the scope."""
+        self._grace = GRACE
         self.note_suppressed(text, t)
 
     def _overlap(self, stems: list[str]) -> int:
@@ -118,6 +122,10 @@ class StateMachine:
 
         if self._last_t is not None and t - self._last_t > self.scope_timeout:
             return END, "timeout"
+        if self._grace > 0 and len(uniq) >= 3:
+            self._grace -= 1
+            self.note_suppressed(text, t)
+            return CONTINUE, ""
         if _SHIFT.search(text) and overlap == 0 and uniq:
             return END, "pivot"
         if len(uniq) >= 3:

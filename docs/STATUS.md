@@ -16,7 +16,7 @@ Scale: not-started / in-progress / built-untested / tested-offline / verified-li
 | Demo UI (`demo/server.py`, `demo/static/index.html`) | in-progress, tests broken | Both modified, mtime 12:40. `demo/server.py` no longer exports `parse_script` (now `load_script_segments`), so `tests/test_demo.py` fails at collection: `ImportError: cannot import name 'parse_script' from 'demo.server'` (seen at 12:41 and 12:42). Nobody has looked at the page in a browser |
 | Bench (`bench/`) | tested-offline, early | 40 synthetic items (`wc -l bench/otr_bench.jsonl` = 40), `tests/test_bench.py` passes. Results generated 12:32:41 with `llm: none` (`bench/results.json` meta). ConfAIde/QMSum importers exist but have not been run (`bench/README.md`) |
 | Research (`docs/research/`) | not-started (as observed) | Directory does not exist; draft_a.md and draft_b.md absent |
-| Docs | in-progress | This pass created STATUS.md, appended C-003..C-006 and L-002..L-005, filled PRD 2.1/2.5/2.6/2.7 |
+| Docs | in-progress | This pass created STATUS.md, appended C-008..C-011 and L-005..L-008, filled PRD 2.1/2.5/2.6/2.7 |
 
 ## Test run
 

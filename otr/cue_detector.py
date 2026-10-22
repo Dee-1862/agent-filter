@@ -64,14 +64,17 @@ _END = re.compile(
     r"|you\s+can\s+(?:start\s+)?(?:write|writing|take\s+notes|record)\s*(?:again|now)?"
     r"|(?:ok(?:ay)?[,.]?\s+)?we(?:'re|\s+are)\s+back"
     r"|(?:ok(?:ay)?[,.]?\s+)?(?:you\s+can\s+)?resume\s+(?:the\s+)?(?:notes|recording)"
-    r"|that(?:'s|\s+is)\s+(?:all\s+)?(?:the\s+)?off[\s\-]+the[\s\-]+record\s+(?:part|stuff)\s+(?:done|over))\b", re.I)
+    r"|that(?:'s|\s+is)\s+(?:all\s+)?(?:the\s+)?off[\s\-]+the[\s\-]+record\s+(?:part|stuff)\s+(?:done|over)"
+    r"|(?:that(?:'s|\s+is)|this\s+is|and)\s+(?:the\s+)?end\s+of\s+(?:the\s+)?off[\s\-]+(?:the[\s\-]+)?record(?:\s+(?:part|stuff|bit))?"
+    r"|off[\s\-]+the[\s\-]+record\s+(?:part\s+|bit\s+)?(?:is\s+)?(?:over|done|finished|ended)"
+    r"|(?:we(?:'re|\s+are)|i(?:'m|\s+am))\s+(?:now\s+)?on\s+the\s+record)\b", re.I)
 _RETRO = re.compile(
     r"\b(?:strike\s+that|scratch\s+that|disregard\s+that|take\s+that\s+out|"
     r"forget\s+(?:that\s+)?i\s+(?:just\s+)?(?:said|mentioned)(?:\s+(?:that|it|anything))?|"
     r"(?:forget|ignore|disregard|delete|remove|erase|strike|scratch|take\s+back|take\s+out)\s+"
     r"(?:(?:what|everything)\s+i\s+(?:just\s+)?(?:said|mentioned|told\s+you)|(?:all\s+(?:of\s+)?)?that|the\s+last\s+(?:thing|bit|part)|"
     r"what\s+(?:i|we)\s+(?:just\s+)?(?:said|discussed)|"
-    r"(?:the\s+)?(?:last|previous)\s+(?:one|two|three|four|five|\d)\s+(?:things?|comments?|sentences?|lines?|"
+    r"(?:the\s+|my\s+)?(?:last|previous)\s+(?:(?:one|two|three|four|five|\d)\s+)?(?:things?|comments?|sentences?|lines?|"
     r"statements?|remarks?|points?|bits?|parts?|utterances?)))\b", re.I)
 _TOPIC = re.compile(r"\b(?:about|regarding|concerning|on|re)\s+(.+?)\s*(?:[.;!?]|,\s+(?:ok|okay|please)|$)", re.I)
 
@@ -86,6 +89,11 @@ _TITLE_BEFORE = re.compile(
 _TITLE_AFTER = re.compile(
     r"^\W{0,3}(?:is|was|were|are|has|had|won|came|stars|starring|the\s+(?:movie|film|show|book|song|album|series)|"
     r"\(|by\s+[A-Z]|with\s+[A-Z])\b", re.I)
+_ARTICLE_BEFORE = re.compile(r"\b(?:a|an|the)\s+$", re.I)
+_MODIFIER_AFTER = re.compile(
+    r"^\s+(?:pay|payments?|comments?|remarks?|statements?|conversations?|discussions?|agreements?|arrangements?|"
+    r"deals?|briefings?|sources?|interviews?|quotes?|success|story|stories|tip|tips|chats?|bonus|bonuses|"
+    r"information|material|guidance)\b", re.I)
 _NEG_BEFORE = re.compile(r"(?:\bnot|n't|\bnever|\bisn't|\bwasn't)\s+(?:really\s+|exactly\s+)?(?:going\s+|be\s+|being\s+)?$", re.I)
 
 
@@ -104,7 +112,10 @@ def _is_false_alarm(text: str, m: re.Match) -> bool:
     before, after = text[: m.start()], text[m.end():]
     if before.rstrip()[-1:] in ('"', "“", "*", "_") or before.endswith(('"', "“")):
         return True
-    if after[:1] in ('"', "”"):
+    if after[:1] in ('"', "”") or (after[:1] == "'" and "'" in before.replace("n't", "").replace("'s", "")):
+        return True
+    # noun-phrase use ("an off the record success story", "off the record pay"), not a command
+    if _ARTICLE_BEFORE.search(before) or _MODIFIER_AFTER.search(after):
         return True
     if _TITLE_BEFORE.search(before) or _TITLE_AFTER.search(after):
         return True
@@ -216,13 +227,15 @@ def _detect_strict(t: str) -> Cue:
             topic = ""        # "the last two things" is positional, not a topic
         return Cue("retro", "retro", topic, count=count)
     m = _START.search(t)
+    e = _END.search(t)
+    if m and e and e.start() <= m.start() < e.end():
+        m = None                    # "that's the end of off the record": the start phrase is inside an end cue
     if m:
         if _is_false_alarm(t, m):
             return Cue(None, m.group(0).lower(), false_alarm=True)
         return Cue("start", re.sub(r"\W+", "_", m.group(0).lower()).strip("_"))
-    m = _END.search(t)
-    if m:
-        return Cue("end", "scope_end", remainder=t[m.end():].strip(" ,.;!"))
+    if e:
+        return Cue("end", "scope_end", remainder=t[e.end():].strip(" ,.;!"))
     return Cue()
 
 

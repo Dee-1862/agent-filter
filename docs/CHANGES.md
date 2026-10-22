@@ -17,33 +17,67 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 
 ---
 
-## 2026-10-22 · C-006 · Docs Keeper pass 1: STATUS dashboard and state file
+## 2026-10-22 · C-011 · Docs Keeper pass 1: STATUS dashboard and state file
 - Type: process
 - Touches: PRD 2.1 (statuses), 2.5 (results), 2.6 (Q5), 2.7 (A-001)
 - What changed: Added `docs/STATUS.md` (regenerated each pass) and `docs/.docs-keeper-state.json` (observed mtimes, test count, results hash for diffing). Filled PRD 2.1 statuses, logged the visible eval runs in 2.5, added Q5 and A-001. Updated the Known issues table in `docs/WORK_SPLIT.md` with a status column.
 - Why: Keep docs tied to observed repo state, not to claims.
 - Decided by: project owner (Docs Keeper role)
 
-## 2026-10-22 · C-005 · Cue detector gains ASR-noise repair (uncommitted)
+## 2026-10-22 · C-010 · Cue detector gains ASR-noise repair (uncommitted)
 - Type: system
 - Touches: PRD 1.6 (cue detector), 2.1 P3
 - What changed: `otr/cue_detector.py` working-tree diff (+118 lines, mtime 12:41:59) adds `repair_asr` / `_tok_match` / `_detect_strict`, rewriting near-matches of cue phrases to canonical text before the strict regexes run. `detect()` now wraps this.
 - Why (as stated in the file comment): live STT garbles short cue phrases. Not yet evaluated: `bench/results.json` (12:32) predates it.
 - Decided by: engine agent
 
-## 2026-10-22 · C-004 · Benchmark and three-system eval generated
+## 2026-10-22 · C-009 · Benchmark and three-system eval generated
 - Type: benchmark
 - Touches: PRD 1.7, 2.1 P2/P4, 2.5
 - What changed: `bench/` now holds 40 synthetic items (`bench/otr_bench.jsonl`, built from `bench/_items_a.py` and `_items_b.py` by `bench/build_bench.py`), systems A / B-stub / C (`bench/systems.py`), metrics, `run_eval.py`, plot, importers for ConfAIde and QMSum (not run), and outputs `bench/results.json`, `results.md`, `results.png`, `results_sweep.json`, `results_sweep.md` (all mtime 12:32). Tests in `tests/test_bench.py`.
 - Why: PRD G4. Note the set is synthetic, not the ConfAIde/QMSum mix the PRD called for; B is a heuristic stub, not an LLM.
 - Decided by: engine / bench agent
 
-## 2026-10-22 · C-003 · Runtime module and demo server refactor (uncommitted)
+## 2026-10-22 · C-008 · Runtime module and demo server refactor (uncommitted)
 - Type: demo
 - Touches: PRD 1.5 G5, 2.1 P5; WORK_SPLIT Person 1 tasks 5 and 7
 - What changed: New untracked `otr/runtime.py` (`StreamRunner`: runs all pipeline calls on one worker thread, queues segments, bounded subscriber queues with history). `demo/server.py` rewritten (-287/+ lines in the working tree): `load_script_segments` replaces the demo's own parser and uses `otr.ingest.replay_source.parse_script`; `demo/static/index.html` extended. Side effect: `demo.server.parse_script` is gone and `tests/test_demo.py` no longer collects.
 - Why: keep slow LLM calls off the event loop; remove the duplicate script parser (I5, task 7).
 - Decided by: runtime/demo agent
+## 2026-10-22 · C-007 · Implement local LiveKit consent demo
+- Type: system
+- Touches: PRD A-001–A-006, INGEST.md, LOCAL_PRIVACY.md
+- What changed: Added a local meeting page, server-issued participant identities, per-person Start/Stop and status, selective LiveKit recorder subscription, local utterance-level ASR, and a shared transcript containing only approved lines. Sensitive flags pause only the affected speaker and discard the pending utterance.
+- Why: Make the per-person capture boundary visible and testable without sending meeting data to hosted services.
+- Decided by: project owner request on 2026-10-22
+
+## 2026-10-22 · C-006 · Make per-person consent the shared contract
+- Type: addendum
+- Touches: PRD A-006, WORK_SPLIT.md
+- What changed: Assigned Lance the live LiveKit/UI path and Deekshith the local NLP/policy path; stated that capture and privacy state are per authenticated participant, and identified the existing global state and automatic subscription as scaffold gaps.
+- Why: The owner confirmed per-person consent is the correct architecture and asked for the remote docs and implementation to follow it.
+- Decided by: project owner in the 2026-10-22 conversation
+
+## 2026-10-22 · C-005 · Prepare local repository assets
+- Type: process
+- Touches: LOCAL_SETUP.md, .gitignore
+- What changed: Documented the cloned repository, locally installed LiveKit and whisper.cpp versions, the checksum-verified local Whisper model, and the next implementation slice. Ignored model weights, media, databases, environments and generated dependencies.
+- Why: Keep the zero-cloud prototype reproducible and reduce accidental inclusion of sensitive artifacts in Git.
+- Decided by: project owner request to set up the new repository locally
+
+## 2026-10-22 · C-004 · Add local demo, UI and Ketch decisions
+- Type: addendum
+- Touches: PRD Part 2 (2.1–2.7, A-001–A-005)
+- What changed: Added accepted addenda for per-person UI, transcript visibility, sensitive HR/number policy, Ketch alignment without hosted integration, and a build order that supersedes the initial P1–P6 timebox. Added open questions Q5–Q8.
+- Why: The hackathon demo should prove consent at the source and show only approved per-speaker text, while keeping all data and inference local.
+- Decided by: project owner in the 2026-10-22 conversation
+
+## 2026-10-22 · C-003 · Move consent to LiveKit participant tracks
+- Type: foundation
+- Touches: PRD Part 1 (1.1–1.3, 1.5–1.9)
+- What changed: Replaced mixed meeting-audio capture with a self-hosted LiveKit room and per-participant opt-in track subscription. Made visible consent, local per-speaker transcription, HR/number gating and deletion propagation core goals; kept voiceprints, cloud processing, other meeting-platform bots and secondhand disclosure out of first scope.
+- Why: The owner explicitly chose LiveKit and per-person consent. A post-capture filter over mixed audio cannot enforce that a declining participant was not processed.
+- Decided by: project owner in the 2026-10-22 conversation
 
 ## 2026-10-22 · C-002 · Added two-person work split
 - Type: process
@@ -51,6 +85,7 @@ A `foundation` change is rare and needs a stated reason. Everything else is an `
 - What changed: Added `docs/WORK_SPLIT.md` dividing the work into Person 1 (live side: ingest, LiveKit, diarization, demo) and Person 2 (brain + proof: pipeline, benchmark, eval, slides). Scaffolding for all modules was generated by parallel agents against `otr/types.py`.
 - Why: Two people will work simultaneously; the contract file is the seam.
 - Decided by: project owner
+
 
 ## 2026-10-22 · C-001 · Initial PRD created
 - Type: foundation

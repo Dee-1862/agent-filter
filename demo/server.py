@@ -108,15 +108,19 @@ def build_livekit_source(room: str):
 
 # ---------------------------------------------------------------- app
 def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autostart=True,
-               source="replay", room="demo", llm=None, tick_interval=0.25):
+               source="replay", room="demo", llm=None, tick_interval=0.25, live_source=None):
     """source: 'replay' (script optional; typed lines always work) or 'livekit'."""
     cls, kind = load_pipeline_class(pipeline)
+    if source == "livekit":  # per-person consent mode (demo/live_session.py)
+        from demo.live_session import create_live_app
+        return create_live_app(cls, kind, live_source=live_source, hold_seconds=hold_seconds,
+                               autostart=autostart)
 
     def new_pipe():
         return cls(llm=llm, hold_seconds=hold_seconds)
 
     def new_source():
-        if source == "livekit":
+        if source == "livekit-stream":
             return build_livekit_source(room)
         if script and autostart:
             from otr.ingest.replay_source import ReplaySource
@@ -126,8 +130,8 @@ def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autos
     src = new_source()
     runner = StreamRunner(src, new_pipe(), tick_interval=tick_interval, hold_seconds=hold_seconds,
                           pipeline_kind=kind, source_name=source if src is not None else "typed",
-                          source_factory=(new_source if source == "livekit" else None),
-                          reconnect=(source == "livekit"))
+                          source_factory=(new_source if source == "livekit-stream" else None),
+                          reconnect=(source == "livekit-stream"))
 
     @asynccontextmanager
     async def lifespan(app):
@@ -227,7 +231,7 @@ def create_app(pipeline="auto", script=None, speed=1.0, hold_seconds=10.0, autos
 # ---------------------------------------------------------------- CLI
 def main(argv=None):
     ap = argparse.ArgumentParser(description="OTR live demo server")
-    ap.add_argument("--source", choices=["replay", "livekit"], default="replay")
+    ap.add_argument("--source", choices=["replay", "livekit", "livekit-stream"], default="replay")
     ap.add_argument("--script", help="replay script ('Alice: text' per line, '@pause N' ok) or .jsonl")
     ap.add_argument("--speed", type=float, default=1.0, help="replay speed multiplier")
     ap.add_argument("--room", default="demo", help="LiveKit room name")
@@ -240,16 +244,28 @@ def main(argv=None):
 
     if a.source == "replay" and not a.script:
         print("[demo] no --script given: idle, type lines in the page", file=sys.stderr)
+    live_source = None
+    if a.source == "livekit":
+        try:
+            from otr.ingest.livekit_source import LiveKitSource
+            live_source = LiveKitSource(room=os.environ.get("LIVEKIT_ROOM", a.room),
+                                        model=os.environ.get("OTR_WHISPER_MODEL", "base.en"))
+        except ImportError as e:
+            print(f"[demo] LiveKit mode unavailable: {e}", file=sys.stderr)
+            return 2
     try:
         app = create_app(a.pipeline or "auto", a.script, a.speed, a.hold, source=a.source,
-                         room=a.room, llm=build_llm(a.llm))
+                         room=a.room, llm=build_llm(a.llm), live_source=live_source)
     except (RuntimeError, OSError) as e:
         print(f"[demo] cannot start: {e}", file=sys.stderr)
         return 2
 
     import uvicorn
-    r = app.state.runner
-    print(f"[demo] source={r.source_name} pipeline={r.pipeline_kind}  open http://{a.host}:{a.port}/")
+    r = getattr(app.state, "runner", None)
+    if r is not None:
+        print(f"[demo] source={r.source_name} pipeline={r.pipeline_kind}  open http://{a.host}:{a.port}/")
+    else:
+        print(f"[demo] consent mode  open http://{a.host}:{a.port}/")
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
     return 0
 

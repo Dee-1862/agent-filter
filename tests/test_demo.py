@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from demo.live_session import LiveSession
 from demo.server import build_livekit_source, create_app, load_script_segments
+from demo.fake_pipeline import Pipeline as FakePipeline
+from otr.types import Segment
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "demo" / "scripts"
 
@@ -134,3 +137,96 @@ def test_livekit_missing_sdk_gives_clear_error(monkeypatch):
     monkeypatch.setattr(importlib.util, "find_spec", lambda n, *a: None if n == "livekit" else real(n, *a))
     with pytest.raises(RuntimeError, match="livekit"):
         build_livekit_source("demo")
+
+
+class StubLiveSource:
+    url = "ws://127.0.0.1:7880"
+    room_name = "demo"
+    api_key = "devkey"
+    api_secret = "secret"
+
+    def __init__(self):
+        self.consent = {}
+
+    def set_consent(self, identity, enabled):
+        self.consent[identity] = enabled
+
+    def consent_snapshot(self):
+        return dict(self.consent)
+
+
+def test_live_uses_per_person_consent_and_publishes_approved_only():
+    src = StubLiveSource()
+    live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
+    live.names.update({"alice": "Alice", "bob": "Bob"})
+    live.set_consent("alice", True)
+    live.push(Segment("off", "bob", "private words", 0, 0))
+    assert "private words" not in json.dumps(live.messages)
+    live.push(Segment("a1", "alice", "Plan the launch", 0, 0))
+    assert "Plan the launch" not in json.dumps(live.messages)
+    live._publish_events("alice", live.pipes["alice"].tick(1))
+    assert live.approved["a1"]["text"] == "Plan the launch"
+    live.set_consent("bob", True)
+    live.push(Segment("b1", "bob", "off the record", 1, 1))
+    assert src.consent["bob"] is False
+    assert src.consent["alice"] is True
+    assert "off the record" not in json.dumps(live.messages)
+    live.push(Segment("a2", "alice", "stop recording me", 1, 1))
+    assert src.consent["alice"] is False
+    assert "stop recording me" not in json.dumps(live.messages)
+
+
+def test_live_endpoints_never_offer_replay_controls_or_raw_state():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as client:
+        assert "Your voice, your choice" in client.get("/").text
+        assert client.get("/api/state").status_code == 404
+        assert client.post("/api/say", json={"speaker": "a", "text": "secret"}).status_code == 404
+        assert client.post("/api/consent", json={"recording": True}).status_code == 401
+        assert client.get("/stream").status_code == 401
+
+
+def test_live_consent_is_bound_to_server_issued_identity():
+    src = StubLiveSource()
+    app = create_app("fake", source="livekit", live_source=src, autostart=False)
+    with TestClient(app) as first, TestClient(app) as second:
+        a = first.post("/api/join", json={"name": "Alice", "identity": "chosen"})
+        b = second.post("/api/join", json={"name": "Bob", "identity": a.json()["identity"]})
+        assert a.status_code == b.status_code == 200
+        alice, bob = a.json()["identity"], b.json()["identity"]
+        assert alice != bob and alice != "chosen"
+        assert not src.consent[alice] and not src.consent[bob]
+        assert first.post("/api/consent", json={"recording": True, "identity": bob}).json() == {
+            "identity": alice, "recording": True,
+        }
+        assert src.consent[alice] and not src.consent[bob]
+        assert second.get("/api/me").json()["identity"] == bob
+        assert first.post("/api/consent", json={"recording": "false"}).status_code == 400
+
+
+def test_live_sensitive_hold_pauses_only_that_speaker_and_never_allows_publication():
+    src = StubLiveSource()
+    live = LiveSession(FakePipeline, "fake", src, hold_seconds=0)
+    live.names.update({"alice": "Alice", "bob": "Bob"})
+    live.set_consent("alice", True)
+    live.set_consent("bob", True)
+    live.push(Segment("sensitive", "alice", "Her salary is 150,000", 0, 0))
+    assert src.consent == {"alice": False, "bob": True}
+    assert live.snapshot()["alice"]["sensitive_paused"] is True
+    assert live.snapshot()["bob"]["sensitive_paused"] is False
+    assert "alice" not in live.pipes
+    assert "150,000" not in json.dumps(live.messages)
+    assert live.approved == {}
+    live.push(Segment("safe", "bob", "Agenda item one", 0, 0))
+    live._publish_events("bob", live.pipes["bob"].tick(1))
+    assert live.approved["safe"]["text"] == "Agenda item one"
+    live.set_consent("alice", True)
+    assert live.snapshot()["alice"]["sensitive_paused"] is False
+    assert "150,000" not in json.dumps(live.messages)
+
+
+def test_live_sensitive_confirmation_endpoint_is_absent():
+    app = create_app("fake", source="livekit", live_source=StubLiveSource(), autostart=False)
+    with TestClient(app) as client:
+        assert client.post("/api/confirm", json={"segment_id": "sensitive", "keep_out": False}).status_code == 404
+        assert client.get("/api/private").status_code == 404
