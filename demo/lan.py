@@ -14,6 +14,7 @@ import shutil
 import signal
 import socket
 import ssl
+import struct
 import subprocess
 import sys
 import time
@@ -77,6 +78,28 @@ def wait_for_http(url: str, process: subprocess.Popen, seconds: float = 20,
     raise RuntimeError(f"Timed out waiting for {url}; check {STATE / 'logs'}")
 
 
+def wait_for_stun(ip: str, port: int, process: subprocess.Popen, seconds: float = 10) -> None:
+    """Verify that the private STUN service advertised to browsers responds."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"LiveKit exited during startup; check {STATE / 'logs'}")
+        transaction_id = secrets.token_bytes(12)
+        request = struct.pack("!HHI", 0x0001, 0, 0x2112A442) + transaction_id
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(0.5)
+            sock.sendto(request, (ip, port))
+            try:
+                response, _ = sock.recvfrom(512)
+            except socket.timeout:
+                time.sleep(0.2)
+                continue
+        if (len(response) >= 20 and response[:2] == b"\x01\x01"
+                and response[4:8] == request[4:8] and response[8:20] == transaction_id):
+            return
+    raise RuntimeError(f"Local STUN did not answer on {ip}:{port}; check {STATE / 'logs'}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Start a local-only HTTPS/WSS meeting for the same Wi-Fi network")
     parser.add_argument("--lan-ip", help="Host Wi-Fi IPv4 address; defaults to en0/en1 on macOS")
@@ -115,7 +138,10 @@ rtc:
   node_ip: {ip}
   use_external_ip: false
   stun_servers:
-    - {ip}:17882
+    - {ip}:17883
+turn:
+  enabled: true
+  udp_port: 17883
 keys:
   {key}: {secret}
 logging:
@@ -162,6 +188,7 @@ https://{ip}:18444 {{
             processes.append(process)
             if name == "livekit":
                 wait_for_port(17880, process)
+                wait_for_stun(ip, 17883, process)
             elif name == "app":
                 wait_for_http("http://127.0.0.1:18772/api/config", process)
         root_cert = caddy_storage / "pki" / "authorities" / "local" / "root.crt"
@@ -176,7 +203,7 @@ https://{ip}:18444 {{
                       context=ssl.create_default_context(cafile=root_cert))
         print(f"Meeting: https://{ip}:18443/", flush=True)
         print(f"Trust this PUBLIC root certificate on each device before opening the link: {root_cert}", flush=True)
-        print("WebRTC media: UDP 17882 (TCP 17881 fallback); same Wi-Fi only.", flush=True)
+        print("WebRTC media: UDP 17882 (TCP 17881 fallback); local STUN: UDP 17883.", flush=True)
         print("Press Ctrl-C to stop all three local services.", flush=True)
         while all(process.poll() is None for process in processes):
             time.sleep(0.5)
